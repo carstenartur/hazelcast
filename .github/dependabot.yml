@@ -8,7 +8,7 @@ updates:
     labels:
       - "Source: Internal"
       - "dependencies"
-    open-pull-requests-limit: 100
+    open-pull-requests-limit: 80
 
   - package-ecosystem: "github-actions"
     directory: "/"
