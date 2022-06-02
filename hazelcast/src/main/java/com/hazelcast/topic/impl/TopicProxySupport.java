@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,14 +19,18 @@ package com.hazelcast.topic.impl;
 import com.hazelcast.config.ListenerConfig;
 import com.hazelcast.config.TopicConfig;
 import com.hazelcast.core.HazelcastInstanceAware;
-import com.hazelcast.core.MessageListener;
-import com.hazelcast.monitor.LocalTopicStats;
-import com.hazelcast.monitor.impl.LocalTopicStatsImpl;
-import com.hazelcast.nio.ClassLoaderUtil;
-import com.hazelcast.spi.AbstractDistributedObject;
-import com.hazelcast.spi.InitializingObject;
-import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.util.ExceptionUtil;
+import com.hazelcast.internal.monitor.impl.LocalTopicStatsImpl;
+import com.hazelcast.internal.nio.ClassLoaderUtil;
+import com.hazelcast.internal.util.ExceptionUtil;
+import com.hazelcast.spi.impl.AbstractDistributedObject;
+import com.hazelcast.spi.impl.InitializingObject;
+import com.hazelcast.spi.impl.NodeEngine;
+import com.hazelcast.spi.impl.operationservice.OperationService;
+import com.hazelcast.topic.LocalTopicStats;
+import com.hazelcast.topic.MessageListener;
+
+import javax.annotation.Nonnull;
+import java.util.UUID;
 
 public abstract class TopicProxySupport extends AbstractDistributedObject<TopicService> implements InitializingObject {
 
@@ -34,6 +38,8 @@ public abstract class TopicProxySupport extends AbstractDistributedObject<TopicS
     private final ClassLoader configClassLoader;
     private final TopicService topicService;
     private final LocalTopicStatsImpl topicStats;
+    private final OperationService operationService;
+    private final int partitionId;
     private boolean multithreaded;
 
     public TopicProxySupport(String name, NodeEngine nodeEngine, TopicService service) {
@@ -42,6 +48,8 @@ public abstract class TopicProxySupport extends AbstractDistributedObject<TopicS
         this.configClassLoader = nodeEngine.getConfigClassLoader();
         this.topicService = service;
         this.topicStats = topicService.getLocalTopicStats(name);
+        this.operationService = nodeEngine.getOperationService();
+        this.partitionId = nodeEngine.getPartitionService().getPartitionId(getNameAsPartitionAwareData());
     }
 
     @Override
@@ -92,16 +100,17 @@ public abstract class TopicProxySupport extends AbstractDistributedObject<TopicS
      *
      * @param message the message to be published
      */
-    public void publishInternal(Object message) {
-        topicStats.incrementPublishes();
+    public void publishInternal(@Nonnull Object message) {
         topicService.publishMessage(name, message, multithreaded);
+        topicStats.incrementPublishes();
     }
 
-    public String addMessageListenerInternal(MessageListener listener) {
-        return topicService.addMessageListener(name, listener, false);
+    public @Nonnull
+    UUID addMessageListenerInternal(@Nonnull MessageListener listener) {
+        return topicService.addMessageListener(name, listener);
     }
 
-    public boolean removeMessageListenerInternal(final String registrationId) {
+    public boolean removeMessageListenerInternal(@Nonnull UUID registrationId) {
         return topicService.removeMessageListener(name, registrationId);
     }
 

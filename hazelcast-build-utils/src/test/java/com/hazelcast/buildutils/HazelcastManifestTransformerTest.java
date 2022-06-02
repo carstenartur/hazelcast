@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,9 @@
 
 package com.hazelcast.buildutils;
 
+import com.hazelcast.internal.util.JavaVersion;
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.apache.maven.plugins.shade.relocation.Relocator;
 import org.junit.After;
@@ -31,12 +32,11 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 
-import static com.hazelcast.nio.IOUtil.closeResource;
-import static com.hazelcast.nio.IOUtil.getFileFromResources;
+import static com.hazelcast.internal.nio.IOUtil.closeResource;
+import static com.hazelcast.internal.nio.IOUtil.getFileFromResources;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -47,7 +47,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class HazelcastManifestTransformerTest {
 
     private final File manifestFile = getFileFromResources("manifest.mf");
@@ -64,9 +64,9 @@ public class HazelcastManifestTransformerTest {
 
         transformer = new HazelcastManifestTransformer();
 
-        transformer.mainClass = "com.hazelcast.core.server.StartServer";
-        transformer.manifestEntries = new HashMap<String, Attributes>();
-        transformer.overrideInstructions = new HashMap<String, String>();
+        transformer.setMainClass("com.hazelcast.core.server.HazelcastMemberStarter");
+        transformer.setManifestEntries(new HashMap<String, Object>());
+        transformer.setOverrideInstructions(new HashMap<String, String>());
     }
 
     @After
@@ -96,6 +96,9 @@ public class HazelcastManifestTransformerTest {
         verify(os).putNextEntry(any(JarEntry.class));
         verify(os, atLeastOnce()).write(anyInt());
         verify(os, atLeastOnce()).flush();
+        if (JavaVersion.isAtLeast(JavaVersion.JAVA_13)) {
+            verify(os, atLeastOnce()).write(any(byte[].class), anyInt(), anyInt());
+        }
         verifyNoMoreInteractions(os);
     }
 }

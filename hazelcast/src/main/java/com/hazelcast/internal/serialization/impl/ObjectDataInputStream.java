@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,23 @@
 
 package com.hazelcast.internal.serialization.impl;
 
+import com.hazelcast.internal.nio.DataReader;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.internal.serialization.InternalSerializationService;
-import com.hazelcast.nio.Bits;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.spi.impl.SerializationServiceSupport;
 
+import javax.annotation.Nullable;
 import java.io.Closeable;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 
-import static com.hazelcast.nio.Bits.NULL_ARRAY_LENGTH;
+import static com.hazelcast.internal.nio.Bits.NULL_ARRAY_LENGTH;
 
-public class ObjectDataInputStream extends VersionedObjectDataInput implements Closeable {
+public class ObjectDataInputStream extends VersionedObjectDataInput
+        implements Closeable, DataReader, SerializationServiceSupport {
 
     private static final int SHORT_MASK = 0xFFFF;
 
@@ -271,7 +275,15 @@ public class ObjectDataInputStream extends VersionedObjectDataInput implements C
     }
 
     @Override
+    @Nullable
+    @Deprecated
     public String[] readUTFArray() throws IOException {
+        return readStringArray();
+    }
+
+    @Override
+    @Nullable
+    public String[] readStringArray() throws IOException {
         int len = readInt();
         if (len == NULL_ARRAY_LENGTH) {
             return null;
@@ -279,35 +291,36 @@ public class ObjectDataInputStream extends VersionedObjectDataInput implements C
         if (len > 0) {
             String[] values = new String[len];
             for (int i = 0; i < len; i++) {
-                values[i] = readUTF();
+                values[i] = readString();
             }
             return values;
         }
         return new String[0];
     }
 
-    @Deprecated
-    public String readLine() throws IOException {
-        return dataInput.readLine();
+    @Override
+    public String readLine() {
+        throw new UnsupportedOperationException();
     }
 
     @Override
+    @Nullable
+    @Deprecated
     public String readUTF() throws IOException {
-        int charCount = readInt();
-        if (charCount == NULL_ARRAY_LENGTH) {
+        return readString();
+    }
+
+    @Nullable
+    @Override
+    public String readString() throws IOException {
+        int numberOfBytes = readInt();
+        if (numberOfBytes == NULL_ARRAY_LENGTH) {
             return null;
         }
-        char[] charBuffer = new char[charCount];
-        byte b;
-        for (int i = 0; i < charCount; i++) {
-            b = dataInput.readByte();
-            if (b < 0) {
-                charBuffer[i] = Bits.readUtf8Char(dataInput, b);
-            } else {
-                charBuffer[i] = (char) b;
-            }
-        }
-        return new String(charBuffer, 0, charCount);
+
+        byte[] utf8Bytes = new byte[numberOfBytes];
+        dataInput.readFully(utf8Bytes);
+        return new String(utf8Bytes, StandardCharsets.UTF_8);
     }
 
     @Override
@@ -331,7 +344,7 @@ public class ObjectDataInputStream extends VersionedObjectDataInput implements C
     }
 
     @Override
-    public Object readObject() throws IOException {
+    public <T> T readObject() throws IOException {
         return serializationService.readObject(this);
     }
 
@@ -343,7 +356,7 @@ public class ObjectDataInputStream extends VersionedObjectDataInput implements C
     }
 
     @Override
-    public Object readObject(Class aClass) throws IOException {
+    public <T> T readObject(Class aClass) throws IOException {
         return serializationService.readObject(this, aClass);
     }
 
@@ -358,6 +371,7 @@ public class ObjectDataInputStream extends VersionedObjectDataInput implements C
         return serializationService.getClassLoader();
     }
 
+    @Override
     public InternalSerializationService getSerializationService() {
         return serializationService;
     }

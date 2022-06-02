@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,22 +16,26 @@
 
 package com.hazelcast.internal.serialization.impl;
 
+import com.hazelcast.internal.nio.DataWriter;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.internal.serialization.InternalSerializationService;
-import com.hazelcast.nio.Bits;
+import com.hazelcast.internal.serialization.SerializationService;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.serialization.SerializationService;
+import com.hazelcast.spi.impl.SerializationServiceSupport;
 
+import javax.annotation.Nullable;
 import java.io.Closeable;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 
-import static com.hazelcast.nio.Bits.NULL_ARRAY_LENGTH;
+import static com.hazelcast.internal.nio.Bits.NULL_ARRAY_LENGTH;
 
 @SuppressWarnings("checkstyle:methodcount")
-public class ObjectDataOutputStream extends VersionedObjectDataOutput implements ObjectDataOutput, Closeable {
+public class ObjectDataOutputStream extends VersionedObjectDataOutput
+        implements ObjectDataOutput, Closeable, SerializationServiceSupport, DataWriter {
 
     private final InternalSerializationService serializationService;
     private final DataOutputStream dataOut;
@@ -219,27 +223,38 @@ public class ObjectDataOutputStream extends VersionedObjectDataOutput implements
     }
 
     @Override
-    public void writeUTFArray(String[] strings) throws IOException {
+    @Deprecated
+    public void writeUTFArray(@Nullable String[] strings) throws IOException {
+        writeStringArray(strings);
+    }
+
+    @Override
+    public void writeStringArray(@Nullable String[] strings) throws IOException {
         int len = strings != null ? strings.length : NULL_ARRAY_LENGTH;
         writeInt(len);
         if (len > 0) {
             for (String s : strings) {
-                writeUTF(s);
+                writeString(s);
             }
         }
     }
 
     @Override
-    public void writeUTF(String str) throws IOException {
-        int len = str != null ? str.length() : NULL_ARRAY_LENGTH;
-        writeInt(len);
-        if (len > 0) {
-            final byte[] buffer = new byte[3];
-            for (int i = 0; i < len; i++) {
-                int count = Bits.writeUtf8Char(buffer, 0, str.charAt(i));
-                dataOut.write(buffer, 0, count);
-            }
+    @Deprecated
+    public void writeUTF(@Nullable String str) throws IOException {
+        writeString(str);
+    }
+
+    @Override
+    public void writeString(@Nullable String str) throws IOException {
+        if (str == null) {
+            writeInt(NULL_ARRAY_LENGTH);
+            return;
         }
+
+        byte[] utf8Bytes = str.getBytes(StandardCharsets.UTF_8);
+        writeInt(utf8Bytes.length);
+        write(utf8Bytes);
     }
 
     @Override

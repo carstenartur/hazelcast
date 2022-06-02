@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,15 @@
 
 package usercodedeployment;
 
-import com.hazelcast.map.AbstractEntryProcessor;
+import com.hazelcast.map.EntryProcessor;
 
 import java.io.Serializable;
 import java.util.Map;
 
 public class ClassWithTwoInnerClasses implements Serializable {
-    public static class StaticNestedIncrementingEntryProcessor extends AbstractEntryProcessor<Integer, Integer> {
+    public static class StaticNestedIncrementingEntryProcessor<K> implements EntryProcessor<K, Integer, Integer> {
         @Override
-        public Object process(Map.Entry<Integer, Integer> entry) {
+        public Integer process(Map.Entry<K, Integer> entry) {
             Integer origValue = entry.getValue();
             Integer newValue = origValue + 1;
             entry.setValue(newValue);
@@ -32,9 +32,9 @@ public class ClassWithTwoInnerClasses implements Serializable {
         }
     }
 
-    public static class StaticNestedDecrementingEntryProcessor extends AbstractEntryProcessor<Integer, Integer> {
+    public static class StaticNestedDecrementingEntryProcessor<K> implements EntryProcessor<K, Integer, Integer> {
         @Override
-        public Object process(Map.Entry<Integer, Integer> entry) {
+        public Integer process(Map.Entry<K, Integer> entry) {
             Integer origValue = entry.getValue();
             Integer newValue = origValue - 1;
             entry.setValue(newValue);

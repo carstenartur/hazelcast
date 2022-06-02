@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,54 +16,53 @@
 
 package com.hazelcast.topic.impl.reliable;
 
-import com.hazelcast.core.ExecutionCallback;
+import com.hazelcast.cluster.Member;
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
-import com.hazelcast.core.ICompletableFuture;
-import com.hazelcast.core.Member;
-import com.hazelcast.core.Message;
 import com.hazelcast.core.OperationTimeoutException;
+import com.hazelcast.internal.serialization.SerializationService;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.ringbuffer.ReadResultSet;
 import com.hazelcast.ringbuffer.Ringbuffer;
-import com.hazelcast.ringbuffer.StaleSequenceException;
 import com.hazelcast.spi.exception.DistributedObjectDestroyedException;
-import com.hazelcast.spi.serialization.SerializationService;
+import com.hazelcast.topic.Message;
+import com.hazelcast.topic.MessageListener;
 import com.hazelcast.topic.ReliableMessageListener;
 
+import java.util.UUID;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
-
+import java.util.function.BiConsumer;
 
 /**
  * An {@link com.hazelcast.core.ExecutionCallback} that will try to read an
  * item from the ringbuffer or blocks if no item is available. All data
- * that are read is pushed into the {@link com.hazelcast.core.MessageListener}.
+ * that are read is pushed into the {@link MessageListener}.
  * It is a self-perpetuating stream of async calls.
- * <p/>
+ * <p>
  * The runner keeps track of the sequence.
  */
-public abstract class MessageRunner<E> implements ExecutionCallback<ReadResultSet<ReliableTopicMessage>> {
+public abstract class MessageRunner<E> implements BiConsumer<ReadResultSet<ReliableTopicMessage>, Throwable> {
 
     protected final Ringbuffer<ReliableTopicMessage> ringbuffer;
     protected final ILogger logger;
     protected final ReliableMessageListener<E> listener;
     protected final String topicName;
-    protected long sequence;
+    protected volatile long sequence;
     private final SerializationService serializationService;
-    private final ConcurrentMap<String, MessageRunner<E>> runnersMap;
-    private final String id;
+    private final ConcurrentMap<UUID, MessageRunner<E>> runnersMap;
+    private final UUID id;
     private final Executor executor;
-    private final int batchSze;
+    private final int batchSize;
     private volatile boolean cancelled;
 
-    public MessageRunner(String id,
+    public MessageRunner(UUID id,
                          ReliableMessageListener<E> listener,
                          Ringbuffer<ReliableTopicMessage> ringbuffer,
                          String topicName,
-                         int batchSze,
+                         int batchSize,
                          SerializationService serializationService,
                          Executor executor,
-                         ConcurrentMap<String, MessageRunner<E>> runnersMap,
+                         ConcurrentMap<UUID, MessageRunner<E>> runnersMap,
                          ILogger logger) {
         this.id = id;
         this.listener = listener;
@@ -71,7 +70,7 @@ public abstract class MessageRunner<E> implements ExecutionCallback<ReadResultSe
         this.topicName = topicName;
         this.serializationService = serializationService;
         this.logger = logger;
-        this.batchSze = batchSze;
+        this.batchSize = batchSize;
         this.executor = executor;
         this.runnersMap = runnersMap;
 
@@ -87,51 +86,51 @@ public abstract class MessageRunner<E> implements ExecutionCallback<ReadResultSe
         if (cancelled) {
             return;
         }
-
-        ICompletableFuture<ReadResultSet<ReliableTopicMessage>> f =
-                ringbuffer.readManyAsync(sequence, 1, batchSze, null);
-        f.andThen(this, executor);
+        ringbuffer.readManyAsync(sequence, 1, batchSize, null)
+                  .whenCompleteAsync(this, executor);
     }
 
-    // This method is called from the provided executor.
     @Override
-    public void onResponse(ReadResultSet<ReliableTopicMessage> result) {
-        // we process all messages in batch. So we don't release the thread and reschedule ourselves;
-        // but we'll process whatever was received in 1 go.
-        for (Object item : result) {
-            ReliableTopicMessage message = (ReliableTopicMessage) item;
+    public void accept(ReadResultSet<ReliableTopicMessage> result, Throwable throwable) {
+        if (cancelled) {
+            return;
+        }
 
-            if (cancelled) {
+        if (throwable == null) {
+            // we process all messages in batch. So we don't release the thread and reschedule ourselves;
+            // but we'll process whatever was received in 1 go.
+
+            long lostCount = result.getNextSequenceToReadFrom() - result.readCount() - sequence;
+            if (lostCount != 0 && !isLossTolerable(lostCount)) {
+                cancel();
                 return;
             }
 
-            try {
-                listener.storeSequence(sequence);
-                process(message);
-            } catch (Throwable t) {
-                if (terminate(t)) {
-                    cancel();
-                    return;
+            for (int i = 0; i < result.size(); i++) {
+                ReliableTopicMessage message = result.get(i);
+                try {
+                    listener.storeSequence(result.getSequence(i));
+                    listener.onMessage(toMessage(message));
+                } catch (Throwable t) {
+                    if (terminate(t)) {
+                        cancel();
+                        return;
+                    }
                 }
+
             }
 
-            sequence++;
+            sequence = result.getNextSequenceToReadFrom();
+            next();
+        } else {
+            throwable = adjustThrowable(throwable);
+            if (handleInternalException(throwable)) {
+                next();
+            } else {
+                cancel();
+            }
         }
-        next();
     }
-
-    /**
-     * Processes the message by increasing the local topic stats and
-     * calling the user supplied listener.
-     *
-     * @param message the reliable topic message
-     */
-    private void process(ReliableTopicMessage message) {
-        updateStatistics();
-        listener.onMessage(toMessage(message));
-    }
-
-    protected abstract void updateStatistics();
 
     private Message<E> toMessage(ReliableTopicMessage m) {
         Member member = getMember(m);
@@ -140,21 +139,6 @@ public abstract class MessageRunner<E> implements ExecutionCallback<ReadResultSe
     }
 
     protected abstract Member getMember(ReliableTopicMessage m);
-
-    // This method is called from the provided executor.
-    @Override
-    public void onFailure(Throwable t) {
-        if (cancelled) {
-            return;
-        }
-
-        t = adjustThrowable(t);
-        if (handleInternalException(t)) {
-            next();
-        } else {
-            cancel();
-        }
-    }
 
     /**
      * @param t throwable to check if it is terminal or can be handled so that topic can continue
@@ -165,8 +149,6 @@ public abstract class MessageRunner<E> implements ExecutionCallback<ReadResultSe
             return handleOperationTimeoutException();
         } else if (t instanceof IllegalArgumentException) {
             return handleIllegalArgumentException((IllegalArgumentException) t);
-        } else if (t instanceof StaleSequenceException) {
-            return handleStaleSequenceException((StaleSequenceException) t);
         } else if (t instanceof HazelcastInstanceNotActiveException) {
             if (logger.isFinestEnabled()) {
                 logger.finest("Terminating MessageListener " + listener + " on topic: " + topicName + ". "
@@ -201,33 +183,26 @@ public abstract class MessageRunner<E> implements ExecutionCallback<ReadResultSe
     protected abstract Throwable adjustThrowable(Throwable t);
 
     /**
-     * Handles a {@link StaleSequenceException} associated with requesting
-     * a sequence older than the {@code headSequence}.
-     * This may indicate that the reader was too slow and items in the
-     * ringbuffer were already overwritten.
+     * Called when message loss is detected. Checks if the listener is able
+     * to tolerate the loss.
      *
-     * @param staleSequenceException the exception
-     * @return if the exception was handled and the listener may continue reading
+     * @param lossCount number of lost messages
+     * @return if the listener may continue reading
      */
-    private boolean handleStaleSequenceException(StaleSequenceException staleSequenceException) {
-        long headSeq = getHeadSequence(staleSequenceException);
+    private boolean isLossTolerable(long lossCount) {
         if (listener.isLossTolerant()) {
             if (logger.isFinestEnabled()) {
-                logger.finest("MessageListener " + listener + " on topic: " + topicName + " ran into a stale sequence. "
-                        + "Jumping from oldSequence: " + sequence
-                        + " to sequence: " + headSeq);
+                logger.finest("MessageListener " + listener + " on topic: " + topicName + " lost " + lossCount
+                        + "messages");
             }
-            sequence = headSeq;
             return true;
         }
 
         logger.warning("Terminating MessageListener:" + listener + " on topic: " + topicName + ". "
                 + "Reason: The listener was too slow or the retention period of the message has been violated. "
-                + "head: " + headSeq + " sequence:" + sequence);
+                + lossCount + " messages lost.");
         return false;
     }
-
-    protected abstract long getHeadSequence(StaleSequenceException staleSequenceException);
 
     /**
      * Handles the {@link IllegalArgumentException} associated with requesting

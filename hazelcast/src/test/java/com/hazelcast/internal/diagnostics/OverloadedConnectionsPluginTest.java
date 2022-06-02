@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,13 @@ package com.hazelcast.internal.diagnostics;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
+import com.hazelcast.internal.nio.Packet;
 import com.hazelcast.internal.serialization.InternalSerializationService;
+import com.hazelcast.map.IMap;
 import com.hazelcast.map.impl.operation.GetOperation;
-import com.hazelcast.nio.Packet;
 import com.hazelcast.spi.impl.operationservice.impl.DummyOperation;
 import com.hazelcast.spi.impl.operationservice.impl.operations.Backup;
-import com.hazelcast.spi.properties.GroupProperty;
+import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.annotation.SlowTest;
@@ -35,6 +35,9 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
+import static com.hazelcast.test.Accessors.getAddress;
+import static com.hazelcast.test.Accessors.getNodeEngineImpl;
+import static com.hazelcast.test.Accessors.getSerializationService;
 import static org.junit.Assert.assertEquals;
 
 /**
@@ -59,7 +62,7 @@ public class OverloadedConnectionsPluginTest extends AbstractDiagnosticsPluginTe
                 .setProperty(OverloadedConnectionsPlugin.PERIOD_SECONDS.getName(), "1")
                 .setProperty(OverloadedConnectionsPlugin.SAMPLES.getName(), "10")
                 .setProperty(OverloadedConnectionsPlugin.THRESHOLD.getName(), "2")
-                .setProperty(GroupProperty.IO_OUTPUT_THREAD_COUNT.getName(), "1");
+                .setProperty(ClusterProperty.IO_OUTPUT_THREAD_COUNT.getName(), "1");
 
         local = Hazelcast.newHazelcastInstance(config);
         serializationService = getSerializationService(local);

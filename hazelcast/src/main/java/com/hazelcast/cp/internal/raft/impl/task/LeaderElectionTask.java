@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.cp.internal.raft.impl.task;
 
-import com.hazelcast.core.Endpoint;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 import com.hazelcast.cp.internal.raft.impl.RaftNodeImpl;
 import com.hazelcast.cp.internal.raft.impl.dto.VoteRequest;
 import com.hazelcast.cp.internal.raft.impl.handler.PreVoteResponseHandlerTask;
@@ -26,8 +26,8 @@ import com.hazelcast.cp.internal.raft.impl.state.RaftState;
  * LeaderElectionTask is scheduled when current leader is null, unreachable
  * or unknown by {@link PreVoteResponseHandlerTask} after a follower receives
  * votes from at least majority. Local member becomes a candidate using
- * {@link RaftState#toCandidate()} and sends {@link VoteRequest}s to other
- * members.
+ * {@link RaftState#toCandidate(boolean)} and sends {@link VoteRequest}s to
+ * other members.
  * <p>
  * Also a {@link LeaderElectionTimeoutTask} is scheduled with a
  * {@link RaftNodeImpl#getLeaderElectionTimeoutInMillis()} delay to trigger
@@ -35,8 +35,11 @@ import com.hazelcast.cp.internal.raft.impl.state.RaftState;
  */
 public class LeaderElectionTask extends RaftNodeStatusAwareTask implements Runnable {
 
-    public LeaderElectionTask(RaftNodeImpl raftNode) {
+    private boolean disruptive;
+
+    public LeaderElectionTask(RaftNodeImpl raftNode, boolean disruptive) {
         super(raftNode);
+        this.disruptive = disruptive;
     }
 
     @Override
@@ -48,12 +51,12 @@ public class LeaderElectionTask extends RaftNodeStatusAwareTask implements Runna
             return;
         }
 
-        VoteRequest request = state.toCandidate();
+        VoteRequest request = state.toCandidate(disruptive);
         logger.info("Leader election started for term: " + request.term() + ", last log index: " + request.lastLogIndex()
                 + ", last log term: " + request.lastLogTerm());
         raftNode.printMemberState();
 
-        for (Endpoint endpoint : state.remoteMembers()) {
+        for (RaftEndpoint endpoint : state.remoteMembers()) {
             raftNode.send(request, endpoint);
         }
 

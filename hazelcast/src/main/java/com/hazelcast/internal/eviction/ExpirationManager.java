@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,17 +21,18 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.LifecycleEvent;
 import com.hazelcast.core.LifecycleListener;
 import com.hazelcast.core.LifecycleService;
-import com.hazelcast.core.PartitionService;
 import com.hazelcast.partition.PartitionLostEvent;
 import com.hazelcast.partition.PartitionLostListener;
-import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.spi.TaskScheduler;
+import com.hazelcast.partition.PartitionService;
+import com.hazelcast.spi.impl.NodeEngine;
+import com.hazelcast.spi.impl.executionservice.TaskScheduler;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
+import java.util.UUID;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static com.hazelcast.util.Preconditions.checkPositive;
+import static com.hazelcast.internal.util.Preconditions.checkPositive;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
@@ -44,8 +45,8 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 public final class ExpirationManager implements LifecycleListener, PartitionLostListener {
 
     private final int taskPeriodSeconds;
-    private final String lifecycleListenerId;
-    private final String partitionLostListenerId;
+    private final UUID lifecycleListenerId;
+    private final UUID partitionLostListenerId;
     private final NodeEngine nodeEngine;
     private final ClearExpiredRecordsTask task;
     private final TaskScheduler globalTaskScheduler;
@@ -65,8 +66,7 @@ public final class ExpirationManager implements LifecycleListener, PartitionLost
         this.task = task;
         this.nodeEngine = nodeEngine;
         this.globalTaskScheduler = nodeEngine.getExecutionService().getGlobalTaskScheduler();
-        this.taskPeriodSeconds = checkPositive(task.getTaskPeriodSeconds(),
-                "taskPeriodSeconds should be a positive number");
+        this.taskPeriodSeconds = checkPositive("taskPeriodSeconds", task.getTaskPeriodSeconds());
 
         this.lifecycleService = getHazelcastInstance().getLifecycleService();
         this.lifecycleListenerId = lifecycleService.addLifecycleListener(this);
@@ -83,7 +83,7 @@ public final class ExpirationManager implements LifecycleListener, PartitionLost
      * Calling this method multiple times has same effect.
      */
     public void scheduleExpirationTask() {
-        if (nodeEngine.getLocalMember().isLiteMember() || scheduled.get()
+        if (!task.isCleanupEnabled() || nodeEngine.getLocalMember().isLiteMember() || scheduled.get()
                 || !scheduled.compareAndSet(false, true)) {
             return;
         }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,35 +16,39 @@
 
 package com.hazelcast.map;
 
-import com.hazelcast.concurrent.lock.LockService;
-import com.hazelcast.concurrent.lock.LockServiceImpl;
-import com.hazelcast.concurrent.lock.LockStoreContainer;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
+import com.hazelcast.internal.locksupport.LockStoreContainer;
+import com.hazelcast.internal.locksupport.LockStoreImpl;
+import com.hazelcast.internal.locksupport.LockSupportService;
+import com.hazelcast.internal.locksupport.LockSupportServiceImpl;
+import com.hazelcast.jet.impl.JobRepository;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.NightlyTest;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import com.hazelcast.transaction.TransactionException;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
+import java.util.Collection;
 import java.util.Random;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
+import static com.hazelcast.test.Accessors.getNodeEngineImpl;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class MapLockTest extends HazelcastTestSupport {
 
     @Test
@@ -176,26 +180,24 @@ public class MapLockTest extends HazelcastTestSupport {
             map.lock(i);
         }
 
-        final HazelcastInstance instance2 = nodeFactory.newHazelcastInstance(config);
-        final HazelcastInstance instance3 = nodeFactory.newHazelcastInstance(config);
+        nodeFactory.newHazelcastInstance(config);
+        nodeFactory.newHazelcastInstance(config);
         Thread.sleep(3000);
         final CountDownLatch latch = new CountDownLatch(1000);
-        Thread t = new Thread(new Runnable() {
-            public void run() {
-                for (int i = 0; i < 1000; i++) {
-                    if (map.isLocked(i)) {
-                        latch.countDown();
-                    }
+        Thread t = new Thread(() -> {
+            for (int i = 0; i < 1000; i++) {
+                if (map.isLocked(i)) {
+                    latch.countDown();
                 }
             }
         });
         t.start();
-        assertTrue(latch.await(10, TimeUnit.SECONDS));
+        assertTrue(latch.await(15, TimeUnit.SECONDS));
     }
 
     @Category(NightlyTest.class)
     @Test
-    public void testLockEvictionWithMigration() throws Exception {
+    public void testLockEvictionWithMigration() {
         final TestHazelcastInstanceFactory nodeFactory = createHazelcastInstanceFactory(3);
         final Config config = getConfig();
         final HazelcastInstance instance1 = nodeFactory.newHazelcastInstance(config);
@@ -273,8 +275,8 @@ public class MapLockTest extends HazelcastTestSupport {
         final String val = "val";
 
         final int TTL_SEC = 1;
-        map.put(key, val, TTL_SEC, TimeUnit.SECONDS);
         map.lock(key);
+        map.put(key, val, TTL_SEC, TimeUnit.SECONDS);
 
         sleepSeconds(TTL_SEC * 2);
 
@@ -386,11 +388,15 @@ public class MapLockTest extends HazelcastTestSupport {
         map.destroy();
 
         NodeEngineImpl nodeEngine = getNodeEngineImpl(instance);
-        LockServiceImpl lockService = nodeEngine.getService(LockService.SERVICE_NAME);
+        LockSupportServiceImpl lockService = nodeEngine.getService(LockSupportService.SERVICE_NAME);
         int partitionCount = nodeEngine.getPartitionService().getPartitionCount();
         for (int i = 0; i < partitionCount; i++) {
             LockStoreContainer lockContainer = lockService.getLockContainer(i);
-            assertEquals("LockStores should be empty", 0, lockContainer.getLockStores().size());
+            Collection<LockStoreImpl> lockStores = lockContainer.getLockStores()
+                    .stream()
+                    .filter(s -> !s.getNamespace().getObjectName().startsWith(JobRepository.INTERNAL_JET_OBJECTS_PREFIX))
+                    .collect(Collectors.toList());
+            assertEquals("LockStores should be empty", 0, lockStores.size());
         }
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,7 @@
 
 package com.hazelcast.config.replacer;
 
-import com.hazelcast.nio.IOUtil;
-import com.hazelcast.util.Base64;
+import com.hazelcast.internal.nio.IOUtil;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -25,7 +24,6 @@ import org.w3c.dom.NodeList;
 
 import javax.xml.namespace.NamespaceContext;
 import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathException;
@@ -34,18 +32,20 @@ import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
 import java.net.NetworkInterface;
 import java.net.SocketException;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Enumeration;
 import java.util.Iterator;
 import java.util.Properties;
 
-import static com.hazelcast.config.DomConfigHelper.childElements;
-import static com.hazelcast.config.DomConfigHelper.cleanNodeName;
-import static com.hazelcast.nio.IOUtil.closeResource;
-import static com.hazelcast.util.ExceptionUtil.rethrow;
-import static com.hazelcast.util.Preconditions.checkFalse;
-import static com.hazelcast.util.Preconditions.checkPositive;
-import static com.hazelcast.util.StringUtil.UTF8_CHARSET;
-import static com.hazelcast.util.StringUtil.trim;
+import static com.hazelcast.internal.config.DomConfigHelper.childElements;
+import static com.hazelcast.internal.config.DomConfigHelper.cleanNodeName;
+import static com.hazelcast.internal.nio.IOUtil.closeResource;
+import static com.hazelcast.internal.util.ExceptionUtil.rethrow;
+import static com.hazelcast.internal.util.Preconditions.checkFalse;
+import static com.hazelcast.internal.util.Preconditions.checkPositive;
+import static com.hazelcast.internal.util.StringUtil.trim;
+import static com.hazelcast.internal.util.XmlUtil.getNsAwareDocumentBuilderFactory;
 import static java.lang.String.format;
 
 /**
@@ -111,8 +111,8 @@ public class EncryptionReplacer extends AbstractPbeReplacer {
                 }
             }
             if (passwordUserProperties) {
-                baos.write(System.getProperty("user.home").getBytes(UTF8_CHARSET));
-                baos.write(System.getProperty("user.name").getBytes(UTF8_CHARSET));
+                baos.write(System.getProperty("user.home").getBytes(StandardCharsets.UTF_8));
+                baos.write(System.getProperty("user.name").getBytes(StandardCharsets.UTF_8));
             }
             if (passwordNetworkInterface != null) {
                 try {
@@ -122,7 +122,7 @@ public class EncryptionReplacer extends AbstractPbeReplacer {
                     throw rethrow(e);
                 }
             }
-            return new String(Base64.encode(baos.toByteArray()), UTF8_CHARSET).toCharArray();
+            return new String(Base64.getEncoder().encode(baos.toByteArray()), StandardCharsets.UTF_8).toCharArray();
         } catch (Exception e) {
             throw rethrow(e);
         }
@@ -177,10 +177,7 @@ public class EncryptionReplacer extends AbstractPbeReplacer {
 
     private static Properties loadPropertiesFromConfig(FileInputStream fileInputStream) throws Exception {
         try {
-            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-            dbf.setNamespaceAware(true);
-            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            DocumentBuilder builder = dbf.newDocumentBuilder();
+            DocumentBuilder builder = getNsAwareDocumentBuilderFactory().newDocumentBuilder();
             Document doc = builder.parse(fileInputStream);
             Element root = doc.getDocumentElement();
             return loadProperties(findReplacerDefinition(root));

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,25 +16,26 @@
 
 package com.hazelcast.spi.impl.operationparker.impl;
 
-import com.hazelcast.instance.MemberImpl;
-import com.hazelcast.instance.Node;
-import com.hazelcast.internal.metrics.MetricsProvider;
+import com.hazelcast.cluster.impl.MemberImpl;
+import com.hazelcast.instance.impl.Node;
 import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.internal.metrics.Probe;
+import com.hazelcast.internal.metrics.StaticMetricsProvider;
 import com.hazelcast.internal.partition.MigrationInfo;
+import com.hazelcast.internal.util.ConstructorFunction;
+import com.hazelcast.internal.util.executor.SingleExecutorThreadFactory;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.spi.BlockingOperation;
-import com.hazelcast.spi.LiveOperations;
-import com.hazelcast.spi.LiveOperationsTracker;
-import com.hazelcast.spi.Notifier;
-import com.hazelcast.spi.WaitNotifyKey;
 import com.hazelcast.spi.exception.PartitionMigratingException;
 import com.hazelcast.spi.exception.TargetDisconnectedException;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.impl.operationparker.OperationParker;
-import com.hazelcast.util.ConstructorFunction;
-import com.hazelcast.util.executor.SingleExecutorThreadFactory;
+import com.hazelcast.spi.impl.operationservice.BlockingOperation;
+import com.hazelcast.spi.impl.operationservice.LiveOperations;
+import com.hazelcast.spi.impl.operationservice.LiveOperationsTracker;
+import com.hazelcast.spi.impl.operationservice.Notifier;
+import com.hazelcast.spi.impl.operationservice.WaitNotifyKey;
 
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.DelayQueue;
@@ -42,11 +43,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
-import static com.hazelcast.util.ConcurrencyUtil.getOrPutIfAbsent;
-import static com.hazelcast.util.ThreadUtil.createThreadName;
+import static com.hazelcast.internal.metrics.MetricDescriptorConstants.OPERATION_METRIC_PARKER_PARK_QUEUE_COUNT;
+import static com.hazelcast.internal.metrics.MetricDescriptorConstants.OPERATION_METRIC_PARKER_TOTAL_PARKED_OPERATION_COUNT;
+import static com.hazelcast.internal.metrics.MetricDescriptorConstants.OPERATION_PREFIX_PARKER;
+import static com.hazelcast.internal.util.ConcurrencyUtil.getOrPutIfAbsent;
+import static com.hazelcast.internal.util.ThreadUtil.createThreadName;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
-public class OperationParkerImpl implements OperationParker, LiveOperationsTracker, MetricsProvider {
+public class OperationParkerImpl implements OperationParker, LiveOperationsTracker, StaticMetricsProvider {
 
     private static final long FIRST_WAIT_TIME = 1000;
 
@@ -75,8 +79,8 @@ public class OperationParkerImpl implements OperationParker, LiveOperationsTrack
     }
 
     @Override
-    public void provideMetrics(MetricsRegistry registry) {
-        registry.scanAndRegister(this, "operation-parker");
+    public void provideStaticMetrics(MetricsRegistry registry) {
+        registry.registerStaticMetrics(this, OPERATION_PREFIX_PARKER);
     }
 
     @Override
@@ -86,7 +90,7 @@ public class OperationParkerImpl implements OperationParker, LiveOperationsTrack
         }
     }
 
-     // Runs in operation thread, we can assume that
+    // Runs in operation thread, we can assume that
     // here we have an implicit lock for specific WaitNotifyKey.
     // see javadoc
     @Override
@@ -107,12 +111,12 @@ public class OperationParkerImpl implements OperationParker, LiveOperationsTrack
         }
     }
 
-    @Probe
+    @Probe(name = OPERATION_METRIC_PARKER_PARK_QUEUE_COUNT)
     public int getParkQueueCount() {
         return waitSetMap.size();
     }
 
-    @Probe
+    @Probe(name = OPERATION_METRIC_PARKER_TOTAL_PARKED_OPERATION_COUNT)
     public int getTotalParkedOperationCount() {
         int count = 0;
         for (WaitSet waitSet : waitSetMap.values()) {
@@ -137,7 +141,7 @@ public class OperationParkerImpl implements OperationParker, LiveOperationsTrack
         }
     }
 
-    public void onClientDisconnected(String clientUuid) {
+    public void onClientDisconnected(UUID clientUuid) {
         for (WaitSet waitSet : waitSetMap.values()) {
             waitSet.cancelAll(clientUuid, new TargetDisconnectedException("Client disconnected: " + clientUuid));
         }
@@ -173,7 +177,7 @@ public class OperationParkerImpl implements OperationParker, LiveOperationsTrack
     public void shutdown() {
         logger.finest("Stopping tasks...");
         expirationTaskFuture.cancel(true);
-        expirationExecutor.shutdown();
+        expirationExecutor.shutdownNow();
         for (WaitSet waitSet : waitSetMap.values()) {
             waitSet.onShutdown();
         }

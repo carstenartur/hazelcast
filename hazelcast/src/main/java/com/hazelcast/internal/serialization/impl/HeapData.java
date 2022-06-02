@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,15 @@
 
 package com.hazelcast.internal.serialization.impl;
 
-import com.hazelcast.nio.Bits;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.util.HashUtil;
+import com.hazelcast.internal.nio.Bits;
+import com.hazelcast.internal.serialization.Data;
+import com.hazelcast.internal.util.HashUtil;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.util.Arrays;
 
-import static com.hazelcast.util.JVMUtil.REFERENCE_COST_IN_BYTES;
+import static com.hazelcast.internal.util.JVMUtil.OBJECT_HEADER_SIZE;
+import static com.hazelcast.internal.util.JVMUtil.REFERENCE_COST_IN_BYTES;
 
 /**
  * A {@link Data} implementation where the content lives on the heap.
@@ -99,7 +100,9 @@ public class HeapData implements Data {
 
     @Override
     public int getHeapCost() {
-        return REFERENCE_COST_IN_BYTES + (payload != null ? ARRAY_HEADER_SIZE_IN_BYTES + payload.length : 0);
+        return OBJECT_HEADER_SIZE
+                + REFERENCE_COST_IN_BYTES
+                + (payload != null ? ARRAY_HEADER_SIZE_IN_BYTES + payload.length : 0);
     }
 
     @Override
@@ -165,6 +168,11 @@ public class HeapData implements Data {
     @Override
     public boolean isJson() {
         return SerializationConstants.JAVASCRIPT_JSON_SERIALIZATION_TYPE == getType();
+    }
+
+    @Override
+    public boolean isCompact() {
+        return SerializationConstants.TYPE_COMPACT == getType();
     }
 
     @Override

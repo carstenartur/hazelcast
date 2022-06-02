@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,9 +23,9 @@ package com.hazelcast.internal.networking;
  * ChannelHandlers are not expected to be thread-safe.
  *
  * @param <S> the type of the source. E.g. a ByteBuffer or
- *            a {@link com.hazelcast.util.function.Supplier}.
+ *            a {@link java.util.function.Supplier}.
  * @param <D> the type of the destination. E.g. a ByteBuffer
- *            or a {@link com.hazelcast.util.function.Consumer}.
+ *            or a {@link java.util.function.Consumer}.
  */
 public abstract class ChannelHandler<H extends ChannelHandler, S, D> {
 
@@ -117,8 +117,8 @@ public abstract class ChannelHandler<H extends ChannelHandler, S, D> {
      * The default implementation doesn't do anything and the original
      * {@link Throwable} is send to the {@link ChannelErrorHandler}.
      *
-     * However in some cases like with TLS a more informative exception
-     * needs to be thrown. To prevent loosing stacktraces, it is best to
+     * However, in some cases like with TLS a more informative exception
+     * needs to be thrown. To prevent losing the stacktrace, it is best to
      * include the original Throwable as cause in the new Throwable.
      *
      * This method will only be called from the thread owning the pipeline

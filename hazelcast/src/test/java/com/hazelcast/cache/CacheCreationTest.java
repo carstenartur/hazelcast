@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@
 
 package com.hazelcast.cache;
 
-import com.hazelcast.cache.impl.CacheService;
-import com.hazelcast.cache.impl.HazelcastServerCachingProvider;
 import com.hazelcast.cache.jsr.JsrTestUtil;
 import com.hazelcast.config.CacheConfig;
 import com.hazelcast.config.CacheSimpleConfig;
@@ -27,10 +25,8 @@ import com.hazelcast.config.EvictionPolicy;
 import com.hazelcast.config.InMemoryFormat;
 import com.hazelcast.config.JoinConfig;
 import com.hazelcast.config.XmlConfigBuilder;
-import com.hazelcast.core.DistributedObject;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.nio.ClassLoaderUtil;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.SlowTest;
@@ -51,13 +47,14 @@ import java.io.InputStream;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import static com.hazelcast.config.EvictionConfig.MaxSizePolicy.ENTRY_COUNT;
+import static com.hazelcast.cache.CacheTestSupport.createServerCachingProvider;
+import static com.hazelcast.config.MaxSizePolicy.ENTRY_COUNT;
 import static java.util.Collections.singletonList;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assume.assumeFalse;
 
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(SlowTest.class)
@@ -83,6 +80,45 @@ public class CacheCreationTest extends HazelcastTestSupport {
         CachingProvider cachingProvider = createCachingProvider(getDeclarativeConfig());
         Cache<Object, Object> cache = cachingProvider.getCacheManager().getCache("xmlCache" + 1);
         cache.get(1);
+    }
+
+    @Test
+    public void concurrentCacheCreation() throws InterruptedException {
+        // see https://github.com/hazelcast/hazelcast/issues/17284
+        String cacheName = "myCache";
+        int threadCount = Runtime.getRuntime().availableProcessors() * 20;
+        Config config = new Config().addCacheConfig(new CacheSimpleConfig().setName(cacheName));
+        CacheManager cacheManager = createCachingProvider(config).getCacheManager();
+
+        CountDownLatch startLatch = new CountDownLatch(1);
+        AtomicInteger errorCounter = new AtomicInteger();
+        Runnable getCache = () -> {
+            try {
+                startLatch.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            try {
+                Cache<?, ?> cache = cacheManager.getCache(cacheName);
+                if (cache == null) {
+                    System.out.println("getCache() returned null!");
+                    errorCounter.incrementAndGet();
+                }
+            } catch (Throwable t) {
+                t.printStackTrace();
+                errorCounter.incrementAndGet();
+            }
+        };
+        ExecutorService executorService = Executors.newFixedThreadPool(threadCount);
+        for (int i = 0; i < threadCount; i++) {
+            executorService.submit(getCache);
+        }
+        // start all threads at once
+        startLatch.countDown();
+
+        executorService.shutdown();
+        executorService.awaitTermination(1, TimeUnit.MINUTES);
+        assertEquals(0, errorCounter.get());
     }
 
     @Test
@@ -154,18 +190,6 @@ public class CacheCreationTest extends HazelcastTestSupport {
         cachingProvider.getCacheManager();
     }
 
-    // test special Cache proxy creation, required for compatibility with 3.6 clients
-    // should be removed in 4.0
-    @Test
-    public void test_createSetupRef() {
-        assumeFalse("test_createSetupRef is only applicable for Hazelcast members",
-                ClassLoaderUtil.isClassAvailable(null, "com.hazelcast.client.HazelcastClient"));
-        HazelcastInstance hz = Hazelcast.newHazelcastInstance();
-        DistributedObject setupRef = HazelcastTestSupport.getNodeEngineImpl(hz).getProxyService()
-                .getDistributedObject(CacheService.SERVICE_NAME, "setupRef");
-        assertNotNull(setupRef);
-    }
-
     @Test
     public void getExistingCache_onNewCacheManager_afterManagerClosed() {
         CachingProvider provider = Caching.getCachingProvider();
@@ -204,7 +228,7 @@ public class CacheCreationTest extends HazelcastTestSupport {
 
     protected CachingProvider createCachingProvider(Config hzConfig) {
         HazelcastInstance hazelcastInstance = Hazelcast.newHazelcastInstance(hzConfig);
-        return HazelcastServerCachingProvider.createCachingProvider(hazelcastInstance);
+        return createServerCachingProvider(hazelcastInstance);
     }
 
     private Config getDeclarativeConfig() {
@@ -218,7 +242,8 @@ public class CacheCreationTest extends HazelcastTestSupport {
         CacheSimpleConfig cacheSimpleConfig = new CacheSimpleConfig()
                 .setName("test")
                 .setInMemoryFormat(InMemoryFormat.NATIVE)
-                .setEvictionConfig(new EvictionConfig(1000, ENTRY_COUNT, EvictionPolicy.LFU));
+                .setEvictionConfig(new EvictionConfig().setSize(1000)
+                        .setMaxSizePolicy(ENTRY_COUNT).setEvictionPolicy(EvictionPolicy.LFU));
 
         return createBasicConfig()
                 .addCacheConfig(cacheSimpleConfig);
@@ -227,7 +252,10 @@ public class CacheCreationTest extends HazelcastTestSupport {
     private CacheConfig createInvalidCacheConfig() {
         return new CacheConfig("test")
                 .setInMemoryFormat(InMemoryFormat.NATIVE)
-                .setEvictionConfig(new EvictionConfig(1000, ENTRY_COUNT, EvictionPolicy.LFU));
+                .setEvictionConfig(new EvictionConfig()
+                        .setSize(1000)
+                        .setMaxSizePolicy(ENTRY_COUNT)
+                        .setEvictionPolicy(EvictionPolicy.LFU));
     }
 
     protected Config createBasicConfig() {

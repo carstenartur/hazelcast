@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,11 @@
 
 package com.hazelcast.internal.partition.operation;
 
-import com.hazelcast.core.Member;
+import com.hazelcast.cluster.Address;
+import com.hazelcast.cluster.Member;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
+import com.hazelcast.internal.partition.ChunkSerDeHelper;
+import com.hazelcast.internal.partition.ChunkSupplier;
 import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.internal.partition.PartitionReplica;
 import com.hazelcast.internal.partition.ReplicaErrorLogger;
@@ -26,34 +29,38 @@ import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
 import com.hazelcast.internal.partition.impl.PartitionDataSerializerHook;
 import com.hazelcast.internal.partition.impl.PartitionReplicaManager;
 import com.hazelcast.internal.partition.impl.PartitionStateManager;
+import com.hazelcast.internal.services.ServiceNamespace;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.impl.Versioned;
-import com.hazelcast.spi.BackupOperation;
-import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.OperationResponseHandler;
-import com.hazelcast.spi.PartitionAwareOperation;
-import com.hazelcast.spi.ServiceNamespace;
-import com.hazelcast.spi.UrgentSystemOperation;
 import com.hazelcast.spi.exception.WrongTargetException;
 import com.hazelcast.spi.impl.AllowedDuringPassiveState;
+import com.hazelcast.spi.impl.NodeEngine;
+import com.hazelcast.spi.impl.operationservice.BackupOperation;
+import com.hazelcast.spi.impl.operationservice.Operation;
+import com.hazelcast.spi.impl.operationservice.OperationResponseHandler;
+import com.hazelcast.spi.impl.operationservice.PartitionAwareOperation;
 import com.hazelcast.spi.impl.operationservice.TargetAware;
+import com.hazelcast.spi.impl.operationservice.UrgentSystemOperation;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.logging.Level;
 
-import static com.hazelcast.spi.impl.OperationResponseHandlerFactory.createErrorLoggingResponseHandler;
+import static com.hazelcast.internal.partition.ChunkSerDeHelper.readChunkedOperations;
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.readNullableCollection;
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.writeNullableCollection;
+import static com.hazelcast.spi.impl.operationexecutor.OperationRunner.runDirect;
+import static com.hazelcast.spi.impl.operationservice.OperationResponseHandlerFactory.createErrorLoggingResponseHandler;
 
 /**
- * The replica synchronization response sent from the partition owner to a replica. It will execute the received operation
- * list if the replica index hasn't changed. If the current replica index is not the one sent by the partition owner, it will :
+ * The replica synchronization response sent from the partition
+ * owner to a replica. It will execute the received operation list
+ * if the replica index hasn't changed. If the current replica
+ * index is not the one sent by the partition owner, it will :
  * <ul>
  * <li>fail all received operations</li>
  * <li>cancel the current replica sync request</li>
@@ -61,24 +68,33 @@ import static com.hazelcast.spi.impl.OperationResponseHandlerFactory.createError
  * <li>if the node is not a replica anymore it will clear the replica versions for the partition</li>
  * </ul>
  */
-// RU_COMPAT_39: Do not remove Versioned interface!
-// Version info is needed on 3.9 members while deserializing the operation.
 @SuppressFBWarnings("EI_EXPOSE_REP")
 public class PartitionReplicaSyncResponse extends AbstractPartitionOperation
         implements PartitionAwareOperation, BackupOperation, UrgentSystemOperation,
-        AllowedDuringPassiveState, Versioned, TargetAware {
+        AllowedDuringPassiveState, TargetAware, Versioned {
 
     private Collection<Operation> operations;
     private ServiceNamespace namespace;
     private long[] versions;
 
+    private transient ChunkSerDeHelper chunkSerDeHelper;
+
     public PartitionReplicaSyncResponse() {
     }
 
-    public PartitionReplicaSyncResponse(Collection<Operation> operations, ServiceNamespace namespace, long[] versions) {
+    public PartitionReplicaSyncResponse(Collection<Operation> operations,
+                                        Collection<ChunkSupplier> chunkSuppliers,
+                                        ServiceNamespace namespace,
+                                        long[] versions,
+                                        boolean chunkedMigrationEnabled,
+                                        int maxTotalChunkedDataInBytes,
+                                        ILogger logger,
+                                        int partitionId) {
         this.operations = operations;
         this.namespace = namespace;
         this.versions = versions;
+        this.chunkSerDeHelper = new ChunkSerDeHelper(logger, partitionId,
+                chunkSuppliers, chunkedMigrationEnabled, maxTotalChunkedDataInBytes);
     }
 
     @Override
@@ -120,7 +136,9 @@ public class PartitionReplicaSyncResponse extends AbstractPartitionOperation
         }
     }
 
-    /** Fail all replication operations with the exception that this node is no longer the replica with the sent index */
+    /**
+     * Fail all replication operations with the exception that this node is no longer the replica with the sent index
+     */
     private void nodeNotOwnsBackup(InternalPartitionImpl partition) {
         int partitionId = getPartitionId();
         int replicaIndex = getReplicaIndex();
@@ -158,9 +176,7 @@ public class PartitionReplicaSyncResponse extends AbstractPartitionOperation
             for (Operation op : operations) {
                 prepareOperation(op);
                 try {
-                    op.beforeRun();
-                    op.run();
-                    op.afterRun();
+                    runDirect(op);
                 } catch (Throwable e) {
                     onOperationFailure(op, e);
                     logException(op, e);
@@ -209,7 +225,6 @@ public class PartitionReplicaSyncResponse extends AbstractPartitionOperation
                     + ", versions=" + Arrays.toString(versions));
         }
     }
-
 
     @Override
     public boolean returnsResponse() {
@@ -264,29 +279,16 @@ public class PartitionReplicaSyncResponse extends AbstractPartitionOperation
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         out.writeObject(namespace);
         out.writeLongArray(versions);
-
-        int size = operations != null ? operations.size() : 0;
-        out.writeInt(size);
-        if (size > 0) {
-            for (Operation task : operations) {
-                out.writeObject(task);
-            }
-        }
+        writeNullableCollection(operations, out);
+        chunkSerDeHelper.writeChunkedOperations(out);
     }
 
     @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
         namespace = in.readObject();
         versions = in.readLongArray();
-
-        int size = in.readInt();
-        if (size > 0) {
-            operations = new ArrayList<Operation>(size);
-            for (int i = 0; i < size; i++) {
-                Operation op = in.readObject();
-                operations.add(op);
-            }
-        }
+        operations = readNullableCollection(in);
+        operations = readChunkedOperations(in, operations);
     }
 
     @Override
@@ -298,7 +300,7 @@ public class PartitionReplicaSyncResponse extends AbstractPartitionOperation
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return PartitionDataSerializerHook.REPLICA_SYNC_RESPONSE;
     }
 }

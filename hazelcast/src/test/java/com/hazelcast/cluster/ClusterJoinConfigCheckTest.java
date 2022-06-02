@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,8 @@ package com.hazelcast.cluster;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.instance.HazelcastInstanceFactory;
-import com.hazelcast.instance.TestUtil;
+import com.hazelcast.instance.impl.HazelcastInstanceFactory;
+import com.hazelcast.instance.impl.TestUtil;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.OverridePropertyRule;
 import com.hazelcast.test.annotation.QuickTest;
@@ -67,10 +67,10 @@ public class ClusterJoinConfigCheckTest {
 
     private void whenDifferentGroups_thenDifferentClustersAreFormed(boolean tcp) {
         Config config1 = new Config();
-        config1.getGroupConfig().setName("group1");
+        config1.setClusterName("group1");
 
         Config config2 = new Config();
-        config2.getGroupConfig().setName("group2");
+        config2.setClusterName("group2");
 
         if (tcp) {
             enableTcp(config1);

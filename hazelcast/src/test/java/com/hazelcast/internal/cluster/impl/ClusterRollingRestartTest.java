@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,18 @@
 
 package com.hazelcast.internal.cluster.impl;
 
+import com.hazelcast.cluster.Address;
 import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.nio.Address;
-import com.hazelcast.test.HazelcastParametersRunnerFactory;
+import com.hazelcast.test.HazelcastParallelParametersRunnerFactory;
+import com.hazelcast.test.HazelcastParametrizedRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameter;
 import org.junit.runners.Parameterized.Parameters;
 import org.junit.runners.Parameterized.UseParametersRunnerFactory;
@@ -36,10 +36,11 @@ import java.util.Arrays;
 import java.util.Collection;
 
 import static com.hazelcast.internal.cluster.impl.AdvancedClusterStateTest.changeClusterStateEventually;
+import static com.hazelcast.test.Accessors.getNode;
 
-@RunWith(Parameterized.class)
-@UseParametersRunnerFactory(HazelcastParametersRunnerFactory.class)
-@Category({QuickTest.class, ParallelTest.class})
+@RunWith(HazelcastParametrizedRunner.class)
+@UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class ClusterRollingRestartTest extends HazelcastTestSupport {
 
     @Parameters(name = "clusterState:{0},partitionAssignmentType:{1}")
@@ -62,9 +63,9 @@ public class ClusterRollingRestartTest extends HazelcastTestSupport {
 
     @Test
     public void test_rollingRestart() {
-        final TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
-        final int nodeCount = 3;
-        final HazelcastInstance[] instances = new HazelcastInstance[nodeCount];
+        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
+        int nodeCount = 3;
+        HazelcastInstance[] instances = new HazelcastInstance[nodeCount];
         instances[0] = factory.newHazelcastInstance();
 
         if (partitionAssignmentType == PartitionAssignmentType.DURING_STARTUP) {

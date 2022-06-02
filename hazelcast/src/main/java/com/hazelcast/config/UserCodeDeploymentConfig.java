@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,19 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.cluster.Member;
+
+import java.util.Objects;
+
 /**
- * Configuration of User Code Deployment. When enabled it allows Hazelcast members to load classes from other cluster
- * members. This simplifies deployment as you do not have to deploy your domain classes into classpath of all
+ * Configuration of User Code Deployment. When enabled, it allows Hazelcast members to load classes from other cluster
+ * members. This simplifies deployment as you do not have to deploy your domain classes into the classpath of all
  * cluster members.
  */
 public class UserCodeDeploymentConfig {
 
     /**
-     * Controls caching of caches loaded from remote members
+     * Controls caching of classes loaded from remote members
      */
     public enum ClassCacheMode {
         /**
@@ -40,11 +44,11 @@ public class UserCodeDeploymentConfig {
     }
 
     /**
-     * Controls how to react on receiving a classloading request from a remote member
+     * Controls how to react to receiving a classloading request from a remote member
      */
     public enum ProviderMode {
         /**
-         * Never serves classes to other members. This member will never server classes to remote members.
+         * Never serve classes to other members. This member will never serve classes to remote members.
          */
         OFF,
 
@@ -76,7 +80,7 @@ public class UserCodeDeploymentConfig {
     }
 
     /**
-     * Returns true when User Code Deployment is enabled
+     * Returns true if User Code Deployment is enabled
      *
      * @return {@code true} when User Code Deployment is enabled
      */
@@ -85,49 +89,45 @@ public class UserCodeDeploymentConfig {
     }
 
     /**
-     * Filter to constraint members to be used for classloading request when a user class
+     * Filter to limit members that can be used for classloading request when a user class
      * is not available locally.
      *
-     * Filter format: {@code HAS_ATTRIBUTE:foo} this will send classloading requests
-     * only to members which has a member attribute {@code foo} set. Value is ignored,
-     * it can be any type. A present of the attribute is sufficient.
+     * <p>Filter format: {@code HAS_ATTRIBUTE:foo} this will send classloading requests
+     * only to members which have a member attribute {@code foo} set. Attribute value is ignored,
+     * it can be of any type, a presence of the attribute is sufficient.
      *
-     * This facility allows to have a fine grained control on classloading. You can e.g. start Hazelcast lite
+     * <p>This facility allows to have a fine grained control over classloading. You can e.g. start Hazelcast lite
      * members dedicated for class-serving.
      *
-     * Example usage:
+     * <p>Example usage:
      * This member will load classes only from members with the {@code class-provider} attribute set.
      * It won't ask any other member to provide a locally unavailable class:
-     * <code>
      * <pre>
      *     Config hazelcastConfig = new Config();
      *
      *     UserCodeDeploymentConfig userCodeDeploymentConfig = hazelcastConfig.getUserCodeDeploymentConfig();
      *     userCodeDeploymentConfig.setProviderFilter("HAS_ATTRIBUTE:class-provider");
      *
-     *     HazecastInstance instance = Hazelcast.newHazelcastInstance(hazelcastConfig);
+     *     HazelcastInstance instance = Hazelcast.newHazelcastInstance(hazelcastConfig);
      * </pre>
-     * </code>
-     *
-     * This member is marked with the <code>class-provider</code> attribute - the member configured above may him
-     * it to provide a class which is not locally available:
-     * <code>
+     * <p>
+     * In the following example, the started member will be marked with the <code>class-provider</code> attribute -
+     * the member configured above may use it to provide a class which is not locally available:
      * <pre>
      * Config hazelcastConfig = new Config();
      *
      * MemberAttributeConfig memberAttributes = hazelcastConfig.getMemberAttributeConfig();
      * memberAttributes.setAttribute("class-provider", "true");
      *
-     * HazecastInstance instance = Hazelcast.newHazelcastInstance(hazelcastConfig);
+     * HazelcastInstance instance = Hazelcast.newHazelcastInstance(hazelcastConfig);
      * </pre>
-     * </code>
-     *
-     * Setting the filter to null will allow to load classes from all members.
+     * <p>
+     * Setting the filter to null allows using any member to load classes.
      * <p>
      * Default: {@code null}
      *
      * @return this instance of UserCodeDeploymentConfig for easy method-chaining
-     * @see com.hazelcast.core.Member#setStringAttribute(String, String)
+     * @see Member#getAttribute(String)
      */
     public UserCodeDeploymentConfig setProviderFilter(String providerFilter) {
         this.providerFilter = providerFilter;
@@ -145,17 +145,17 @@ public class UserCodeDeploymentConfig {
     }
 
     /**
-     * Comma separated list of prefixes of classes which will never be loaded remotely.
-     * A prefix can be a package name or a classname.
+     * Comma-separated list of class prefixes which will never be loaded remotely.
+     * A prefix can be a package name or a class name.
      * <p>
-     * For example setting a blacklist prefix to {@code com.foo} will disable remote loading of all classes
-     * from the {@code com.foo} package, but also classes from all sub-packages won't be loaded.
+     * For example, setting a blacklist prefix to {@code com.foo} will disable remote loading of all classes
+     * from the {@code com.foo} package and its sub-packages.
      * Eg. {@code com.foo.bar.MyClass} will be black-listed too.
      * <p>
-     * When you set the blacklist to {@code com.foo.Class} then the Class will obviously be black-listed,
-     * but a class {@code com.foo.ClassSuffix} will be blacklisted too.
+     * The prefix is compared to the class name string. For example, when you set the blacklist to
+     * {@code com.foo.Class}, the class {@code com.foo.ClassSuffix} will be blacklisted too.
      * <p>
-     * Setting the prefixes to {@code null} will disable the blacklist.
+     * Setting the prefixes to {@code null} or to empty string will disable the blacklist.
      * <p>
      * Default: {@code null}
      *
@@ -177,15 +177,15 @@ public class UserCodeDeploymentConfig {
     }
 
     /**
-     * Comma separated list of prefixes of classes which will be loaded remotely.
+     * Comma-separated list of class prefixes which will be loaded remotely.
      * <p>
-     * Use this to enable User Code Deployment of selected classes only and disable remote loading for all
-     * other classes. This gives you a nice control over classloading.
+     * Use this to limit User Code Deployment to selected classes only and disable remote loading for all
+     * other classes.
      * <p>
-     * The prefixes are interpreted by using the same rules as described at {@link #setBlacklistedPrefixes(String)}
+     * The prefixes are interpreted using the same rules as described in {@link #setBlacklistedPrefixes(String)}.
      * <p>
-     * Setting the prefix to {@code null} will disable the white-list and all non-blacklisted classes will be allowed
-     * to load from remote members.
+     * Setting the prefixes to {@code null} or empty string will disable the white-list and all non-blacklisted
+     * classes will be allowed to load from remote members.
      *
      * @return this instance of UserCodeDeploymentConfig for easy method-chaining
      */
@@ -245,5 +245,25 @@ public class UserCodeDeploymentConfig {
      */
     public ClassCacheMode getClassCacheMode() {
         return classCacheMode;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        UserCodeDeploymentConfig that = (UserCodeDeploymentConfig) o;
+        return enabled == that.enabled && classCacheMode == that.classCacheMode && providerMode == that.providerMode
+                && Objects.equals(blacklistedPrefixes, that.blacklistedPrefixes)
+                && Objects.equals(whitelistedPrefixes, that.whitelistedPrefixes)
+                && Objects.equals(providerFilter, that.providerFilter);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(classCacheMode, providerMode, blacklistedPrefixes, whitelistedPrefixes, providerFilter, enabled);
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,10 @@ package com.hazelcast.config;
 
 import com.hazelcast.config.replacer.PropertyReplacer;
 import com.hazelcast.config.replacer.spi.ConfigReplacer;
-import com.hazelcast.logging.ILogger;
-import com.hazelcast.logging.Logger;
+import com.hazelcast.internal.config.ConfigLoader;
+import com.hazelcast.internal.config.ConfigReplacerHelper;
+import com.hazelcast.internal.config.DomConfigHelper;
+import com.hazelcast.internal.config.XmlDomVariableReplacer;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NamedNodeMap;
@@ -39,20 +41,18 @@ import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 
-import static com.hazelcast.config.ConfigSections.CONFIG_REPLACERS;
-import static com.hazelcast.config.ConfigSections.IMPORT;
-import static com.hazelcast.config.DomConfigHelper.asElementIterable;
-import static com.hazelcast.config.DomConfigHelper.childElements;
-import static com.hazelcast.config.DomConfigHelper.cleanNodeName;
-import static com.hazelcast.util.StringUtil.isNullOrEmpty;
+import static com.hazelcast.internal.config.ConfigSections.CONFIG_REPLACERS;
+import static com.hazelcast.internal.config.ConfigSections.IMPORT;
+import static com.hazelcast.internal.config.DomConfigHelper.asElementIterable;
+import static com.hazelcast.internal.config.DomConfigHelper.childElements;
+import static com.hazelcast.internal.config.DomConfigHelper.cleanNodeName;
+import static com.hazelcast.internal.util.StringUtil.isNullOrEmpty;
 import static java.lang.String.format;
 
 /**
  * Contains logic for replacing system variables in the XML file and importing XML files from different locations.
  */
 public abstract class AbstractXmlConfigBuilder extends AbstractXmlConfigHelper {
-
-    private static final ILogger LOGGER = Logger.getLogger(AbstractXmlConfigBuilder.class);
 
     private Properties properties = System.getProperties();
 
@@ -70,7 +70,7 @@ public abstract class AbstractXmlConfigBuilder extends AbstractXmlConfigHelper {
     }
 
 
-    private final Set<String> currentlyImportedFiles = new HashSet<String>();
+    private final Set<String> currentlyImportedFiles = new HashSet<>();
     private final XPath xpath;
 
     public AbstractXmlConfigBuilder() {
@@ -96,46 +96,69 @@ public abstract class AbstractXmlConfigBuilder extends AbstractXmlConfigHelper {
     }
 
     protected void process(Node root) throws Exception {
-        traverseChildrenAndReplaceVariables(root);
-        replaceImportElementsWithActualFileContents(root);
+        replaceImports(root);
+        replaceVariables(root);
     }
 
-    private void replaceImportElementsWithActualFileContents(Node root) throws Exception {
+    private void replaceVariables(Node root) throws Exception {
+        // if no config-replacer is defined, use backward compatible default behavior for missing properties
+        boolean failFast = false;
+
+        List<ConfigReplacer> replacers = new ArrayList<>();
+
+        // Always use the Property replacer first.
+        PropertyReplacer propertyReplacer = new PropertyReplacer();
+        propertyReplacer.init(getProperties());
+        replacers.add(propertyReplacer);
+
+        // Add other replacers defined in the XML
+        Node node = (Node) xpath.evaluate(format("/hz:%s/hz:%s", getConfigType().name, CONFIG_REPLACERS.getName()), root,
+                                          XPathConstants.NODE);
+        if (node != null) {
+            String failFastAttr = getAttribute(node, "fail-if-value-missing");
+            failFast = isNullOrEmpty(failFastAttr) || Boolean.parseBoolean(failFastAttr);
+            for (Node n : childElements(node)) {
+                String value = cleanNodeName(n);
+                if ("replacer".equals(value)) {
+                    replacers.add(createReplacer(n));
+                }
+            }
+        }
+        ConfigReplacerHelper.traverseChildrenAndReplaceVariables(root, replacers, failFast, new XmlDomVariableReplacer());
+    }
+
+    private void replaceImports(Node root) throws Exception {
+        replaceVariables(root);
         Document document = root.getOwnerDocument();
         NodeList misplacedImports = (NodeList) xpath.evaluate(
-                format("//hz:%s/parent::*[not(self::hz:%s)]", IMPORT.name, getConfigType().name), document,
-                XPathConstants.NODESET);
+            format("//hz:%s/parent::*[not(self::hz:%s)]", IMPORT.getName(), getConfigType().name), document,
+            XPathConstants.NODESET);
         if (misplacedImports.getLength() > 0) {
             throw new InvalidConfigurationException("<import> element can appear only in the top level of the XML");
         }
         NodeList importTags = (NodeList) xpath.evaluate(
-                format("/hz:%s/hz:%s", getConfigType().name, IMPORT.name), document, XPathConstants.NODESET);
+            format("/hz:%s/hz:%s", getConfigType().name, IMPORT.getName()), document, XPathConstants.NODESET);
         for (Node node : asElementIterable(importTags)) {
-            loadAndReplaceImportElement(root, node);
+            NamedNodeMap attributes = node.getAttributes();
+            Node resourceAttribute = attributes.getNamedItem("resource");
+            String resource = resourceAttribute.getTextContent();
+            URL url = ConfigLoader.locateConfig(resource);
+            if (url == null) {
+                throw new InvalidConfigurationException("Failed to load resource: " + resource);
+            }
+            if (!currentlyImportedFiles.add(url.getPath())) {
+                throw new InvalidConfigurationException("Resource '" + url.getPath() + "' is already loaded! This can be due to"
+                                                            + " duplicate or cyclic imports.");
+            }
+            Document doc = parse(url.openStream());
+            Element importedRoot = doc.getDocumentElement();
+            replaceImports(importedRoot);
+            for (Node fromImportedDoc : childElements(importedRoot)) {
+                Node importedNode = root.getOwnerDocument().importNode(fromImportedDoc, true);
+                root.insertBefore(importedNode, node);
+            }
+            root.removeChild(node);
         }
-    }
-
-    private void loadAndReplaceImportElement(Node root, Node node) throws Exception {
-        NamedNodeMap attributes = node.getAttributes();
-        Node resourceAttribute = attributes.getNamedItem("resource");
-        String resource = resourceAttribute.getTextContent();
-        URL url = ConfigLoader.locateConfig(resource);
-        if (url == null) {
-            throw new InvalidConfigurationException("Failed to load resource: " + resource);
-        }
-        if (!currentlyImportedFiles.add(url.getPath())) {
-            throw new InvalidConfigurationException("Resource '" + url.getPath() + "' is already loaded! This can be due to"
-                    + " duplicate or cyclic imports.");
-        }
-        Document doc = parse(url.openStream());
-        Element importedRoot = doc.getDocumentElement();
-        traverseChildrenAndReplaceVariables(importedRoot);
-        replaceImportElementsWithActualFileContents(importedRoot);
-        for (Node fromImportedDoc : childElements(importedRoot)) {
-            Node importedNode = root.getOwnerDocument().importNode(fromImportedDoc, true);
-            root.insertBefore(importedNode, node);
-        }
-        root.removeChild(node);
     }
 
     /**
@@ -180,34 +203,6 @@ public abstract class AbstractXmlConfigBuilder extends AbstractXmlConfigHelper {
 
     void fillProperties(Node node, Properties properties) {
         DomConfigHelper.fillProperties(node, properties, domLevel3);
-    }
-
-    private void traverseChildrenAndReplaceVariables(Node root) throws Exception {
-        // if no config-replacer is defined, use backward compatible default behavior for missing properties
-        boolean failFast = false;
-
-        List<ConfigReplacer> replacers = new ArrayList<ConfigReplacer>();
-
-        // Always use the Property replacer first.
-        PropertyReplacer propertyReplacer = new PropertyReplacer();
-        propertyReplacer.init(getProperties());
-        replacers.add(propertyReplacer);
-
-        // Add other replacers defined in the XML
-        Node node = (Node) xpath.evaluate(format("/hz:%s/hz:%s", getConfigType().name, CONFIG_REPLACERS.name), root,
-                XPathConstants.NODE);
-        if (node != null) {
-            String failFastAttr = getAttribute(node, "fail-if-value-missing");
-            failFast = isNullOrEmpty(failFastAttr) || Boolean.parseBoolean(failFastAttr);
-            for (Node n : childElements(node)) {
-                String value = cleanNodeName(n);
-                if ("replacer".equals(value)) {
-                    replacers.add(createReplacer(n));
-                }
-            }
-        }
-
-        ConfigReplacerHelper.traverseChildrenAndReplaceVariables(root, replacers, failFast, new XmlDomVariableReplacer());
     }
 
     private ConfigReplacer createReplacer(Node node) throws Exception {

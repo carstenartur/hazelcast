@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,49 +17,47 @@
 package com.hazelcast.map.impl.record;
 
 import com.hazelcast.config.CacheDeserializedValues;
-import com.hazelcast.config.MapConfig;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.config.EvictionPolicy;
+import com.hazelcast.internal.serialization.Data;
+import com.hazelcast.map.impl.MapContainer;
+import com.hazelcast.test.HazelcastParallelParametersRunnerFactory;
+import com.hazelcast.test.HazelcastParametrizedRunner;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
-@RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+import java.util.Collection;
+
+import static java.util.Arrays.asList;
+import static org.junit.runners.Parameterized.UseParametersRunnerFactory;
+
+@RunWith(HazelcastParametrizedRunner.class)
+@UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class DataRecordFactoryTest extends AbstractRecordFactoryTest<Data> {
 
-    @Override
-    void newRecordFactory(boolean isStatisticsEnabled, CacheDeserializedValues cacheDeserializedValues) {
-        MapConfig mapConfig = new MapConfig()
-                .setStatisticsEnabled(isStatisticsEnabled)
-                .setCacheDeserializedValues(cacheDeserializedValues);
-
-        factory = new DataRecordFactory(mapConfig, serializationService, partitioningStrategy);
+    @Parameterized.Parameters(name = "perEntryStatsEnabled:{0}, evictionPolicy:{1}, cacheDeserializedValues:{2}")
+    public static Collection<Object[]> parameters() {
+        return asList(new Object[][]{
+                {true, EvictionPolicy.NONE, CacheDeserializedValues.NEVER, DataRecordWithStats.class},
+                {true, EvictionPolicy.LFU, CacheDeserializedValues.ALWAYS, CachedDataRecordWithStats.class},
+                {false, EvictionPolicy.NONE, CacheDeserializedValues.NEVER, SimpleRecord.class},
+                {false, EvictionPolicy.NONE, CacheDeserializedValues.ALWAYS, CachedSimpleRecord.class},
+                {false, EvictionPolicy.LFU, CacheDeserializedValues.NEVER, SimpleRecordWithLFUEviction.class},
+                {false, EvictionPolicy.LFU, CacheDeserializedValues.ALWAYS, CachedSimpleRecordWithLFUEviction.class},
+                {false, EvictionPolicy.LRU, CacheDeserializedValues.NEVER, SimpleRecordWithLRUEviction.class},
+                {false, EvictionPolicy.LRU, CacheDeserializedValues.ALWAYS, CachedSimpleRecordWithLRUEviction.class},
+                {false, EvictionPolicy.RANDOM, CacheDeserializedValues.NEVER, SimpleRecord.class},
+                {false, EvictionPolicy.RANDOM, CacheDeserializedValues.ALWAYS, CachedSimpleRecord.class},
+        });
     }
 
     @Override
-    Class<?> getRecordClass() {
-        return DataRecord.class;
-    }
-
-    @Override
-    Class<?> getRecordWithStatsClass() {
-        return DataRecordWithStats.class;
-    }
-
-    @Override
-    Class<?> getCachedRecordClass() {
-        return CachedDataRecord.class;
-    }
-
-    @Override
-    Class<?> getCachedRecordWithStatsClass() {
-        return CachedDataRecordWithStats.class;
-    }
-
-    @Override
-    Object getValue(Data dataValue, Object objectValue) {
-        return dataValue;
+    protected RecordFactory newRecordFactory() {
+        MapContainer mapContainer = createMapContainer(perEntryStatsEnabled,
+                evictionPolicy, cacheDeserializedValues);
+        return new DataRecordFactory(mapContainer, serializationService);
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,10 @@
 
 package com.hazelcast.map.impl.query;
 
+import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
+import com.hazelcast.internal.util.collection.PartitionIdSet;
+import com.hazelcast.map.IMap;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.Predicates;
@@ -32,10 +34,12 @@ import org.junit.runner.RunWith;
 
 import java.util.Map;
 
+import static com.hazelcast.internal.util.IterationType.ENTRY;
+import static com.hazelcast.internal.util.IterationType.KEY;
+import static com.hazelcast.internal.util.IterationType.VALUE;
 import static com.hazelcast.map.impl.query.Target.createPartitionTarget;
-import static com.hazelcast.util.IterationType.ENTRY;
-import static com.hazelcast.util.IterationType.KEY;
-import static com.hazelcast.util.IterationType.VALUE;
+import static com.hazelcast.test.Accessors.getNodeEngineImpl;
+import static com.hazelcast.test.Accessors.getSerializationService;
 import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastSerialClassRunner.class)
@@ -52,7 +56,9 @@ public class QueryEngineImplTest extends HazelcastTestSupport {
 
     @Before
     public void before() {
-        instance = createHazelcastInstance();
+        Config config = regularInstanceConfig()
+                .setProperty(QueryEngineImpl.DISABLE_MIGRATION_FALLBACK.getName(), "true");
+        instance = createHazelcastInstance(config);
         map = instance.getMap(randomName());
         MapService mapService = getNodeEngineImpl(instance).getService(MapService.SERVICE_NAME);
         queryEngine = mapService.getMapServiceContext().getQueryEngine(map.getName());
@@ -120,7 +126,7 @@ public class QueryEngineImplTest extends HazelcastTestSupport {
         Predicate predicate = Predicates.equal("this", value);
         Query query = Query.of().mapName(map.getName()).predicate(predicate).iterationType(ENTRY).build();
 
-        QueryResult result = queryEngine.execute(query, createPartitionTarget(partitionId));
+        QueryResult result = queryEngine.execute(query, createPartitionTarget(new PartitionIdSet(271, partitionId)));
 
         assertEquals(1, result.size());
         assertEquals(key, toObject(((Map.Entry) result.iterator().next()).getKey()));

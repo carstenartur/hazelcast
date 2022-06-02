@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,15 @@
 
 package com.hazelcast.internal.cluster.impl;
 
-import com.hazelcast.cluster.Joiner;
-import com.hazelcast.instance.MemberImpl;
-import com.hazelcast.instance.Node;
+import com.hazelcast.internal.cluster.Joiner;
+import com.hazelcast.cluster.impl.MemberImpl;
+import com.hazelcast.instance.impl.Node;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.nio.Address;
-import com.hazelcast.nio.Packet;
+
+import java.util.UUID;
+
+import com.hazelcast.cluster.Address;
+import com.hazelcast.internal.nio.Packet;
 
 public class NodeMulticastListener implements MulticastListener {
 
@@ -70,11 +73,17 @@ public class NodeMulticastListener implements MulticastListener {
             node.multicastService.send(response);
         } else if (joinMessage.getAddress().equals(masterAddress)) {
             MemberImpl master = node.getClusterService().getMember(masterAddress);
-            if (master != null && !master.getUuid().equals(joinMessage.getUuid())) {
-                String message = "New join request has been received from current master. Suspecting " + masterAddress;
-                logger.warning(message);
-                // I just make a local suspicion. Probably other nodes will eventually suspect as well.
-                clusterService.suspectMember(master, message, false);
+            if (master != null) {
+                UUID uuidFromMaster = master.getUuid();
+                UUID uuidInJoinRequest = joinMessage.getUuid();
+                if (!uuidFromMaster.equals(uuidInJoinRequest)) {
+                    String message = "New join request has been received from current master address. "
+                            + "The UUID in the join request (" + uuidInJoinRequest + ") is different from the "
+                            + "known master one (" + uuidFromMaster + "). Suspecting the master address: " + masterAddress;
+                    logger.warning(message);
+                    // I just make a local suspicion. Probably other nodes will eventually suspect as well.
+                    clusterService.suspectMember(master, message, false);
+                }
             }
         }
     }
@@ -109,7 +118,7 @@ public class NodeMulticastListener implements MulticastListener {
     }
 
     private boolean isJoinMessage(Object msg) {
-        return msg != null && msg instanceof JoinMessage && !(msg instanceof SplitBrainJoinMessage);
+        return msg instanceof JoinMessage && !(msg instanceof SplitBrainJoinMessage);
     }
 
     private boolean isValidJoinMessage(Object msg) {
@@ -124,10 +133,7 @@ public class NodeMulticastListener implements MulticastListener {
         }
 
         ConfigCheck theirConfig = joinMessage.getConfigCheck();
-        if (!ourConfig.isSameGroup(theirConfig)) {
-            return false;
-        }
-        return true;
+        return ourConfig.hasSameClusterName(theirConfig);
     }
 
     private boolean isMessageToSelf(JoinMessage joinMessage) {

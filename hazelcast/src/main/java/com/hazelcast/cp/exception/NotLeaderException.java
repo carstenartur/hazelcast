@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,10 @@
 
 package com.hazelcast.cp.exception;
 
-import com.hazelcast.core.Endpoint;
 import com.hazelcast.cp.CPGroupId;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
+
+import java.util.UUID;
 
 /**
  * A {@code CPSubsystemException} which is thrown when
@@ -26,8 +28,17 @@ import com.hazelcast.cp.CPGroupId;
 public class NotLeaderException extends CPSubsystemException {
     private static final long serialVersionUID = 1817579502149525710L;
 
-    public NotLeaderException(CPGroupId groupId, Endpoint local, Endpoint leader) {
+    public NotLeaderException(CPGroupId groupId, RaftEndpoint local, RaftEndpoint leader) {
         super(local + " is not LEADER of " + groupId + ". Known leader is: "
-                + (leader != null ? leader : "N/A") , leader);
+                + (leader != null ? leader : "N/A") , leader != null ? leader.getUuid() : null);
+    }
+
+    private NotLeaderException(String message, UUID leaderUuid, Throwable cause) {
+        super(message, cause, leaderUuid);
+    }
+
+    @Override
+    public NotLeaderException wrap() {
+        return new NotLeaderException(getMessage(), getLeaderUuid(), this);
     }
 }

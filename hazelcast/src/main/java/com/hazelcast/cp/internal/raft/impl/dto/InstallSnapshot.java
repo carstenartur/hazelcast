@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.cp.internal.raft.impl.dto;
 
-import com.hazelcast.core.Endpoint;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 import com.hazelcast.cp.internal.raft.impl.RaftDataSerializerHook;
 import com.hazelcast.cp.internal.raft.impl.log.SnapshotEntry;
 import com.hazelcast.nio.ObjectDataInput;
@@ -37,22 +37,22 @@ import java.io.IOException;
  */
 public class InstallSnapshot implements IdentifiedDataSerializable {
 
-    private Endpoint leader;
-
+    private RaftEndpoint leader;
     private int term;
-
     private SnapshotEntry snapshot;
+    private long queryRound;
 
     public InstallSnapshot() {
     }
 
-    public InstallSnapshot(Endpoint leader, int term, SnapshotEntry snapshot) {
+    public InstallSnapshot(RaftEndpoint leader, int term, SnapshotEntry snapshot, long queryRound) {
         this.leader = leader;
         this.term = term;
         this.snapshot = snapshot;
+        this.queryRound = queryRound;
     }
 
-    public Endpoint leader() {
+    public RaftEndpoint leader() {
         return leader;
     }
 
@@ -64,13 +64,17 @@ public class InstallSnapshot implements IdentifiedDataSerializable {
         return snapshot;
     }
 
+    public long queryRound() {
+        return queryRound;
+    }
+
     @Override
     public int getFactoryId() {
         return RaftDataSerializerHook.F_ID;
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftDataSerializerHook.INSTALL_SNAPSHOT;
     }
 
@@ -79,6 +83,7 @@ public class InstallSnapshot implements IdentifiedDataSerializable {
         out.writeObject(leader);
         out.writeInt(term);
         out.writeObject(snapshot);
+        out.writeLong(queryRound);
     }
 
     @Override
@@ -86,11 +91,13 @@ public class InstallSnapshot implements IdentifiedDataSerializable {
         leader = in.readObject();
         term = in.readInt();
         snapshot = in.readObject();
+        queryRound = in.readLong();
     }
 
     @Override
     public String toString() {
-        return "InstallSnapshot{" + "leader=" + leader + ", term=" + term + ", snapshot=" + snapshot + '}';
+        return "InstallSnapshot{" + "leader=" + leader + ", term=" + term + ", snapshot=" + snapshot + ", queryRound="
+                + queryRound + '}';
     }
 
 }

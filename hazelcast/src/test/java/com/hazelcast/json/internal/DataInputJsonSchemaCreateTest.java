@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import com.hazelcast.internal.json.Json;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -33,7 +33,7 @@ import java.io.IOException;
 
 import static com.hazelcast.internal.serialization.impl.SerializationUtil.convertToInputStream;
 
-@Category({ParallelTest.class, QuickTest.class})
+@Category({ParallelJVMTest.class, QuickTest.class})
 @RunWith(HazelcastParallelClassRunner.class)
 public class DataInputJsonSchemaCreateTest extends AbstractJsonSchemaCreateTest {
 

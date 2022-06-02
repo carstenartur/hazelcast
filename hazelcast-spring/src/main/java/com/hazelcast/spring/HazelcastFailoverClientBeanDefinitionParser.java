@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.hazelcast.spring;
 
 import com.hazelcast.client.HazelcastClient;
-import com.hazelcast.client.config.ClientFailoverConfig;
+import com.hazelcast.spring.config.ConfigFactory;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.beans.factory.support.AbstractBeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
@@ -26,14 +26,15 @@ import org.springframework.beans.factory.xml.ParserContext;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 
-import static com.hazelcast.config.DomConfigHelper.childElements;
+import static com.hazelcast.internal.config.DomConfigHelper.childElements;
 import static org.springframework.beans.factory.support.BeanDefinitionBuilder.rootBeanDefinition;
 
 /**
  * BeanDefinitionParser for Hazelcast Client Configuration.
+ * <pre>{@code
  *     <hz:client-failover id="blueGreenClient" try-count="5">
  *         <hz:client>
- *             <hz:group name="${cluster.group.name}" password="${cluster.group.password}"/>
+ *             <hz:cluster-name>${cluster.name}</hz:cluster-name>
  *             <hz:network>
  *                 <hz:member>127.0.0.1:5700</hz:member>
  *                 <hz:member>127.0.0.1:5701</hz:member>
@@ -41,7 +42,7 @@ import static org.springframework.beans.factory.support.BeanDefinitionBuilder.ro
  *         </hz:client>
  *
  *         <hz:client>
- *             <hz:group name="alternativeClusterName" password="${cluster.group.password}"/>
+ *             <hz:cluster-name>alternativeClusterName</hz:cluster-name>
  *             <hz:network>
  *                 <hz:member>127.0.0.1:5702</hz:member>
  *                 <hz:member>127.0.0.1:5703</hz:member>
@@ -49,6 +50,7 @@ import static org.springframework.beans.factory.support.BeanDefinitionBuilder.ro
  *         </hz:client>
  *
  *     </hz:client-failover>
+ * }</pre>
  */
 public class HazelcastFailoverClientBeanDefinitionParser extends  AbstractHazelcastBeanDefinitionParser {
 
@@ -74,15 +76,15 @@ public class HazelcastFailoverClientBeanDefinitionParser extends  AbstractHazelc
         SpringXmlBuilder(ParserContext parserContext, BeanDefinitionBuilder builder) {
             this.parserContext = parserContext;
             this.builder = builder;
-            this.failoverConfigBuilder = rootBeanDefinition(ClientFailoverConfig.class);
+            this.failoverConfigBuilder = rootBeanDefinition(ConfigFactory.class, "newClientFailoverConfig");
         }
 
         AbstractBeanDefinition handleMultipleClusterAwareClient(Element element) {
             handleCommonBeanAttributes(element, builder, parserContext);
             String attribute = element.getAttribute("try-count");
-            failoverConfigBuilder.addPropertyValue("tryCount", Integer.valueOf(attribute));
+            failoverConfigBuilder.addPropertyValue("tryCount", attribute);
 
-            ManagedList<BeanDefinition> configs = new ManagedList<BeanDefinition>();
+            ManagedList<BeanDefinition> configs = new ManagedList<>();
             for (Node node : childElements(element)) {
                 HazelcastClientBeanDefinitionParser.SpringXmlBuilder springXmlBuilder =
                         new HazelcastClientBeanDefinitionParser.SpringXmlBuilder(parserContext);

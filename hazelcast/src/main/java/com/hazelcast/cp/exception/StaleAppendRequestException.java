@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,31 @@
 
 package com.hazelcast.cp.exception;
 
-import com.hazelcast.core.Endpoint;
 import com.hazelcast.core.IndeterminateOperationState;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
+
+import java.util.UUID;
 
 /**
- * A {@code CPSubsystemException} which is thrown when an installed snapshot
- * causes an appended entry to be truncated from the Raft log before its commit
- * status is discovered.
+ * A {@code CPSubsystemException} which is thrown when a Raft leader node
+ * appends an entry to its local Raft log, but demotes to the follower role
+ * before learning the commit status of the entry. In this case, this node
+ * cannot decide if the operation is committed or not.
  */
 public class StaleAppendRequestException extends CPSubsystemException implements IndeterminateOperationState {
 
     private static final long serialVersionUID = -736303015926722821L;
 
-    public StaleAppendRequestException(Endpoint leader) {
-        super(leader);
+    public StaleAppendRequestException(RaftEndpoint leader) {
+        super(leader != null ? leader.getUuid() : null);
+    }
+
+    private StaleAppendRequestException(UUID leaderUuid, Throwable cause) {
+        super(null, cause, leaderUuid);
+    }
+
+    @Override
+    public StaleAppendRequestException wrap() {
+        return new StaleAppendRequestException(getLeaderUuid(), this);
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,12 @@
 
 package com.hazelcast.cp.internal.session;
 
-import com.hazelcast.core.ExecutionCallback;
-import com.hazelcast.core.ICompletableFuture;
+import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.cp.exception.CPGroupDestroyedException;
 import com.hazelcast.cp.internal.RaftGroupId;
-import com.hazelcast.cp.internal.util.Tuple2;
-import com.hazelcast.util.Clock;
+import com.hazelcast.internal.util.BiTuple;
+import com.hazelcast.internal.util.Clock;
+import com.hazelcast.spi.impl.InternalCompletableFuture;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -37,9 +37,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import static com.hazelcast.util.ExceptionUtil.peel;
-import static com.hazelcast.util.Preconditions.checkState;
-import static com.hazelcast.util.ThreadUtil.getThreadId;
+import static com.hazelcast.internal.util.ExceptionUtil.peel;
+import static com.hazelcast.internal.util.ThreadUtil.getThreadId;
 
 /**
  * Implements session management APIs for Raft-based server and client proxies
@@ -51,10 +50,9 @@ public abstract class AbstractProxySessionManager {
      */
     public static final long NO_SESSION_ID = -1;
 
-    private final ConcurrentMap<RaftGroupId, Object> mutexes = new ConcurrentHashMap<RaftGroupId, Object>();
-    private final ConcurrentMap<RaftGroupId, SessionState> sessions = new ConcurrentHashMap<RaftGroupId, SessionState>();
-    private final ConcurrentMap<Tuple2<RaftGroupId, Long>, Long> threadIds
-            = new ConcurrentHashMap<Tuple2<RaftGroupId, Long>, Long>();
+    private final ConcurrentMap<RaftGroupId, Object> mutexes = new ConcurrentHashMap<>();
+    private final ConcurrentMap<RaftGroupId, SessionState> sessions = new ConcurrentHashMap<>();
+    private final ConcurrentMap<BiTuple<RaftGroupId, Long>, Long> threadIds = new ConcurrentHashMap<>();
     private final AtomicBoolean scheduleHeartbeat = new AtomicBoolean(false);
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
     private boolean running = true;
@@ -72,12 +70,12 @@ public abstract class AbstractProxySessionManager {
     /**
      * Commits a heartbeat for the session on the Raft group
      */
-    protected abstract ICompletableFuture<Object> heartbeat(RaftGroupId groupId, long sessionId);
+    protected abstract InternalCompletableFuture<Object> heartbeat(RaftGroupId groupId, long sessionId);
 
     /**
      * Closes the given session on the Raft group
      */
-    protected abstract ICompletableFuture<Object> closeSession(RaftGroupId groupId, Long sessionId);
+    protected abstract InternalCompletableFuture<Object> closeSession(RaftGroupId groupId, Long sessionId);
 
     /**
      * Schedules the given task for repeating execution
@@ -99,7 +97,7 @@ public abstract class AbstractProxySessionManager {
     public final Long getOrCreateUniqueThreadId(RaftGroupId groupId) {
         lock.readLock().lock();
         try {
-            Tuple2<RaftGroupId, Long> key = Tuple2.of(groupId, getThreadId());
+            BiTuple<RaftGroupId, Long> key = BiTuple.of(groupId, getThreadId());
             Long globalThreadId = threadIds.get(key);
             if (globalThreadId != null) {
                 return globalThreadId;
@@ -172,14 +170,14 @@ public abstract class AbstractProxySessionManager {
     /**
      * Invokes a shutdown call on server to close all existing sessions.
      */
-    public Map<RaftGroupId, ICompletableFuture<Object>> shutdown() {
+    public Map<RaftGroupId, InternalCompletableFuture<Object>> shutdown() {
         lock.writeLock().lock();
         try {
-            Map<RaftGroupId, ICompletableFuture<Object>> futures = new HashMap<RaftGroupId, ICompletableFuture<Object>>();
+            Map<RaftGroupId, InternalCompletableFuture<Object>> futures = new HashMap<>();
             for (Entry<RaftGroupId, SessionState> e : sessions.entrySet()) {
                 RaftGroupId groupId = e.getKey();
                 long sessionId = e.getValue().id;
-                ICompletableFuture<Object> f = closeSession(groupId, sessionId);
+                InternalCompletableFuture<Object> f = closeSession(groupId, sessionId);
                 futures.put(groupId, f);
             }
             sessions.clear();
@@ -193,7 +191,9 @@ public abstract class AbstractProxySessionManager {
     private SessionState getOrCreateSession(RaftGroupId groupId) {
         lock.readLock().lock();
         try {
-            checkState(running, "Session manager is already shut down!");
+            if (!running) {
+                throw new HazelcastInstanceNotActiveException("Session manager is already shut down!");
+            }
 
             SessionState session = sessions.get(groupId);
             if (session == null || !session.isValid()) {
@@ -302,32 +302,26 @@ public abstract class AbstractProxySessionManager {
 
     private class HeartbeatTask implements Runnable {
         // HeartbeatTask executions will not overlap.
-        private final Collection<ICompletableFuture<Object>> prevHeartbeats = new ArrayList<ICompletableFuture<Object>>();
+        private final Collection<InternalCompletableFuture<Object>> prevHeartbeats = new ArrayList<>();
 
         @Override
         public void run() {
-            for (ICompletableFuture<Object> future : prevHeartbeats) {
+            for (InternalCompletableFuture<Object> future : prevHeartbeats) {
                 future.cancel(true);
             }
             prevHeartbeats.clear();
 
             for (Entry<RaftGroupId, SessionState> entry : sessions.entrySet()) {
-                final RaftGroupId groupId = entry.getKey();
-                final SessionState session = entry.getValue();
+                RaftGroupId groupId = entry.getKey();
+                SessionState session = entry.getValue();
                 if (session.isInUse()) {
-                    ICompletableFuture<Object> f = heartbeat(groupId, session.id);
-                    f.andThen(new ExecutionCallback<Object>() {
-                        @Override
-                        public void onResponse(Object response) {
+                    InternalCompletableFuture<Object> f = heartbeat(groupId, session.id);
+                    f.exceptionally(t -> {
+                        Throwable cause = peel(t);
+                        if (cause instanceof SessionExpiredException || cause instanceof CPGroupDestroyedException) {
+                            invalidateSession(groupId, session.id);
                         }
-
-                        @Override
-                        public void onFailure(Throwable t) {
-                            Throwable cause = peel(t);
-                            if (cause instanceof SessionExpiredException || cause instanceof CPGroupDestroyedException) {
-                                invalidateSession(groupId, session.id);
-                            }
-                        }
+                        return null;
                     });
                     prevHeartbeats.add(f);
                 }

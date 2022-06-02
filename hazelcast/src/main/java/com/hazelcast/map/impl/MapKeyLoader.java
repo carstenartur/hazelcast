@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,31 +16,32 @@
 
 package com.hazelcast.map.impl;
 
-import com.hazelcast.core.ExecutionCallback;
-import com.hazelcast.core.IFunction;
-import com.hazelcast.core.MapLoader;
-import com.hazelcast.core.Member;
+import com.hazelcast.cluster.Address;
+import com.hazelcast.cluster.Member;
+import com.hazelcast.config.MaxSizePolicy;
 import com.hazelcast.internal.cluster.ClusterService;
+import com.hazelcast.internal.partition.IPartition;
+import com.hazelcast.internal.partition.IPartitionService;
+import com.hazelcast.internal.serialization.Data;
+import com.hazelcast.internal.util.FutureUtil;
+import com.hazelcast.internal.util.StateMachine;
+import com.hazelcast.internal.util.concurrent.BackoffIdleStrategy;
+import com.hazelcast.internal.util.concurrent.IdleStrategy;
+import com.hazelcast.internal.util.scheduler.CoalescingDelayedTrigger;
 import com.hazelcast.logging.ILogger;
+import com.hazelcast.map.MapLoader;
 import com.hazelcast.map.impl.mapstore.MapStoreContext;
 import com.hazelcast.map.impl.operation.KeyLoadStatusOperation;
 import com.hazelcast.map.impl.operation.KeyLoadStatusOperationFactory;
 import com.hazelcast.map.impl.operation.MapOperation;
 import com.hazelcast.map.impl.operation.MapOperationProvider;
 import com.hazelcast.map.impl.operation.TriggerLoadIfNeededOperation;
-import com.hazelcast.nio.Address;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.ExecutionService;
-import com.hazelcast.spi.InternalCompletableFuture;
-import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.OperationService;
-import com.hazelcast.spi.impl.AbstractCompletableFuture;
-import com.hazelcast.spi.partition.IPartition;
-import com.hazelcast.spi.partition.IPartitionService;
-import com.hazelcast.spi.properties.GroupProperty;
-import com.hazelcast.util.FutureUtil;
-import com.hazelcast.util.StateMachine;
-import com.hazelcast.util.scheduler.CoalescingDelayedTrigger;
+import com.hazelcast.spi.impl.InternalCompletableFuture;
+import com.hazelcast.spi.impl.executionservice.ExecutionService;
+import com.hazelcast.spi.impl.operationservice.Operation;
+import com.hazelcast.spi.impl.operationservice.OperationService;
+import com.hazelcast.spi.properties.ClusterProperty;
+import com.hazelcast.spi.properties.HazelcastProperty;
 
 import java.io.Closeable;
 import java.util.ArrayList;
@@ -49,73 +50,84 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
 import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.function.BiConsumer;
+import java.util.function.Function;
 
+import static com.hazelcast.internal.nio.IOUtil.closeResource;
+import static com.hazelcast.internal.util.IterableUtil.limit;
+import static com.hazelcast.internal.util.IterableUtil.map;
 import static com.hazelcast.logging.Logger.getLogger;
 import static com.hazelcast.map.impl.MapKeyLoaderUtil.assignRole;
 import static com.hazelcast.map.impl.MapKeyLoaderUtil.toBatches;
 import static com.hazelcast.map.impl.MapKeyLoaderUtil.toPartition;
 import static com.hazelcast.map.impl.MapService.SERVICE_NAME;
-import static com.hazelcast.nio.IOUtil.closeResource;
-import static com.hazelcast.spi.ExecutionService.MAP_LOAD_ALL_KEYS_EXECUTOR;
-import static com.hazelcast.util.IterableUtil.limit;
-import static com.hazelcast.util.IterableUtil.map;
+import static com.hazelcast.spi.impl.executionservice.ExecutionService.MAP_LOAD_ALL_KEYS_EXECUTOR;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
- * Loads keys from a {@link MapLoader} and sends them to all partitions for loading
+ * One instance of this class is created per {@link
+ * com.hazelcast.map.impl.recordstore.RecordStore}.
+ *
+ * It loads keys via {@link MapLoader#loadAllKeys} and sends
+ * them to all map partitions. Matching values of these keys are
+ * loaded in partition owner nodes via {@link MapLoader#loadAll}.
  */
 public class MapKeyLoader {
 
+    /**
+     * Puts node-wide loaded key limit for all {@link
+     * MapLoader#loadAllKeys()} calls being done at the same time.
+     */
+    public static final int DEFAULT_LOADED_KEY_LIMIT_PER_NODE = 50000;
+    public static final String PROP_LOADED_KEY_LIMITER_PER_NODE = "hazelcast.map.loaded.key.limit.per.node";
+    public static final HazelcastProperty LOADED_KEY_LIMITER_PER_NODE
+            = new HazelcastProperty(PROP_LOADED_KEY_LIMITER_PER_NODE, DEFAULT_LOADED_KEY_LIMIT_PER_NODE);
+
     private static final long LOADING_TRIGGER_DELAY = SECONDS.toMillis(5);
+    private static final IdleStrategy IDLE_STRATEGY = new BackoffIdleStrategy(
+            0, 0, MILLISECONDS.toNanos(1), MILLISECONDS.toNanos(500));
 
     private ILogger logger;
-
     private String mapName;
     private OperationService opService;
     private IPartitionService partitionService;
-    private final ClusterService clusterService;
-    private IFunction<Object, Data> toData;
+    private Function<Object, Data> toData;
     private ExecutionService execService;
     private CoalescingDelayedTrigger delayedTrigger;
-
     /**
-     * The configured maximum entry count per node or {@code -1} if the
-     * default is used or the max size policy is not
-     * {@link com.hazelcast.config.MaxSizeConfig.MaxSizePolicy#PER_NODE}
+     * The configured maximum entry count per node or
+     * {@code -1} if the default is used or the max size
+     * policy is not {@link MaxSizePolicy#PER_NODE}
      */
     private int maxSizePerNode;
     /**
-     * The maximum size of a batch of loaded keys sent to a
-     * single partition for value loading
+     * The maximum size of a batch of loaded keys
+     * sent to a single partition for value loading
      *
-     * @see GroupProperty#MAP_LOAD_CHUNK_SIZE
+     * @see ClusterProperty#MAP_LOAD_CHUNK_SIZE
      */
     private int maxBatch;
     private int mapNamePartition;
     private int partitionId;
     private boolean hasBackup;
-
     /**
-     * The future representing pending completion of the key loading task
-     * on the {@link Role#SENDER} partition. The result of this future
-     * represents the result of process of key loading and dispatching to
-     * the partition owners for value loading but not the result of
-     * the value loading itself or the overall result of populating the
-     * record stores with map loader data.
-     * This future may also denote that this is the map key loader with
-     * the {@link Role#RECEIVER} role and that it has triggered key
-     * loading on the {@link Role#SENDER} partition.
+     * The future representing pending completion of the key loading
+     * task on the {@link Role#SENDER} partition. The result of this
+     * future represents the result of process of key loading and
+     * dispatching to the partition owners for value loading but
+     * not the result of the value loading itself or the overall
+     * result of populating the record stores with map loader
+     * data. This future may also denote that this is the map key
+     * loader with the {@link Role#RECEIVER} role and that it has
+     * triggered key loading on the {@link Role#SENDER} partition.
      *
-     * @see #sendKeys(MapStoreContext, boolean)
-     * @see #triggerLoading()
-     * @see #trackLoading(boolean, Throwable)
-     * @see MapLoader#loadAllKeys()
+     * @see #sendKeys(MapStoreContext, boolean) @see
+     * #triggerLoading() @see #trackLoading(boolean,
+     * Throwable) @see MapLoader#loadAllKeys()
      */
     private LoadFinishedFuture keyLoadFinished = new LoadFinishedFuture(true);
     private MapOperationProvider operationProvider;
@@ -126,24 +138,23 @@ public class MapKeyLoader {
     enum Role {
         NONE,
         /**
-         * Loads keys from the map loader and dispatches them to the partition owners.
-         * The sender map key loader is equal to the partition owner for the
-         * partition containing the map name.
+         * Loads keys from the map loader and dispatches them to the
+         * partition owners. The sender map key loader is equal to the
+         * partition owner for the partition containing the map name.
          *
-         * @see MapLoader#loadAllKeys()
-         * @see com.hazelcast.map.impl.operation.LoadMapOperation
+         * @see MapLoader#loadAllKeys() @see
+         * com.hazelcast.map.impl.operation.LoadMapOperation
          */
         SENDER,
         /**
-         * Receives keys from sender.
-         * The receiver map key loader is the partition owner for keys received
-         * by the sender.
+         * Receives keys from sender. The receiver map key loader
+         * is the partition owner for keys received by the sender.
          */
         RECEIVER,
         /**
-         * Restarts sending if SENDER fails.
-         * The sender backup map key loader is equal to the first replica of the
-         * partition containing the map name.
+         * Restarts sending if SENDER fails. The sender
+         * backup map key loader is equal to the first
+         * replica of the partition containing the map name.
          */
         SENDER_BACKUP
     }
@@ -163,8 +174,17 @@ public class MapKeyLoader {
             .withTransition(State.LOADING, State.LOADED, State.NOT_LOADED)
             .withTransition(State.LOADED, State.LOADING);
 
+    /**
+     * Controls the loaded number of keys during
+     * {@link MapLoader#loadAllKeys()} call to
+     * use heap effectively and to prevent OOME.
+     */
+    private final Semaphore nodeWideLoadedKeyLimiter;
+    private final ClusterService clusterService;
+
     public MapKeyLoader(String mapName, OperationService opService, IPartitionService ps,
-                        ClusterService clusterService, ExecutionService execService, IFunction<Object, Data> serialize) {
+                        ClusterService clusterService, ExecutionService execService,
+                        Function<Object, Data> serialize, Semaphore nodeWideLoadedKeyLimiter) {
         this.mapName = mapName;
         this.opService = opService;
         this.partitionService = ps;
@@ -172,6 +192,7 @@ public class MapKeyLoader {
         this.toData = serialize;
         this.execService = execService;
         this.logger = getLogger(MapKeyLoader.class);
+        this.nodeWideLoadedKeyLimiter = nodeWideLoadedKeyLimiter;
     }
 
     /**
@@ -239,15 +260,12 @@ public class MapKeyLoader {
         if (keyLoadFinished.isDone()) {
             keyLoadFinished = new LoadFinishedFuture();
 
-            Future<Boolean> sent = execService.submit(MAP_LOAD_ALL_KEYS_EXECUTOR, new Callable<Boolean>() {
-                @Override
-                public Boolean call() throws Exception {
-                    sendKeysInBatches(mapStoreContext, replaceExistingValues);
-                    return false;
-                }
+            Future<Boolean> sent = execService.submit(MAP_LOAD_ALL_KEYS_EXECUTOR, () -> {
+                sendKeysInBatches(mapStoreContext, replaceExistingValues);
+                return false;
             });
 
-            execService.asCompletableFuture(sent).andThen(keyLoadFinished);
+            execService.asCompletableFuture(sent).whenCompleteAsync(keyLoadFinished);
         }
 
         return keyLoadFinished;
@@ -265,16 +283,13 @@ public class MapKeyLoader {
             keyLoadFinished = new LoadFinishedFuture();
 
             // side effect -> just trigger load on SENDER_BACKUP ID SENDER died
-            execService.execute(MAP_LOAD_ALL_KEYS_EXECUTOR, new Runnable() {
-                @Override
-                public void run() {
-                    // checks if loading has finished and triggers loading in case SENDER died and SENDER_BACKUP took over.
-                    Operation op = new TriggerLoadIfNeededOperation(mapName);
-                    opService.<Boolean>invokeOnPartition(SERVICE_NAME, op, mapNamePartition)
-                            // required since loading may be triggered after migration
-                            // and in this case the callback is the only way to get to know if the key load finished or not.
-                            .andThen(loadingFinishedCallback());
-                }
+            execService.execute(MAP_LOAD_ALL_KEYS_EXECUTOR, () -> {
+                // checks if loading has finished and triggers loading in case SENDER died and SENDER_BACKUP took over.
+                Operation op = new TriggerLoadIfNeededOperation(mapName);
+                opService.<Boolean>invokeOnPartition(SERVICE_NAME, op, mapNamePartition)
+                        // required since loading may be triggered after migration
+                        // and in this case the callback is the only way to get to know if the key load finished or not.
+                        .whenCompleteAsync(loadingFinishedCallback());
             });
         }
         return keyLoadFinished;
@@ -285,18 +300,14 @@ public class MapKeyLoader {
      * Returns an execution callback to notify the record store for this map
      * key loader that the key loading has finished.
      */
-    private ExecutionCallback<Boolean> loadingFinishedCallback() {
-        return new ExecutionCallback<Boolean>() {
-            @Override
-            public void onResponse(Boolean loadingFinished) {
+    private BiConsumer<Boolean, Throwable> loadingFinishedCallback() {
+        return (loadingFinished, throwable) -> {
+            if (throwable == null) {
                 if (loadingFinished) {
                     updateLocalKeyLoadStatus(null);
                 }
-            }
-
-            @Override
-            public void onFailure(Throwable t) {
-                updateLocalKeyLoadStatus(t);
+            } else {
+                updateLocalKeyLoadStatus(throwable);
             }
         };
     }
@@ -354,9 +365,9 @@ public class MapKeyLoader {
         if (lastBatch) {
             state.nextOrStay(State.LOADED);
             if (exception != null) {
-                keyLoadFinished.setResult(exception);
+                keyLoadFinished.completeExceptionally(exception);
             } else {
-                keyLoadFinished.setResult(true);
+                keyLoadFinished.complete(true);
             }
         } else if (state.is(State.LOADED)) {
             state.next(State.LOADING);
@@ -368,12 +379,9 @@ public class MapKeyLoader {
      */
     public void triggerLoadingWithDelay() {
         if (delayedTrigger == null) {
-            Runnable runnable = new Runnable() {
-                @Override
-                public void run() {
-                    Operation op = new TriggerLoadIfNeededOperation(mapName);
-                    opService.invokeOnPartition(SERVICE_NAME, op, mapNamePartition);
-                }
+            Runnable runnable = () -> {
+                Operation op = new TriggerLoadIfNeededOperation(mapName);
+                opService.invokeOnPartition(SERVICE_NAME, op, mapNamePartition);
             };
             delayedTrigger = new CoalescingDelayedTrigger(execService, LOADING_TRIGGER_DELAY, LOADING_TRIGGER_DELAY, runnable);
         }
@@ -395,7 +403,7 @@ public class MapKeyLoader {
             if (state.is(State.LOADING)) {
                 // previous loading was in progress. cancel and start from scratch
                 state.next(State.NOT_LOADED);
-                keyLoadFinished.setResult(false);
+                keyLoadFinished.complete(false);
             }
         }
 
@@ -440,12 +448,18 @@ public class MapKeyLoader {
             }
 
             Iterator<Entry<Integer, Data>> partitionsAndKeys = map(dataKeys, toPartition(partitionService));
-            Iterator<Map<Integer, List<Data>>> batches = toBatches(partitionsAndKeys, maxBatch);
+            Iterator<Map<Integer, List<Data>>> batches = toBatches(partitionsAndKeys, maxBatch, nodeWideLoadedKeyLimiter);
 
-            List<Future> futures = new ArrayList<Future>();
+            int callCount = 0;
+            List<Future> futures = new ArrayList<>();
             while (batches.hasNext()) {
                 Map<Integer, List<Data>> batch = batches.next();
-                futures.addAll(sendBatch(batch, replaceExistingValues));
+                if (batch.isEmpty()) {
+                    IDLE_STRATEGY.idle(++callCount);
+                } else {
+                    callCount = 0;
+                    futures.addAll(sendBatch(batch, replaceExistingValues, nodeWideLoadedKeyLimiter));
+                }
             }
 
             // This acts as a barrier to prevent re-ordering of key distribution operations (LoadAllOperation)
@@ -467,29 +481,47 @@ public class MapKeyLoader {
     }
 
     /**
-     * Sends the key batches to the partition owners for value loading.
-     * The returned futures represent pending offloading of the value loading on the
-     * partition owner. This means that once the partition owner receives the keys,
-     * it will offload the value loading task and return immediately, thus completing
-     * the future. The future does not mean the value loading tasks have been completed
-     * or that the entries have been loaded and put into the record store.
+     * Sends the key batches to the partition owners for value
+     * loading. The returned futures represent pending offloading
+     * of the value loading on the partition owner. This means
+     * that once the partition owner receives the keys, it will
+     * offload the value loading task and return immediately,
+     * thus completing the future. The future does not mean
+     * the value loading tasks have been completed or that the
+     * entries have been loaded and put into the record store.
      *
-     * @param batch                 a map from partition ID to a batch of keys for that partition
-     * @param replaceExistingValues if the existing entries for the loaded keys should be replaced
-     * @return a list of futures representing pending completion of the value offloading task
+     * @param batch                    a map from partition ID
+     *                                 to a batch of keys for that partition
+     * @param replaceExistingValues    if the existing
+     *                                 entries for the loaded keys should be replaced
+     * @param nodeWideLoadedKeyLimiter controls number of loaded keys
+     * @return a list of futures representing pending
+     * completion of the value offloading task
      */
-    private List<Future> sendBatch(Map<Integer, List<Data>> batch, boolean replaceExistingValues) {
+    private List<Future> sendBatch(Map<Integer, List<Data>> batch, boolean replaceExistingValues,
+                                   Semaphore nodeWideLoadedKeyLimiter) {
         Set<Entry<Integer, List<Data>>> entries = batch.entrySet();
-        List<Future> futures = new ArrayList<Future>(entries.size());
-        for (Entry<Integer, List<Data>> e : entries) {
+
+        List<Future> futures = new ArrayList<>(entries.size());
+
+        Iterator<Entry<Integer, List<Data>>> iterator = entries.iterator();
+        while (iterator.hasNext()) {
+            Entry<Integer, List<Data>> e = iterator.next();
             int partitionId = e.getKey();
             List<Data> keys = e.getValue();
+            int numberOfLoadedKeys = keys.size();
 
-            MapOperation op = operationProvider.createLoadAllOperation(mapName, keys, replaceExistingValues);
+            try {
+                MapOperation op = operationProvider.createLoadAllOperation(mapName, keys, replaceExistingValues);
+                InternalCompletableFuture<Object> future = opService.invokeOnPartition(SERVICE_NAME, op, partitionId);
+                futures.add(future);
+            } finally {
+                nodeWideLoadedKeyLimiter.release(numberOfLoadedKeys);
+            }
 
-            InternalCompletableFuture<Object> future = opService.invokeOnPartition(SERVICE_NAME, op, partitionId);
-            futures.add(future);
+            iterator.remove();
         }
+
         return futures;
     }
 
@@ -514,7 +546,7 @@ public class MapKeyLoader {
         // The SENDER will be then in the LOADING status, thus the loadAll call will be ignored.
         // it happens only if all LoadAllOperation finish before the sendKeyLoadCompleted is started (test case, little data)
         // Fixes https://github.com/hazelcast/hazelcast/issues/5453
-        List<Future> futures = new ArrayList<Future>();
+        List<Future> futures = new ArrayList<>();
         Operation senderStatus = new KeyLoadStatusOperation(mapName, exception);
         Future senderFuture = opService.createInvocationBuilder(SERVICE_NAME, senderStatus, mapNamePartition)
                 .setReplicaIndex(0).invoke();
@@ -553,7 +585,7 @@ public class MapKeyLoader {
      * Sets the configured maximum entry count per node.
      *
      * @param maxSize the maximum entry count per node
-     * @see com.hazelcast.config.MaxSizeConfig
+     * @see com.hazelcast.config.EvictionConfig
      */
     public void setMaxSize(int maxSize) {
         this.maxSizePerNode = maxSize;
@@ -601,47 +633,38 @@ public class MapKeyLoader {
      * @see #triggerLoading()
      * @see MapLoader#loadAllKeys()
      */
-    private static final class LoadFinishedFuture extends AbstractCompletableFuture<Boolean>
-            implements ExecutionCallback<Boolean> {
+    private static final class LoadFinishedFuture extends InternalCompletableFuture<Boolean>
+            implements BiConsumer<Boolean, Throwable> {
 
         private LoadFinishedFuture(Boolean result) {
-            this();
-            setResult(result);
+            this.complete(result);
         }
 
         private LoadFinishedFuture() {
-            super((Executor) null, getLogger(LoadFinishedFuture.class));
         }
 
         @Override
-        public Boolean get(long timeout, TimeUnit timeUnit) throws InterruptedException, ExecutionException, TimeoutException {
+        public Boolean get(long timeout, TimeUnit timeUnit) {
             if (isDone()) {
-                return getResult();
+                return joinInternal();
             }
             throw new UnsupportedOperationException("Future is not done yet");
         }
 
         @Override
-        public void onResponse(Boolean loaded) {
-            if (loaded) {
-                setResult(true);
-            }
-            // if not loaded yet we wait for the last batch to arrive
-        }
-
-        @Override
-        public void onFailure(Throwable t) {
-            setResult(t);
-        }
-
-        @Override
-        protected boolean shouldCancel(boolean mayInterruptIfRunning) {
+        public boolean cancel(boolean mayInterruptIfRunning) {
             return false;
         }
 
         @Override
-        protected boolean setResult(Object result) {
-            return super.setResult(result);
+        public void accept(Boolean loaded, Throwable throwable) {
+            if (throwable == null) {
+                if (loaded) {
+                    complete(true);
+                }
+            } else {
+                completeExceptionally(throwable);
+            }
         }
 
         @Override

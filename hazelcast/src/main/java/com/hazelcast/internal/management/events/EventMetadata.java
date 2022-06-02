@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,11 @@ package com.hazelcast.internal.management.events;
 
 import com.hazelcast.internal.json.JsonObject;
 
+import java.util.Map;
+
+import static java.util.Arrays.stream;
+import static java.util.stream.Collectors.toMap;
+
 public final class EventMetadata {
     private final EventType type;
     private final long timestamp;
@@ -27,6 +32,8 @@ public final class EventMetadata {
         this.timestamp = timestamp;
     }
 
+    // WARNING: Used by Management Center. Do not rename any enum, change its code
+    // or remove an existing enum, only add new ones.
     public enum EventType {
         WAN_CONSISTENCY_CHECK_STARTED(1),
         WAN_CONSISTENCY_CHECK_FINISHED(2),
@@ -38,7 +45,14 @@ public final class EventMetadata {
         WAN_CONFIGURATION_ADDED(8),
         ADD_WAN_CONFIGURATION_IGNORED(9),
         WAN_SYNC_IGNORED(10),
-        WAN_CONFIGURATION_EXTENDED(11);
+        WAN_CONFIGURATION_EXTENDED(11),
+        CONFIG_UPDATE_STARTED(12),
+        CONFIG_UPDATE_PROGRESS(13),
+        CONFIG_UPDATE_FINISHED(14),
+        CONFIG_UPDATE_FAILED(15);
+
+        private static final Map<Integer, EventType> CODE_MAPPING = stream(EventType.values())
+                .collect(toMap(EventType::getCode, eventType -> eventType));
 
         private final int code;
 
@@ -48,6 +62,24 @@ public final class EventMetadata {
 
         public int getCode() {
             return code;
+        }
+
+        @SuppressWarnings("unused")
+        // used by Management Center
+        public static EventType withCode(int code) {
+            EventType type = CODE_MAPPING.get(code);
+            if (type == null) {
+                throw new IllegalArgumentException("No EventType with code " + code);
+            }
+            return type;
+        }
+
+        @Override
+        public String toString() {
+            return "EventType{"
+                    + "name=" + name()
+                    + ", code=" + code
+                    + '}';
         }
     }
 

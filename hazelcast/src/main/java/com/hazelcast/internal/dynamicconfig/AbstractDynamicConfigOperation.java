@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package com.hazelcast.internal.dynamicconfig;
 
-import com.hazelcast.config.ConfigDataSerializerHook;
+import com.hazelcast.internal.config.ConfigDataSerializerHook;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.operationservice.Operation;
 
 public abstract class AbstractDynamicConfigOperation extends Operation implements IdentifiedDataSerializable {
 
@@ -29,6 +29,6 @@ public abstract class AbstractDynamicConfigOperation extends Operation implement
 
     @Override
     public String getServiceName() {
-        return ClusterWideConfigurationService.SERVICE_NAME;
+        return ConfigurationService.SERVICE_NAME;
     }
 }

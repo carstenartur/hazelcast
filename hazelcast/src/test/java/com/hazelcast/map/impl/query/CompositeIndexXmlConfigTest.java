@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,11 @@ package com.hazelcast.map.impl.query;
 
 import com.hazelcast.config.ClasspathXmlConfig;
 import com.hazelcast.config.Config;
-import com.hazelcast.core.IMap;
-import com.hazelcast.query.SqlPredicate;
+import com.hazelcast.map.IMap;
+import com.hazelcast.query.Predicates;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -34,7 +34,7 @@ import java.util.Collection;
 import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class CompositeIndexXmlConfigTest extends HazelcastTestSupport {
 
     IMap<String, Integer> map;
@@ -54,10 +54,10 @@ public class CompositeIndexXmlConfigTest extends HazelcastTestSupport {
 
     @Test
     public void test() {
-        Collection<Integer> result = map.values(new SqlPredicate("__key = '10' and __key.length = 2"));
+        Collection<Integer> result = map.values(Predicates.sql("__key = '10' and __key.length = 2"));
         assertEquals(1, result.size());
         assertEquals((Integer) 10, result.iterator().next());
-        assertEquals(1, map.getLocalMapStats().getIndexStats().get("__key, __key.length").getQueryCount());
+        assertEquals(1, map.getLocalMapStats().getIndexStats().get("testIndex").getQueryCount());
     }
 
 }

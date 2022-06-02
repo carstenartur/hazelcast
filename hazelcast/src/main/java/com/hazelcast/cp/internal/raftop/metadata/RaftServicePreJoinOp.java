@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,19 +24,18 @@ import com.hazelcast.cp.internal.RaftServiceDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.nio.serialization.impl.Versioned;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.operationservice.Operation;
 
 import java.io.IOException;
 
 /**
- * If the CP subsystem discovery process is completed, new Hazelcast nodes
+ * If the CP discovery process is completed, new Hazelcast nodes
  * skip the discovery step.
- * <p/>
+ * <p>
  * Please note that this operation is not a {@link RaftOp},
  * so it is not handled via the Raft layer.
  */
-public class RaftServicePreJoinOp extends Operation implements IdentifiedDataSerializable, Versioned {
+public class RaftServicePreJoinOp extends Operation implements IdentifiedDataSerializable {
 
     private boolean discoveryCompleted;
 
@@ -76,7 +75,7 @@ public class RaftServicePreJoinOp extends Operation implements IdentifiedDataSer
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftServiceDataSerializerHook.RAFT_PRE_JOIN_OP;
     }
 

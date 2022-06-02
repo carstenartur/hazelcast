@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,16 +19,16 @@ package com.hazelcast.cp.internal.exception;
 import com.hazelcast.core.HazelcastException;
 
 /**
- * Thrown while a CP member is requested to be removed from the CP subsystem
- * while there is an ongoing process for another member. This exception will
- * be handled internally and will not be exposed to the user.
+ * Thrown while a CP member is requested to be removed from CP Subsystem while
+ * there is an ongoing process for another member. This exception will be
+ * handled internally and will not be exposed to the user.
  */
 public class CannotRemoveCPMemberException extends HazelcastException {
 
     private static final long serialVersionUID = -3631327013406551312L;
 
     public CannotRemoveCPMemberException(String message) {
-        super(message, null);
+        super(message);
     }
 
 }

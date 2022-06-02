@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,15 +20,15 @@ import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.DurableExecutorIsShutdownCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractCallableMessageTask;
 import com.hazelcast.durableexecutor.impl.DistributedDurableExecutorService;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
 
 import java.security.Permission;
 
 import static com.hazelcast.durableexecutor.impl.DistributedDurableExecutorService.SERVICE_NAME;
 
 public class DurableExecutorIsShutdownMessageTask
-        extends AbstractCallableMessageTask<DurableExecutorIsShutdownCodec.RequestParameters> {
+        extends AbstractCallableMessageTask<String> {
 
     public DurableExecutorIsShutdownMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -37,11 +37,11 @@ public class DurableExecutorIsShutdownMessageTask
     @Override
     protected Object call() throws Exception {
         DistributedDurableExecutorService service = getService(SERVICE_NAME);
-        return service.isShutdown(parameters.name);
+        return service.isShutdown(parameters);
     }
 
     @Override
-    protected DurableExecutorIsShutdownCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+    protected String decodeClientMessage(ClientMessage clientMessage) {
         return DurableExecutorIsShutdownCodec.decodeRequest(clientMessage);
     }
 
@@ -62,7 +62,7 @@ public class DurableExecutorIsShutdownMessageTask
 
     @Override
     public String getDistributedObjectName() {
-        return parameters.name;
+        return parameters;
     }
 
     @Override

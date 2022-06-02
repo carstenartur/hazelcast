@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 package com.hazelcast.cache.impl;
 
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.serialization.SerializationService;
+import com.hazelcast.internal.serialization.Data;
+import com.hazelcast.internal.serialization.SerializationService;
 
 import java.util.AbstractSet;
 import java.util.ArrayList;
@@ -71,8 +71,19 @@ public final class DeferredValue<V> {
         return serializedValue;
     }
 
-    // returns a new DeferredValue representing the same value as this
     public DeferredValue<V> shallowCopy() {
+        return shallowCopy(true, null);
+    }
+
+    /**
+     * returns a new DeferredValue representing the same value as this,
+     * possibly creating a serialized value
+     *
+     * @param resolved is false, force serialization of the returned copy
+     * @param serializationService service to use to serialize
+     * @return
+     */
+    public DeferredValue<V> shallowCopy(boolean resolved, SerializationService serializationService) {
         if (this == NULL_VALUE) {
             return NULL_VALUE;
         }
@@ -81,7 +92,12 @@ public final class DeferredValue<V> {
             copy.serializedValueExists = true;
             copy.serializedValue = serializedValue;
         }
-        if (valueExists) {
+        if (!resolved && serializationService != null) {
+            if (!serializedValueExists) {
+                copy.serializedValueExists = true;
+                copy.serializedValue = getSerializedValue(serializationService);
+            }
+        } else if (valueExists) {
             copy.valueExists = true;
             copy.value = value;
         }
@@ -168,7 +184,7 @@ public final class DeferredValue<V> {
         private final SerializationService serializationService;
         private final Set<DeferredValue<V>> delegate;
 
-        public DeferredValueSet(SerializationService serializationService, Set<DeferredValue<V>> delegate) {
+        DeferredValueSet(SerializationService serializationService, Set<DeferredValue<V>> delegate) {
             this.serializationService = serializationService;
             this.delegate = delegate;
         }
@@ -210,7 +226,7 @@ public final class DeferredValue<V> {
         private final SerializationService serializationService;
         private final Iterator<DeferredValue<V>> iterator;
 
-        public DeferredValueIterator(SerializationService serializationService, Iterator<DeferredValue<V>> iterator) {
+        DeferredValueIterator(SerializationService serializationService, Iterator<DeferredValue<V>> iterator) {
             this.serializationService = serializationService;
             this.iterator = iterator;
         }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.internal.partition;
 
-import com.hazelcast.partition.membergroup.MemberGroup;
+import com.hazelcast.spi.partitiongroup.MemberGroup;
 
 import java.util.Collection;
 
@@ -24,9 +24,9 @@ public interface PartitionStateGenerator {
 
     /**
      * Arranges the partition layout.
-     * <p/>
+     * <p>
      * This method does not actually change the partitions, but send back the updated layout.
-     * <p/>
+     * <p>
      * A two-dimensional array of addresses is returned where the first index is the partition ID, and
      * the second index is the replica index.
      *
@@ -38,12 +38,12 @@ public interface PartitionStateGenerator {
 
     /**
      * Arranges the partition layout.
-     * <p/>
+     * <p>
      * This method does not actually change the partitions, but send back the updated layout.
-     * <p/>
+     * <p>
      * A two-dimensional array of addresses is returned where the first index is the partition ID, and
      * the second index is the replica index.
-     * <p/>
+     * <p>
      * When null partitions is given, all partitions will be arranged,
      * similar to {@link #arrange(Collection, InternalPartition[])}.
      *

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,38 +17,47 @@
 package com.hazelcast.map.impl.operation;
 
 import com.hazelcast.map.impl.MapDataSerializerHook;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.impl.MutatingOperation;
+import com.hazelcast.internal.serialization.Data;
+import com.hazelcast.spi.impl.operationservice.MutatingOperation;
 
 import static com.hazelcast.core.EntryEventType.ADDED;
 import static com.hazelcast.core.EntryEventType.UPDATED;
+import static com.hazelcast.map.impl.record.Record.UNSET;
 
 public class SetOperation extends BasePutOperation implements MutatingOperation {
 
-    private boolean newRecord;
+    private transient boolean newRecord;
 
     public SetOperation() {
     }
 
-    public SetOperation(String name, Data dataKey, Data value, long ttl, long maxIdle) {
-        super(name, dataKey, value, ttl, maxIdle);
+    public SetOperation(String name, Data dataKey, Data value) {
+        super(name, dataKey, value);
     }
 
     @Override
-    public void run() {
-        oldValue = recordStore.set(dataKey, dataValue, ttl, maxIdle);
+    protected void runInternal() {
+        oldValue = recordStore.set(dataKey, dataValue, getTtl(), getMaxIdle());
         newRecord = oldValue == null;
     }
 
-    @Override
-    public void afterRun() {
-        eventType = newRecord ? ADDED : UPDATED;
+    protected long getTtl() {
+        return UNSET;
+    }
 
-        super.afterRun();
+    protected long getMaxIdle() {
+        return UNSET;
     }
 
     @Override
-    public int getId() {
+    protected void afterRunInternal() {
+        eventType = newRecord ? ADDED : UPDATED;
+
+        super.afterRunInternal();
+    }
+
+    @Override
+    public int getClassId() {
         return MapDataSerializerHook.SET;
     }
 }

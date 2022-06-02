@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,15 +18,15 @@ package com.hazelcast.map.impl.operation;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
 import com.hazelcast.internal.eviction.ExpiredKey;
+import com.hazelcast.map.IMap;
+import com.hazelcast.map.LocalMapStats;
 import com.hazelcast.map.impl.MapService;
-import com.hazelcast.monitor.LocalMapStats;
-import com.hazelcast.spi.impl.operationservice.InternalOperationService;
+import com.hazelcast.spi.impl.operationservice.impl.OperationServiceImpl;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -34,10 +34,12 @@ import org.junit.runner.RunWith;
 
 import java.util.Collections;
 
+import static com.hazelcast.test.Accessors.getOperationService;
+import static com.hazelcast.test.Accessors.getPartitionService;
 import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastSerialClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class EvictBatchBackupOperationTest extends HazelcastTestSupport {
 
     TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
@@ -73,7 +75,7 @@ public class EvictBatchBackupOperationTest extends HazelcastTestSupport {
             for (int replicaIndex = 0; replicaIndex <= backupCount; replicaIndex++) {
                 EvictBatchBackupOperation operation = new EvictBatchBackupOperation(mapName,
                         Collections.<ExpiredKey>emptyList(), 0);
-                InternalOperationService operationService = getOperationService(node1);
+                OperationServiceImpl operationService = getOperationService(node1);
                 operationService.createInvocationBuilder(MapService.SERVICE_NAME, operation, partitionId)
                         .setReplicaIndex(replicaIndex).invoke().join();
             }

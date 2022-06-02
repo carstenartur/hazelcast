@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import com.hazelcast.internal.management.events.EventMetadata.EventType;
 
 /**
  * Represents events sent to Management Center.
- * <p/>
+ * <p>
  * Events are sent to Management Center periodically, which then informs the user about them.
  * Events can be used where a log statement normally is used. They are usually generated as
  * a result of an action that is triggered by the Management Center.

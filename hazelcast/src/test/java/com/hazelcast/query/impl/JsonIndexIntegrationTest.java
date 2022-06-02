@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,21 +19,21 @@ package com.hazelcast.query.impl;
 import com.hazelcast.config.CacheDeserializedValues;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.InMemoryFormat;
+import com.hazelcast.config.IndexType;
 import com.hazelcast.config.MetadataPolicy;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastJsonValue;
-import com.hazelcast.core.IMap;
-import com.hazelcast.instance.Node;
+import com.hazelcast.instance.impl.Node;
 import com.hazelcast.internal.json.Json;
 import com.hazelcast.internal.json.JsonObject;
-import com.hazelcast.map.EntryBackupProcessor;
 import com.hazelcast.map.EntryProcessor;
+import com.hazelcast.map.IMap;
 import com.hazelcast.map.impl.MapContainer;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.MapServiceContext;
 import com.hazelcast.query.Predicates;
-import com.hazelcast.query.SqlPredicate;
-import com.hazelcast.test.HazelcastParametersRunnerFactory;
+import com.hazelcast.test.HazelcastParametrizedRunner;
+import com.hazelcast.test.HazelcastSerialParametersRunnerFactory;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
@@ -48,10 +48,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static com.hazelcast.test.Accessors.getNode;
 import static org.junit.Assert.assertEquals;
+import static org.junit.runners.Parameterized.UseParametersRunnerFactory;
 
-@RunWith(Parameterized.class)
-@Parameterized.UseParametersRunnerFactory(HazelcastParametersRunnerFactory.class)
+@RunWith(HazelcastParametrizedRunner.class)
+@UseParametersRunnerFactory(HazelcastSerialParametersRunnerFactory.class)
 @Category(QuickTest.class)
 public class JsonIndexIntegrationTest extends HazelcastTestSupport {
 
@@ -93,9 +95,9 @@ public class JsonIndexIntegrationTest extends HazelcastTestSupport {
     public void testViaAccessingInternalIndexes() {
         HazelcastInstance instance = createHazelcastInstance();
         IMap<Integer, HazelcastJsonValue> map = instance.getMap(MAP_NAME);
-        map.addIndex("age", false);
-        map.addIndex("active", false);
-        map.addIndex("name", false);
+        map.addIndex(IndexType.HASH, "age");
+        map.addIndex(IndexType.HASH, "active");
+        map.addIndex(IndexType.HASH, "name");
 
         for (int i = 0; i < 1000; i++) {
             String jsonString = "{\"age\" : " + i + "  , \"name\" : \"sancar\" , \"active\" :  " + (i % 2 == 0) + " } ";
@@ -116,9 +118,9 @@ public class JsonIndexIntegrationTest extends HazelcastTestSupport {
     public void testIndex_viaQueries() {
         HazelcastInstance instance = createHazelcastInstance();
         IMap<Integer, HazelcastJsonValue> map = instance.getMap(MAP_NAME);
-        map.addIndex("age", false);
-        map.addIndex("active", false);
-        map.addIndex("name", false);
+        map.addIndex(IndexType.HASH, "age");
+        map.addIndex(IndexType.HASH, "active");
+        map.addIndex(IndexType.HASH, "name");
 
         for (int i = 0; i < 1000; i++) {
             String jsonString = "{\"age\" : " + i + "  , \"name\" : \"sancar\" , \"active\" :  " + (i % 2 == 0) + " } ";
@@ -127,7 +129,7 @@ public class JsonIndexIntegrationTest extends HazelcastTestSupport {
 
         assertEquals(500, map.values(Predicates.and(Predicates.equal("name", "sancar"), Predicates.equal("active", "true"))).size());
         assertEquals(299, map.values(Predicates.and(Predicates.greaterThan("age", 400), Predicates.equal("active", true))).size());
-        assertEquals(1000, map.values(new SqlPredicate("name == sancar")).size());
+        assertEquals(1000, map.values(Predicates.sql("name == sancar")).size());
 
     }
 
@@ -135,9 +137,9 @@ public class JsonIndexIntegrationTest extends HazelcastTestSupport {
     public void testEntryProcessorChanges_viaQueries() {
         HazelcastInstance instance = createHazelcastInstance();
         IMap<Integer, HazelcastJsonValue> map = instance.getMap(MAP_NAME);
-        map.addIndex("age", false);
-        map.addIndex("active", false);
-        map.addIndex("name", false);
+        map.addIndex(IndexType.HASH, "age");
+        map.addIndex(IndexType.HASH, "active");
+        map.addIndex(IndexType.HASH, "name");
 
         for (int i = 0; i < 1000; i++) {
             String jsonString = "{\"age\" : " + i + "  , \"name\" : \"sancar\" , \"active\" :  " + (i % 2 == 0) + " } ";
@@ -146,11 +148,11 @@ public class JsonIndexIntegrationTest extends HazelcastTestSupport {
 
         assertEquals(500, map.values(Predicates.and(Predicates.equal("name", "sancar"), Predicates.equal("active", "true"))).size());
         assertEquals(299, map.values(Predicates.and(Predicates.greaterThan("age", 400), Predicates.equal("active", true))).size());
-        assertEquals(1000, map.values(new SqlPredicate("name == sancar")).size());
+        assertEquals(1000, map.values(Predicates.sql("name == sancar")).size());
         map.executeOnEntries(new JsonEntryProcessor());
         assertEquals(1000, map.values(Predicates.and(Predicates.equal("name", "sancar"), Predicates.equal("active", false))).size());
         assertEquals(0, map.values(Predicates.and(Predicates.greaterThan("age", 400), Predicates.equal("active", false))).size());
-        assertEquals(1000, map.values(new SqlPredicate("name == sancar")).size());
+        assertEquals(1000, map.values(Predicates.sql("name == sancar")).size());
 
     }
 
@@ -166,34 +168,24 @@ public class JsonIndexIntegrationTest extends HazelcastTestSupport {
 
         assertEquals(500, map.values(Predicates.and(Predicates.equal("name", "sancar"), Predicates.equal("active", "true"))).size());
         assertEquals(299, map.values(Predicates.and(Predicates.greaterThan("age", 400), Predicates.equal("active", true))).size());
-        assertEquals(1000, map.values(new SqlPredicate("name == sancar")).size());
+        assertEquals(1000, map.values(Predicates.sql("name == sancar")).size());
         map.executeOnEntries(new JsonEntryProcessor());
         assertEquals(1000, map.values(Predicates.and(Predicates.equal("name", "sancar"), Predicates.equal("active", false))).size());
         assertEquals(0, map.values(Predicates.and(Predicates.greaterThan("age", 400), Predicates.equal("active", false))).size());
-        assertEquals(1000, map.values(new SqlPredicate("name == sancar")).size());
+        assertEquals(1000, map.values(Predicates.sql("name == sancar")).size());
 
     }
 
-    private static class JsonEntryProcessor implements EntryProcessor<Integer, HazelcastJsonValue> {
+    private static class JsonEntryProcessor implements EntryProcessor<Integer, HazelcastJsonValue, String> {
 
         @Override
-        public Object process(Map.Entry<Integer, HazelcastJsonValue> entry) {
+        public String process(Map.Entry<Integer, HazelcastJsonValue> entry) {
             JsonObject jsonObject = Json.parse(entry.getValue().toString()).asObject();
             jsonObject.set("age", 0);
             jsonObject.set("active", false);
 
             entry.setValue(new HazelcastJsonValue(jsonObject.toString()));
             return "anyResult";
-        }
-
-        @Override
-        public EntryBackupProcessor<Integer, HazelcastJsonValue> getBackupProcessor() {
-            return new EntryBackupProcessor<Integer, HazelcastJsonValue>() {
-                @Override
-                public void processBackup(Map.Entry<Integer, HazelcastJsonValue> entry) {
-                    process(entry);
-                }
-            };
         }
     }
 
@@ -213,9 +205,18 @@ public class JsonIndexIntegrationTest extends HazelcastTestSupport {
         MapContainer mapContainer = mapServiceContext.getMapContainer(mapName);
 
         List<Index> result = new ArrayList<Index>();
-        for (int partitionId : mapServiceContext.getOwnedPartitions()) {
+        for (int partitionId : mapServiceContext.getOrInitCachedMemberPartitions()) {
             Indexes indexes = mapContainer.getIndexes(partitionId);
-            result.add(indexes.getIndex(attribute));
+
+            for (InternalIndex index : indexes.getIndexes()) {
+                for (String component : index.getComponents()) {
+                    if (component.equals(IndexUtils.canonicalizeAttribute(attribute))) {
+                        result.add(index);
+
+                        break;
+                    }
+                }
+            }
         }
         return result;
     }

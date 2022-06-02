@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,18 @@
 package com.hazelcast.cp.internal.raft.impl.testing;
 
 import com.hazelcast.cp.CPGroupId;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.DataSerializable;
 
-public class TestRaftGroupId implements CPGroupId {
+import java.io.IOException;
+
+public class TestRaftGroupId implements CPGroupId, DataSerializable {
 
     private String name;
+
+    public TestRaftGroupId() {
+    }
 
     public TestRaftGroupId(String name) {
         assert name != null;
@@ -28,12 +36,12 @@ public class TestRaftGroupId implements CPGroupId {
     }
 
     @Override
-    public String name() {
+    public String getName() {
         return name;
     }
 
     @Override
-    public long id() {
+    public long getId() {
         return 0;
     }
 
@@ -60,5 +68,13 @@ public class TestRaftGroupId implements CPGroupId {
         return "TestRaftGroupId{" + "name='" + name + "\''}";
     }
 
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeString(name);
+    }
 
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        name = in.readString();
+    }
 }

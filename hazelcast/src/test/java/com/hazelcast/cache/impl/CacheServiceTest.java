@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,15 @@
 package com.hazelcast.cache.impl;
 
 import com.hazelcast.config.CacheConfig;
-import com.hazelcast.config.ConfigurationException;
+import com.hazelcast.config.InvalidConfigurationException;
 import com.hazelcast.logging.Logger;
-import com.hazelcast.spi.ExecutionService;
-import com.hazelcast.spi.NodeEngine;
+import com.hazelcast.spi.impl.executionservice.ExecutionService;
+import com.hazelcast.spi.impl.NodeEngine;
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.util.FutureUtil;
-import com.hazelcast.util.executor.ManagedExecutorService;
+import com.hazelcast.internal.util.FutureUtil;
+import com.hazelcast.internal.util.executor.ManagedExecutorService;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -54,7 +54,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class CacheServiceTest {
 
     private static final String CACHE_MANAGER_PREFIX = "/test/";
@@ -148,8 +148,8 @@ public class CacheServiceTest {
         try {
             cacheService.putCacheConfigIfAbsent(newCacheConfig());
             // ensure the exception was not swallowed
-            fail("ConfigurationException should have been thrown");
-        } catch (ConfigurationException e) {
+            fail("InvalidConfigurationException should have been thrown");
+        } catch (InvalidConfigurationException e) {
             // assert the CacheConfigFuture was not put in the configs map
             assertNull(cacheService.getCacheConfig(PREFIXED_CACHE_NAME));
         }
@@ -185,7 +185,7 @@ public class CacheServiceTest {
         @Override
         protected void additionalCacheConfigSetup(CacheConfig config, boolean existingConfig) {
             if (throwsException) {
-                throw new ConfigurationException("fail");
+                throw new InvalidConfigurationException("fail");
             }
         }
     }

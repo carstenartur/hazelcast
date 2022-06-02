@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,51 +16,35 @@
 
 package com.hazelcast.config;
 
-import static com.hazelcast.util.Preconditions.checkNotNull;
+import static com.hazelcast.internal.util.Preconditions.isNotNull;
+import static java.util.Collections.newSetFromMap;
 
-import com.hazelcast.instance.BuildInfoProvider;
+import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Contains the configuration for a Management Center.
+ * Contains the configuration for Hazelcast Management Center.
  */
-public class ManagementCenterConfig {
+public final class ManagementCenterConfig implements TrustedInterfacesConfigurable<ManagementCenterConfig> {
 
-    static final int UPDATE_INTERVAL = 3;
+    private boolean scriptingEnabled;
 
-    private boolean enabled;
+    private boolean consoleEnabled;
 
-    private boolean scriptingEnabled = ! BuildInfoProvider.getBuildInfo().isEnterprise();
+    private boolean dataAccessEnabled = true;
 
-    private String url;
-
-    private int updateInterval = UPDATE_INTERVAL;
-
-    private MCMutualAuthConfig mutualAuthConfig;
+    private final Set<String> trustedInterfaces = newSetFromMap(new ConcurrentHashMap<>());
 
     public ManagementCenterConfig() {
     }
 
-    public ManagementCenterConfig(final String url, final int dataUpdateInterval) {
-        this.url = url;
-        this.updateInterval = dataUpdateInterval;
-    }
-
-    /**
-     * {@code true} if management center is enabled, {@code false} if disabled.
-     *
-     * @return {@code true} if management center is enabled, {@code false} if disabled
-     */
-    public boolean isEnabled() {
-        return enabled;
-    }
-
     /**
      * Enables/disables scripting on the member. Management center allows to send a script for execution to a member. The script
-     * can access the unerlying system Hazelcast member is running on with permissions of user running the member. Disabling
+     * can access the underlying system Hazelcast member is running on with permissions of user running the member. Disabling
      * scripting improves the member security.
      * <p>
-     * Default value for this config element depends on Hazelcast edition: {@code false} for Hazelcast Enterprise, {@code true}
-     * for Hazelcast (open source).
+     * Default value for this config element is {@code false}.
      *
      * @param scriptingEnabled {@code true} to allow scripting on the member, {@code false} to disallow
      * @return this management center config instance
@@ -79,91 +63,118 @@ public class ManagementCenterConfig {
     }
 
     /**
-     * Set to {@code true} to enable management center, {@code false} to disable.
+     * Enables/disables console commands execution on the member. Management center allows to send a console command for
+     * execution to a member. The console command can access the underlying system Hazelcast member is running and
+     * bypasses configured client permissions.
+     * Disabling console commands execution improves the member security.
+     * <p>
+     * Default value for this config element is {@code false}.
      *
-     * @param enabled {@code true} to enable management center, {@code false} to disable
+     * @param consoleEnabled {@code true} to allow console commands on the member, {@code false} to disallow
      * @return this management center config instance
+     * @since 5.1
      */
-    public ManagementCenterConfig setEnabled(final boolean enabled) {
-        this.enabled = enabled;
+    public ManagementCenterConfig setConsoleEnabled(final boolean consoleEnabled) {
+        this.consoleEnabled = consoleEnabled;
         return this;
     }
 
     /**
-     * Gets the URL where management center will work.
-     *
-     * @return the URL where management center will work
+     * Returns if executing console commands is allowed ({@code true}) or disallowed ({@code false}).
      */
-    public String getUrl() {
-        return url;
+    public boolean isConsoleEnabled() {
+        return consoleEnabled;
     }
 
     /**
-     * Sets the URL where management center will work.
+     * Enables/disables access to contents of Hazelcast data structures (for instance map entries) for Management Center.
+     * Management Center can't access the data if at least one member has the data access disabled.
+     * <p>
+     * Default value for this config element is {@code true}.
      *
-     * @param url the URL where management center will work
+     * @param dataAccessEnabled {@code true} to allow data access for Management Center, {@code false} to disallow
      * @return this management center config instance
+     * @since 5.1
      */
-    public ManagementCenterConfig setUrl(final String url) {
-        this.url = url;
+    public ManagementCenterConfig setDataAccessEnabled(boolean dataAccessEnabled) {
+        this.dataAccessEnabled = dataAccessEnabled;
         return this;
     }
 
     /**
-     * Gets the time frequency (in seconds) for which Management Center will take
-     * information from the Hazelcast cluster.
-     *
-     * @return the time frequency (in seconds) for which Management Center will take
-     * information from the Hazelcast cluster
+     * Returns if Management Center is allowed to access contents of Hazelcast data structures
+     * (for instance map entries) ({@code true}) or disallowed ({@code false}).
      */
-    public int getUpdateInterval() {
-        return updateInterval;
+    public boolean isDataAccessEnabled() {
+        return dataAccessEnabled;
     }
 
     /**
-     * Sets the time frequency (in seconds) for which Management Center will take
-     * information from the Hazelcast cluster.
+     * Gets the trusted interfaces.
      *
-     * @param updateInterval the time frequency (in seconds) for which Management Center will take
-     *                       information from the Hazelcast cluster
-     * @return this management center config instance
+     * @return the trusted interfaces
+     * @see #setTrustedInterfaces(java.util.Set)
      */
-    public ManagementCenterConfig setUpdateInterval(final int updateInterval) {
-        this.updateInterval = updateInterval;
+    public Set<String> getTrustedInterfaces() {
+        return trustedInterfaces;
+    }
+
+    /**
+     * Sets the trusted interfaces.
+     * <p>
+     * The interface is an IP address where the last octet can be a wildcard '*' or a range '10-20'.
+     *
+     * @param interfaces the new trusted interfaces
+     * @return the updated MulticastConfig
+     * @see IllegalArgumentException if interfaces is {@code null}
+     */
+    public ManagementCenterConfig setTrustedInterfaces(Set<String> interfaces) {
+        isNotNull(interfaces, "interfaces");
+
+        trustedInterfaces.clear();
+        trustedInterfaces.addAll(interfaces);
         return this;
     }
 
-
     /**
-     * Sets the management center mutual auth config
+     * Adds a trusted interface.
      *
-     * @param mutualAuthConfig  the mutual auth config
-     * @return the updated ManagementCenterConfig
-     * @throws NullPointerException if mutualAuthConfig {@code null}
+     * @param ip the IP of the trusted interface
+     * @throws IllegalArgumentException if IP is {@code null}
+     * @see #setTrustedInterfaces(java.util.Set)
      */
-    public ManagementCenterConfig setMutualAuthConfig(MCMutualAuthConfig mutualAuthConfig) {
-        checkNotNull(mutualAuthConfig);
-        this.mutualAuthConfig = mutualAuthConfig;
+    public ManagementCenterConfig addTrustedInterface(final String ip) {
+        trustedInterfaces.add(isNotNull(ip, "ip"));
         return this;
-    }
-
-    /**
-     * Gets a property.
-     *
-     * @return the value of the property, null if not found
-     * @throws NullPointerException if name is {@code null}
-     */
-    public MCMutualAuthConfig getMutualAuthConfig() {
-        return mutualAuthConfig;
     }
 
     @Override
     public String toString() {
         return "ManagementCenterConfig{"
-                + "enabled=" + enabled
-                + ", url='" + url + "'"
-                + ", updateInterval=" + updateInterval
-                + ", mcMutualAuthConfig=" + mutualAuthConfig
+                + "scriptingEnabled=" + scriptingEnabled
+                + "trustedInterfaces=" + trustedInterfaces
                 + "}";
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(scriptingEnabled, consoleEnabled, dataAccessEnabled, trustedInterfaces);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (obj == null) {
+            return false;
+        }
+        if (getClass() != obj.getClass()) {
+            return false;
+        }
+        ManagementCenterConfig other = (ManagementCenterConfig) obj;
+        return scriptingEnabled == other.scriptingEnabled && consoleEnabled == other.consoleEnabled
+                && dataAccessEnabled == other.dataAccessEnabled
+                && Objects.equals(trustedInterfaces, other.trustedInterfaces);
     }
 }

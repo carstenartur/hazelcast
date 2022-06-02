@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,23 +16,22 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.internal.config.ConfigDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.nio.serialization.impl.Versioned;
-import com.hazelcast.spi.merge.SplitBrainMergeTypeProvider;
-import com.hazelcast.spi.merge.SplitBrainMergeTypes;
 
 import java.io.IOException;
+import java.util.Objects;
 
 import static com.hazelcast.config.InMemoryFormat.NATIVE;
-import static com.hazelcast.util.Preconditions.checkAsyncBackupCount;
-import static com.hazelcast.util.Preconditions.checkBackupCount;
-import static com.hazelcast.util.Preconditions.checkFalse;
-import static com.hazelcast.util.Preconditions.checkHasText;
-import static com.hazelcast.util.Preconditions.checkNotNegative;
-import static com.hazelcast.util.Preconditions.checkNotNull;
-import static com.hazelcast.util.Preconditions.checkPositive;
+import static com.hazelcast.internal.util.Preconditions.checkAsyncBackupCount;
+import static com.hazelcast.internal.util.Preconditions.checkBackupCount;
+import static com.hazelcast.internal.util.Preconditions.checkFalse;
+import static com.hazelcast.internal.util.Preconditions.checkHasText;
+import static com.hazelcast.internal.util.Preconditions.checkNotNegative;
+import static com.hazelcast.internal.util.Preconditions.checkNotNull;
+import static com.hazelcast.internal.util.Preconditions.checkPositive;
 
 /**
  * Contains the configuration for the {@link com.hazelcast.ringbuffer.Ringbuffer}.
@@ -41,7 +40,7 @@ import static com.hazelcast.util.Preconditions.checkPositive;
  * content will be fully stored on a single member in the cluster and its
  * backup in another member in the cluster.
  */
-public class RingbufferConfig implements SplitBrainMergeTypeProvider, IdentifiedDataSerializable, Versioned, NamedConfig {
+public class RingbufferConfig implements IdentifiedDataSerializable, NamedConfig {
 
     /**
      * Default value of capacity of the RingBuffer.
@@ -71,7 +70,7 @@ public class RingbufferConfig implements SplitBrainMergeTypeProvider, Identified
     private int timeToLiveSeconds = DEFAULT_TTL_SECONDS;
     private InMemoryFormat inMemoryFormat = DEFAULT_IN_MEMORY_FORMAT;
     private RingbufferStoreConfig ringbufferStoreConfig = new RingbufferStoreConfig().setEnabled(false);
-    private String quorumName;
+    private String splitBrainProtectionName;
     private MergePolicyConfig mergePolicyConfig = new MergePolicyConfig();
 
     public RingbufferConfig() {
@@ -104,8 +103,8 @@ public class RingbufferConfig implements SplitBrainMergeTypeProvider, Identified
         if (config.ringbufferStoreConfig != null) {
             this.ringbufferStoreConfig = new RingbufferStoreConfig(config.ringbufferStoreConfig);
         }
-        this.mergePolicyConfig = config.mergePolicyConfig;
-        this.quorumName = config.quorumName;
+        this.mergePolicyConfig = new MergePolicyConfig(config.mergePolicyConfig);
+        this.splitBrainProtectionName = config.splitBrainProtectionName;
     }
 
     /**
@@ -164,7 +163,7 @@ public class RingbufferConfig implements SplitBrainMergeTypeProvider, Identified
      * @see #getCapacity()
      */
     public RingbufferConfig setCapacity(int capacity) {
-        this.capacity = checkPositive(capacity, "capacity can't be smaller than 1");
+        this.capacity = checkPositive("capacity", capacity);
         return this;
     }
 
@@ -342,22 +341,22 @@ public class RingbufferConfig implements SplitBrainMergeTypeProvider, Identified
     }
 
     /**
-     * Returns the quorum name for operations.
+     * Returns the split brain protection name for operations.
      *
-     * @return the quorum name
+     * @return the split brain protection name
      */
-    public String getQuorumName() {
-        return quorumName;
+    public String getSplitBrainProtectionName() {
+        return splitBrainProtectionName;
     }
 
     /**
-     * Sets the quorum name for operations.
+     * Sets the split brain protection name for operations.
      *
-     * @param quorumName the quorum name
+     * @param splitBrainProtectionName the split brain protection name
      * @return the updated configuration
      */
-    public RingbufferConfig setQuorumName(String quorumName) {
-        this.quorumName = quorumName;
+    public RingbufferConfig setSplitBrainProtectionName(String splitBrainProtectionName) {
+        this.splitBrainProtectionName = splitBrainProtectionName;
         return this;
     }
 
@@ -381,11 +380,6 @@ public class RingbufferConfig implements SplitBrainMergeTypeProvider, Identified
     }
 
     @Override
-    public Class getProvidedMergeTypes() {
-        return SplitBrainMergeTypes.RingbufferMergeTypes.class;
-    }
-
-    @Override
     public String toString() {
         return "RingbufferConfig{"
                 + "name='" + name + '\''
@@ -395,7 +389,7 @@ public class RingbufferConfig implements SplitBrainMergeTypeProvider, Identified
                 + ", timeToLiveSeconds=" + timeToLiveSeconds
                 + ", inMemoryFormat=" + inMemoryFormat
                 + ", ringbufferStoreConfig=" + ringbufferStoreConfig
-                + ", quorumName=" + quorumName
+                + ", splitBrainProtectionName=" + splitBrainProtectionName
                 + ", mergePolicyConfig=" + mergePolicyConfig
                 + '}';
     }
@@ -406,38 +400,37 @@ public class RingbufferConfig implements SplitBrainMergeTypeProvider, Identified
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return ConfigDataSerializerHook.RINGBUFFER_CONFIG;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(name);
+        out.writeString(name);
         out.writeInt(capacity);
         out.writeInt(backupCount);
         out.writeInt(asyncBackupCount);
         out.writeInt(timeToLiveSeconds);
-        out.writeUTF(inMemoryFormat.name());
+        out.writeString(inMemoryFormat.name());
         out.writeObject(ringbufferStoreConfig);
-        out.writeUTF(quorumName);
+        out.writeString(splitBrainProtectionName);
         out.writeObject(mergePolicyConfig);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        name = in.readUTF();
+        name = in.readString();
         capacity = in.readInt();
         backupCount = in.readInt();
         asyncBackupCount = in.readInt();
         timeToLiveSeconds = in.readInt();
-        inMemoryFormat = InMemoryFormat.valueOf(in.readUTF());
+        inMemoryFormat = InMemoryFormat.valueOf(in.readString());
         ringbufferStoreConfig = in.readObject();
-        quorumName = in.readUTF();
+        splitBrainProtectionName = in.readString();
         mergePolicyConfig = in.readObject();
     }
 
     @Override
-    @SuppressWarnings({"checkstyle:cyclomaticcomplexity", "checkstyle:npathcomplexity"})
     public final boolean equals(Object o) {
         if (this == o) {
             return true;
@@ -447,119 +440,20 @@ public class RingbufferConfig implements SplitBrainMergeTypeProvider, Identified
         }
 
         RingbufferConfig that = (RingbufferConfig) o;
-        if (capacity != that.capacity) {
-            return false;
-        }
-        if (backupCount != that.backupCount) {
-            return false;
-        }
-        if (asyncBackupCount != that.asyncBackupCount) {
-            return false;
-        }
-        if (timeToLiveSeconds != that.timeToLiveSeconds) {
-            return false;
-        }
-        if (!name.equals(that.name)) {
-            return false;
-        }
-        if (inMemoryFormat != that.inMemoryFormat) {
-            return false;
-        }
-        if (ringbufferStoreConfig != null ? !ringbufferStoreConfig.equals(that.ringbufferStoreConfig)
-                : that.ringbufferStoreConfig != null) {
-            return false;
-        }
-        if (quorumName != null ? !quorumName.equals(that.quorumName) : that.quorumName != null) {
-            return false;
-        }
-        return mergePolicyConfig != null ? mergePolicyConfig.equals(that.mergePolicyConfig) : that.mergePolicyConfig == null;
+        return capacity == that.capacity
+                && backupCount == that.backupCount
+                && asyncBackupCount == that.asyncBackupCount
+                && timeToLiveSeconds == that.timeToLiveSeconds
+                && Objects.equals(name, that.name)
+                && inMemoryFormat == that.inMemoryFormat
+                && Objects.equals(ringbufferStoreConfig, that.ringbufferStoreConfig)
+                && Objects.equals(splitBrainProtectionName, that.splitBrainProtectionName)
+                && Objects.equals(mergePolicyConfig, that.mergePolicyConfig);
     }
 
     @Override
     public final int hashCode() {
-        int result = name.hashCode();
-        result = 31 * result + capacity;
-        result = 31 * result + backupCount;
-        result = 31 * result + asyncBackupCount;
-        result = 31 * result + timeToLiveSeconds;
-        result = 31 * result + (inMemoryFormat != null ? inMemoryFormat.hashCode() : 0);
-        result = 31 * result + (ringbufferStoreConfig != null ? ringbufferStoreConfig.hashCode() : 0);
-        result = 31 * result + (quorumName != null ? quorumName.hashCode() : 0);
-        result = 31 * result + (mergePolicyConfig != null ? mergePolicyConfig.hashCode() : 0);
-        return result;
-    }
-
-    /**
-     * Gets immutable version of this configuration.
-     *
-     * @return immutable version of this configuration
-     * @deprecated this method will be removed in 4.0; it is meant for internal usage only
-     */
-    public RingbufferConfig getAsReadOnly() {
-        return new RingbufferConfigReadOnly(this);
-    }
-
-    /**
-     * A readonly version of the {@link RingbufferConfig}.
-     */
-    private static class RingbufferConfigReadOnly extends RingbufferConfig {
-
-        RingbufferConfigReadOnly(RingbufferConfig config) {
-            super(config);
-        }
-
-        @Override
-        public RingbufferStoreConfig getRingbufferStoreConfig() {
-            final RingbufferStoreConfig storeConfig = super.getRingbufferStoreConfig();
-            if (storeConfig != null) {
-                return storeConfig.getAsReadOnly();
-            } else {
-                return null;
-            }
-        }
-
-        @Override
-        public RingbufferConfig setCapacity(int capacity) {
-            throw throwReadOnly();
-        }
-
-        @Override
-        public RingbufferConfig setAsyncBackupCount(int asyncBackupCount) {
-            throw throwReadOnly();
-        }
-
-        @Override
-        public RingbufferConfig setBackupCount(int backupCount) {
-            throw throwReadOnly();
-        }
-
-        @Override
-        public RingbufferConfig setTimeToLiveSeconds(int timeToLiveSeconds) {
-            throw throwReadOnly();
-        }
-
-        @Override
-        public RingbufferConfig setInMemoryFormat(InMemoryFormat inMemoryFormat) {
-            throw throwReadOnly();
-        }
-
-        @Override
-        public RingbufferConfig setRingbufferStoreConfig(RingbufferStoreConfig ringbufferStoreConfig) {
-            throw throwReadOnly();
-        }
-
-        @Override
-        public RingbufferConfig setQuorumName(String quorumName) {
-            throw throwReadOnly();
-        }
-
-        @Override
-        public RingbufferConfig setMergePolicyConfig(MergePolicyConfig mergePolicyConfig) {
-            throw throwReadOnly();
-        }
-
-        private UnsupportedOperationException throwReadOnly() {
-            throw new UnsupportedOperationException("This config is read-only");
-        }
+        return Objects.hash(name, capacity, backupCount, asyncBackupCount, timeToLiveSeconds, inMemoryFormat,
+                ringbufferStoreConfig, splitBrainProtectionName, mergePolicyConfig);
     }
 }

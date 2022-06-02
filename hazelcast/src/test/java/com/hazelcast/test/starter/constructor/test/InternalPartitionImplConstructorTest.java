@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,12 +19,12 @@ package com.hazelcast.test.starter.constructor.test;
 import com.hazelcast.internal.partition.InternalPartition;
 import com.hazelcast.internal.partition.PartitionReplica;
 import com.hazelcast.internal.partition.impl.InternalPartitionImpl;
-import com.hazelcast.nio.Address;
+import com.hazelcast.cluster.Address;
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import com.hazelcast.test.starter.constructor.InternalPartitionImplConstructor;
-import com.hazelcast.util.UuidUtil;
+import com.hazelcast.internal.util.UuidUtil;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -32,19 +32,20 @@ import org.junit.runner.RunWith;
 import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class InternalPartitionImplConstructorTest {
 
     @Test
     public void testConstructor() throws Exception {
-        PartitionReplica local = new PartitionReplica(new Address("172.16.16.1", 4223), UuidUtil.newUnsecureUuidString());
-        PartitionReplica[] replicas = new PartitionReplica[]{new PartitionReplica(new Address("127.0.0.1", 2342), UuidUtil.newUnsecureUuidString())};
-        InternalPartition partition = new InternalPartitionImpl(42, null, local, replicas);
+        PartitionReplica local = new PartitionReplica(new Address("172.16.16.1", 4223), UuidUtil.newUnsecureUUID());
+        PartitionReplica[] replicas = new PartitionReplica[]{new PartitionReplica(new Address("127.0.0.1", 2342), UuidUtil.newUnsecureUUID())};
+        InternalPartition partition = new InternalPartitionImpl(42, local, replicas, 1, null);
 
         InternalPartitionImplConstructor constructor = new InternalPartitionImplConstructor(InternalPartitionImpl.class);
         InternalPartition clonedPartition = (InternalPartition) constructor.createNew(partition);
 
         assertEquals(partition.getPartitionId(), clonedPartition.getPartitionId());
+        assertEquals(partition.version(), clonedPartition.version());
         assertEquals(partition.getOwnerOrNull(), clonedPartition.getOwnerOrNull());
         assertEquals(partition.getReplicaAddress(0), clonedPartition.getReplicaAddress(0));
         assertEquals(partition.getReplica(0), clonedPartition.getReplica(0));

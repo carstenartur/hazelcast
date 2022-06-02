@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.cp.internal.raft.impl.dto;
 
-import com.hazelcast.core.Endpoint;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 import com.hazelcast.cp.internal.raft.impl.RaftDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -35,20 +35,20 @@ import java.io.IOException;
  */
 public class VoteResponse implements IdentifiedDataSerializable {
 
-    private Endpoint voter;
+    private RaftEndpoint voter;
     private int term;
     private boolean granted;
 
     public VoteResponse() {
     }
 
-    public VoteResponse(Endpoint voter, int term, boolean granted) {
+    public VoteResponse(RaftEndpoint voter, int term, boolean granted) {
         this.voter = voter;
         this.term = term;
         this.granted = granted;
     }
 
-    public Endpoint voter() {
+    public RaftEndpoint voter() {
         return voter;
     }
 
@@ -66,7 +66,7 @@ public class VoteResponse implements IdentifiedDataSerializable {
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftDataSerializerHook.VOTE_RESPONSE;
     }
 

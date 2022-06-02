@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,26 +16,29 @@
 
 package com.hazelcast.spi.impl;
 
+import com.hazelcast.internal.nio.Packet;
+import com.hazelcast.internal.server.ServerConnection;
+import com.hazelcast.internal.server.ServerConnectionManager;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.nio.Connection;
-import com.hazelcast.nio.EndpointManager;
-import com.hazelcast.nio.Packet;
-import com.hazelcast.util.function.Consumer;
+import com.hazelcast.spi.impl.eventservice.EventService;
+import com.hazelcast.spi.impl.operationservice.OperationService;
 
-import static com.hazelcast.instance.OutOfMemoryErrorDispatcher.inspectOutOfMemoryError;
-import static com.hazelcast.nio.Packet.FLAG_OP_CONTROL;
-import static com.hazelcast.nio.Packet.FLAG_OP_RESPONSE;
+import java.util.function.Consumer;
+
+import static com.hazelcast.instance.impl.OutOfMemoryErrorDispatcher.inspectOutOfMemoryError;
+import static com.hazelcast.internal.nio.Packet.FLAG_OP_CONTROL;
+import static com.hazelcast.internal.nio.Packet.FLAG_OP_RESPONSE;
 
 /**
  * A {@link Consumer} that dispatches the {@link Packet} to the right service. For example, operations are sent to the
- * {@link com.hazelcast.spi.OperationService}, events are sent to the {@link com.hazelcast.spi.EventService} etc.
+ * {@link OperationService}, events are sent to the {@link EventService} etc.
  */
 public final class PacketDispatcher implements Consumer<Packet> {
 
     private final ILogger logger;
     private final Consumer<Packet> eventService;
     private final Consumer<Packet> operationExecutor;
-    private final Consumer<Packet> jetPacketConsumer;
+    private final Consumer<Packet> jetServiceBackend;
     private final Consumer<Packet> responseHandler;
     private final Consumer<Packet> invocationMonitor;
 
@@ -44,13 +47,14 @@ public final class PacketDispatcher implements Consumer<Packet> {
                             Consumer<Packet> responseHandler,
                             Consumer<Packet> invocationMonitor,
                             Consumer<Packet> eventService,
-                            Consumer<Packet> jetPacketConsumer) {
+                            Consumer<Packet> jetServiceBackend
+    ) {
         this.logger = logger;
         this.responseHandler = responseHandler;
         this.eventService = eventService;
         this.invocationMonitor = invocationMonitor;
         this.operationExecutor = operationExecutor;
-        this.jetPacketConsumer = jetPacketConsumer;
+        this.jetServiceBackend = jetServiceBackend;
     }
 
     @Override
@@ -69,14 +73,13 @@ public final class PacketDispatcher implements Consumer<Packet> {
                 case EVENT:
                     eventService.accept(packet);
                     break;
-                case BIND:
-                case EXTENDED_BIND:
-                    Connection connection = packet.getConn();
-                    EndpointManager endpointManager = connection.getEndpointManager();
-                    endpointManager.accept(packet);
+                case SERVER_CONTROL:
+                    ServerConnection connection = packet.getConn();
+                    ServerConnectionManager connectionManager = connection.getConnectionManager();
+                    connectionManager.accept(packet);
                     break;
                 case JET:
-                    jetPacketConsumer.accept(packet);
+                    jetServiceBackend.accept(packet);
                     break;
                 default:
                     logger.severe("Header flags [" + Integer.toBinaryString(packet.getFlags())

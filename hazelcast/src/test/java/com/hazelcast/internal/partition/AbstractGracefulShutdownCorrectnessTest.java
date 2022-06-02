@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@
 
 package com.hazelcast.internal.partition;
 
+import com.hazelcast.cluster.Address;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.internal.partition.service.TestGetOperation;
 import com.hazelcast.internal.partition.service.TestPutOperation;
-import com.hazelcast.nio.Address;
-import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.spi.OperationService;
+import com.hazelcast.spi.impl.NodeEngine;
+import com.hazelcast.spi.impl.operationservice.OperationService;
 import org.junit.Test;
 import org.junit.runners.Parameterized;
 
@@ -36,8 +36,11 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import static com.hazelcast.test.Accessors.getNode;
+import static com.hazelcast.test.Accessors.getNodeEngineImpl;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
@@ -59,7 +62,7 @@ public abstract class AbstractGracefulShutdownCorrectnessTest extends PartitionC
 
         shutdownNodes(shutdownNodeCount);
 
-        assertSizeAndData();
+        assertSizeAndDataEventually();
     }
 
     @Test(timeout = 6000 * 10 * 10)
@@ -114,39 +117,42 @@ public abstract class AbstractGracefulShutdownCorrectnessTest extends PartitionC
     public void testPartitionData_whenNodesStartedShutdown_whileOperationsOngoing() throws InterruptedException {
         final Config config = getConfig(true, false);
 
-        Future future = spawn(new Runnable() {
-            @Override
-            public void run() {
-                LinkedList<HazelcastInstance> instances
-                        = new LinkedList<HazelcastInstance>(Arrays.asList(factory.newInstances(config, nodeCount)));
-                try {
-                    for (int i = 0; i < 3; i++) {
-                        shutdownNodes(instances, shutdownNodeCount);
-                        Collection<HazelcastInstance> startedInstances = startNodes(config, shutdownNodeCount);
-                        instances.addAll(startedInstances);
-                    }
+        Future future = spawn(() -> {
+            LinkedList<HazelcastInstance> instances
+                    = new LinkedList<>(Arrays.asList(factory.newInstances(config, nodeCount)));
+            try {
+                for (int i = 0; i < 3; i++) {
                     shutdownNodes(instances, shutdownNodeCount);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    Collection<HazelcastInstance> startedInstances = startNodes(config, shutdownNodeCount);
+                    instances.addAll(startedInstances);
                 }
+                shutdownNodes(instances, shutdownNodeCount);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
         });
 
         HazelcastInstance hz = factory.newHazelcastInstance(config);
         NodeEngine nodeEngine = getNodeEngineImpl(hz);
+
+        while (!nodeEngine.getClusterService().isJoined()) {
+            TimeUnit.MILLISECONDS.sleep(100);
+        }
+
         OperationService operationService = nodeEngine.getOperationService();
         int partitionCount = nodeEngine.getPartitionService().getPartitionCount();
 
         int value = 0;
-        while (!future.isDone()) {
+        do {
             value++;
             for (int p = 0; p < partitionCount; p++) {
                 operationService.invokeOnPartition(null, new TestPutOperation(value), p).join();
             }
-        }
+        } while (!future.isDone());
 
         for (int p = 0; p < partitionCount; p++) {
             Integer actual = (Integer) operationService.invokeOnPartition(null, new TestGetOperation(), p).join();
+            assertNotNull(actual);
             assertEquals(value, actual.intValue());
         }
     }

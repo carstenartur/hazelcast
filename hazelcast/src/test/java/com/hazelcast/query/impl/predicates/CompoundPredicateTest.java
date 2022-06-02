@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,14 @@
 package com.hazelcast.query.impl.predicates;
 
 import com.hazelcast.query.Predicate;
-import com.hazelcast.query.TruePredicate;
-import com.hazelcast.query.impl.FalsePredicate;
-import com.hazelcast.test.HazelcastParametersRunnerFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.query.Predicates;
+import com.hazelcast.test.HazelcastParallelParametersRunnerFactory;
+import com.hazelcast.test.HazelcastParametrizedRunner;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameter;
 import org.junit.runners.Parameterized.Parameters;
 
@@ -35,14 +34,15 @@ import static com.hazelcast.test.ReflectionsHelper.REFLECTIONS;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
+import static org.junit.runners.Parameterized.UseParametersRunnerFactory;
 
 /**
  * Test all classes which implement CompoundStatement in package com.hazelcast.query.impl.predicates
  * for compliance with CompoundStatement contract.
  */
-@RunWith(Parameterized.class)
-@Parameterized.UseParametersRunnerFactory(HazelcastParametersRunnerFactory.class)
-@Category({QuickTest.class, ParallelTest.class})
+@RunWith(HazelcastParametrizedRunner.class)
+@UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class CompoundPredicateTest {
 
     @Parameter
@@ -68,7 +68,7 @@ public class CompoundPredicateTest {
             throws IllegalAccessException, InstantiationException {
 
         CompoundPredicate o = klass.newInstance();
-        Predicate truePredicate = new TruePredicate();
+        Predicate truePredicate = Predicates.alwaysTrue();
         o.setPredicates(new Predicate[]{truePredicate});
         assertEquals(truePredicate, o.getPredicates()[0]);
     }
@@ -78,10 +78,10 @@ public class CompoundPredicateTest {
             throws IllegalAccessException, InstantiationException {
 
         CompoundPredicate o = klass.newInstance();
-        Predicate truePredicate = new TruePredicate();
+        Predicate truePredicate = Predicates.alwaysTrue();
         o.setPredicates(new Predicate[]{truePredicate});
 
-        Predicate falsePredicate = new FalsePredicate();
+        Predicate falsePredicate = Predicates.alwaysFalse();
         o.setPredicates(new Predicate[]{falsePredicate});
 
         fail();

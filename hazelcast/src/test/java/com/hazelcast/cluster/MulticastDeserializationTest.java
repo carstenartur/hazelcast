@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,22 +16,11 @@
 
 package com.hazelcast.cluster;
 
-import com.hazelcast.config.Config;
-import com.hazelcast.config.JavaSerializationFilterConfig;
-import com.hazelcast.config.JoinConfig;
-import com.hazelcast.core.Hazelcast;
-import com.hazelcast.instance.HazelcastInstanceFactory;
-import com.hazelcast.internal.serialization.impl.SerializationConstants;
-import com.hazelcast.nio.Packet;
-import com.hazelcast.test.HazelcastSerialClassRunner;
-import com.hazelcast.test.OverridePropertyRule;
-import com.hazelcast.test.annotation.QuickTest;
-import example.serialization.TestDeserialized;
-import org.junit.After;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.experimental.categories.Category;
-import org.junit.runner.RunWith;
+import static com.hazelcast.internal.nio.IOUtil.closeResource;
+import static com.hazelcast.test.HazelcastTestSupport.assertTrueEventually;
+import static com.hazelcast.test.HazelcastTestSupport.smallInstanceConfig;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -41,9 +30,27 @@ import java.net.InetAddress;
 import java.net.MulticastSocket;
 import java.nio.ByteBuffer;
 
-import static com.hazelcast.nio.IOUtil.closeResource;
-import static com.hazelcast.test.OverridePropertyRule.clear;
-import static org.junit.Assert.assertFalse;
+import com.hazelcast.spi.properties.ClusterProperty;
+import org.junit.AfterClass;
+import org.junit.Before;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.experimental.categories.Category;
+import org.junit.runner.RunWith;
+
+import com.hazelcast.config.Config;
+import com.hazelcast.config.JavaSerializationFilterConfig;
+import com.hazelcast.config.JoinConfig;
+import com.hazelcast.core.Hazelcast;
+import com.hazelcast.instance.impl.HazelcastInstanceFactory;
+import com.hazelcast.internal.serialization.impl.SerializationConstants;
+import com.hazelcast.internal.util.OsHelper;
+import com.hazelcast.internal.nio.Packet;
+import com.hazelcast.test.HazelcastSerialClassRunner;
+import com.hazelcast.test.OverridePropertyRule;
+import com.hazelcast.test.annotation.QuickTest;
+
+import example.serialization.TestDeserialized;
 
 /**
  * Tests if deserialization blacklisting works for MulticastService.
@@ -52,18 +59,24 @@ import static org.junit.Assert.assertFalse;
 @Category(QuickTest.class)
 public class MulticastDeserializationTest {
 
-    @Rule
-    public final OverridePropertyRule ruleSysPropHazelcastLocalAddress = clear("hazelcast.local.localAddress");
-
     private static final int MULTICAST_PORT = 53535;
     private static final String MULTICAST_GROUP = "224.0.0.219";
     // TTL = 0 : restricted to the same host, won't be output by any interface
     private static final int MULTICAST_TTL = 0;
 
-    @After
-    public void tearDown() {
-        TestDeserialized.isDeserialized = false;
+    @Rule
+    public OverridePropertyRule multicastGroupOverride = OverridePropertyRule
+            .clear(ClusterProperty.MULTICAST_GROUP.getName());
+
+    @Before
+    public void before() {
+        cleanup();
+    }
+
+    @AfterClass
+    public static void cleanup() {
         HazelcastInstanceFactory.terminateAll();
+        TestDeserialized.isDeserialized = false;
     }
 
     /**
@@ -74,7 +87,7 @@ public class MulticastDeserializationTest {
      */
     @Test
     public void test() throws Exception {
-        Config config = getConfig();
+        Config config = createConfig(true);
         Hazelcast.newHazelcastInstance(config);
 
         sendJoinDatagram(new TestDeserialized());
@@ -82,15 +95,25 @@ public class MulticastDeserializationTest {
         assertFalse("Untrusted deserialization is possible", TestDeserialized.isDeserialized);
     }
 
-    private Config getConfig() {
-        JavaSerializationFilterConfig javaSerializationFilterConfig = new JavaSerializationFilterConfig()
-                .setDefaultsDisabled(true);
-        javaSerializationFilterConfig.getBlacklist()
-                .addClasses(TestDeserialized.class.getName());
+    @Test
+    public void testWithoutFilter() throws Exception {
+        Config config = createConfig(false);
+        Hazelcast.newHazelcastInstance(config);
 
-        Config config = new Config();
-        config.getSerializationConfig()
-                .setJavaSerializationFilterConfig(javaSerializationFilterConfig);
+        sendJoinDatagram(new TestDeserialized());
+        assertTrueEventually(() -> assertTrue("Object was not deserialized", TestDeserialized.isDeserialized));
+    }
+
+    private Config createConfig(boolean withFilter) {
+        Config config = smallInstanceConfig();
+        if (withFilter) {
+            JavaSerializationFilterConfig javaSerializationFilterConfig = new JavaSerializationFilterConfig()
+                    .setDefaultsDisabled(true);
+            javaSerializationFilterConfig.getBlacklist()
+                    .addClasses(TestDeserialized.class.getName());
+            config.getSerializationConfig()
+                    .setJavaSerializationFilterConfig(javaSerializationFilterConfig);
+        }
         JoinConfig join = config.getNetworkConfig().getJoin();
         join.getTcpIpConfig()
                 .setEnabled(false);
@@ -98,7 +121,8 @@ public class MulticastDeserializationTest {
                 .setEnabled(true)
                 .setMulticastPort(MULTICAST_PORT)
                 .setMulticastGroup(MULTICAST_GROUP)
-                .setMulticastTimeToLive(MULTICAST_TTL);
+                .setMulticastTimeToLive(MULTICAST_TTL)
+                ;
         return config;
     }
 
@@ -114,8 +138,10 @@ public class MulticastDeserializationTest {
         MulticastSocket multicastSocket = null;
         try {
             multicastSocket = new MulticastSocket(MULTICAST_PORT);
-            multicastSocket.setInterface(InetAddress.getLocalHost());
             multicastSocket.setTimeToLive(MULTICAST_TTL);
+            if (OsHelper.isMac()) {
+                multicastSocket.setInterface(InetAddress.getByName("127.0.0.1"));
+            }
             InetAddress group = InetAddress.getByName(MULTICAST_GROUP);
             multicastSocket.joinGroup(group);
             int msgSize = data.length;

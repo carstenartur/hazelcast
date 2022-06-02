@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 package com.hazelcast.cp.internal.raft.impl.command;
 
-import com.hazelcast.core.Endpoint;
 import com.hazelcast.cp.internal.raft.MembershipChangeMode;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 import com.hazelcast.cp.internal.raft.command.RaftGroupCmd;
 import com.hazelcast.cp.internal.raft.impl.RaftDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
@@ -34,24 +34,24 @@ import java.util.LinkedHashSet;
  */
 public class UpdateRaftGroupMembersCmd extends RaftGroupCmd implements IdentifiedDataSerializable {
 
-    private Collection<Endpoint> members;
-    private Endpoint member;
+    private Collection<RaftEndpoint> members;
+    private RaftEndpoint member;
     private MembershipChangeMode mode;
 
     public UpdateRaftGroupMembersCmd() {
     }
 
-    public UpdateRaftGroupMembersCmd(Collection<Endpoint> members, Endpoint member, MembershipChangeMode mode) {
+    public UpdateRaftGroupMembersCmd(Collection<RaftEndpoint> members, RaftEndpoint member, MembershipChangeMode mode) {
         this.members = members;
         this.member = member;
         this.mode = mode;
     }
 
-    public Collection<Endpoint> getMembers() {
+    public Collection<RaftEndpoint> getMembers() {
         return members;
     }
 
-    public Endpoint getMember() {
+    public RaftEndpoint getMember() {
         return member;
     }
 
@@ -65,35 +65,35 @@ public class UpdateRaftGroupMembersCmd extends RaftGroupCmd implements Identifie
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftDataSerializerHook.UPDATE_RAFT_GROUP_MEMBERS_COMMAND;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
         out.writeInt(members.size());
-        for (Endpoint member : members) {
+        for (RaftEndpoint member : members) {
             out.writeObject(member);
         }
         out.writeObject(member);
-        out.writeUTF(mode.name());
+        out.writeString(mode.name());
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
         int count = in.readInt();
-        Collection<Endpoint> members = new LinkedHashSet<Endpoint>();
+        Collection<RaftEndpoint> members = new LinkedHashSet<RaftEndpoint>();
         for (int i = 0; i < count; i++) {
-            Endpoint member = in.readObject();
+            RaftEndpoint member = in.readObject();
             members.add(member);
         }
         this.members = members;
         this.member = in.readObject();
-        this.mode = MembershipChangeMode.valueOf(in.readUTF());
+        this.mode = MembershipChangeMode.valueOf(in.readString());
     }
 
     @Override
     public String toString() {
-        return "ChangeRaftGroupMembersCmd{" + "members=" + members + ", member=" + member + ", mode=" + mode + '}';
+        return "UpdateRaftGroupMembersCmd{" + "members=" + members + ", member=" + member + ", mode=" + mode + '}';
     }
 }

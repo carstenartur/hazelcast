@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,20 +18,25 @@ package com.hazelcast.client.impl.protocol.task;
 
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.ClientPingCodec;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
 
 import java.security.Permission;
 
-public class PingMessageTask extends AbstractCallableMessageTask<ClientPingCodec.RequestParameters> {
+public class PingMessageTask extends AbstractCallableMessageTask<Void> implements UrgentMessageTask {
 
     public PingMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
     }
 
     @Override
-    protected ClientPingCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
-        return ClientPingCodec.decodeRequest(clientMessage);
+    protected boolean acceptOnIncompleteStart() {
+        return true;
+    }
+
+    @Override
+    protected Void decodeClientMessage(ClientMessage clientMessage) {
+        return null;
     }
 
     @Override
@@ -69,4 +74,8 @@ public class PingMessageTask extends AbstractCallableMessageTask<ClientPingCodec
         return null;
     }
 
+    @Override
+    public int getPartitionId() {
+        return -1;
+    }
 }

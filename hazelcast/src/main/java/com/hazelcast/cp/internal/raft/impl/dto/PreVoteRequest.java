@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.cp.internal.raft.impl.dto;
 
-import com.hazelcast.core.Endpoint;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 import com.hazelcast.cp.internal.raft.impl.RaftDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -34,7 +34,7 @@ import java.io.IOException;
  */
 public class PreVoteRequest implements IdentifiedDataSerializable {
 
-    private Endpoint candidate;
+    private RaftEndpoint candidate;
     private int nextTerm;
     private int lastLogTerm;
     private long lastLogIndex;
@@ -42,14 +42,14 @@ public class PreVoteRequest implements IdentifiedDataSerializable {
     public PreVoteRequest() {
     }
 
-    public PreVoteRequest(Endpoint candidate, int nextTerm, int lastLogTerm, long lastLogIndex) {
+    public PreVoteRequest(RaftEndpoint candidate, int nextTerm, int lastLogTerm, long lastLogIndex) {
         this.nextTerm = nextTerm;
         this.candidate = candidate;
         this.lastLogTerm = lastLogTerm;
         this.lastLogIndex = lastLogIndex;
     }
 
-    public Endpoint candidate() {
+    public RaftEndpoint candidate() {
         return candidate;
     }
 
@@ -71,7 +71,7 @@ public class PreVoteRequest implements IdentifiedDataSerializable {
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftDataSerializerHook.PRE_VOTE_REQUEST;
     }
 

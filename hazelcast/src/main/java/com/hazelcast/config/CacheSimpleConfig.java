@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,31 +16,34 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.internal.config.ConfigDataSerializerHook;
+import com.hazelcast.internal.config.DataPersistenceAndHotRestartMerger;
+import com.hazelcast.internal.partition.IPartition;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.spi.merge.PutIfAbsentMergePolicy;
-import com.hazelcast.spi.merge.SplitBrainMergeTypeProvider;
-import com.hazelcast.spi.merge.SplitBrainMergeTypes;
-import com.hazelcast.spi.partition.IPartition;
+import com.hazelcast.nio.serialization.impl.Versioned;
 
+import javax.annotation.Nonnull;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 import static com.hazelcast.internal.serialization.impl.SerializationUtil.readNullableList;
 import static com.hazelcast.internal.serialization.impl.SerializationUtil.writeNullableList;
-import static com.hazelcast.util.Preconditions.checkAsyncBackupCount;
-import static com.hazelcast.util.Preconditions.checkBackupCount;
-import static com.hazelcast.util.Preconditions.isNotNull;
+import static com.hazelcast.internal.util.Preconditions.checkAsyncBackupCount;
+import static com.hazelcast.internal.util.Preconditions.checkBackupCount;
+import static com.hazelcast.internal.util.Preconditions.checkNotNull;
+import static com.hazelcast.internal.util.Preconditions.isNotNull;
 
 /**
  * Simple configuration to hold parsed XML configuration.
  * CacheConfig depends on the JCache API. If the JCache API is not in the classpath,
  * you can use CacheSimpleConfig as a communicator between the code and CacheConfig.
  */
-public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, IdentifiedDataSerializable, NamedConfig {
+public class CacheSimpleConfig implements IdentifiedDataSerializable, NamedConfig, Versioned {
 
     /**
      * The minimum number of backups.
@@ -62,11 +65,6 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
      */
     public static final InMemoryFormat DEFAULT_IN_MEMORY_FORMAT = InMemoryFormat.BINARY;
 
-    /**
-     * Default policy for merging
-     */
-    public static final String DEFAULT_CACHE_MERGE_POLICY = PutIfAbsentMergePolicy.class.getName();
-
     private String name;
 
     private String keyType;
@@ -85,7 +83,7 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
     private String cacheWriter;
 
     private ExpiryPolicyFactoryConfig expiryPolicyFactoryConfig;
-    private List<CacheSimpleEntryListenerConfig> cacheEntryListeners;
+    private List<CacheSimpleEntryListenerConfig> cacheEntryListeners = new ArrayList<>();
 
     private int asyncBackupCount = MIN_BACKUP_COUNT;
     private int backupCount = DEFAULT_BACKUP_COUNT;
@@ -96,15 +94,19 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
     private EvictionConfig evictionConfig = new EvictionConfig();
     private WanReplicationRef wanReplicationRef;
 
-    private transient CacheSimpleConfig readOnly;
+    private String splitBrainProtectionName;
 
-    private String quorumName;
-
-    private List<CachePartitionLostListenerConfig> partitionLostListenerConfigs;
-
-    private String mergePolicy = DEFAULT_CACHE_MERGE_POLICY;
+    private List<CachePartitionLostListenerConfig> partitionLostListenerConfigs = new ArrayList<>();
 
     private HotRestartConfig hotRestartConfig = new HotRestartConfig();
+
+    private DataPersistenceConfig dataPersistenceConfig = new DataPersistenceConfig();
+
+    private EventJournalConfig eventJournalConfig = new EventJournalConfig();
+
+    private MergePolicyConfig mergePolicyConfig = new MergePolicyConfig();
+
+    private MerkleTreeConfig merkleTreeConfig = new MerkleTreeConfig();
 
     /**
      * Disables invalidation events for per entry but full-flush invalidation events are still enabled.
@@ -124,7 +126,9 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
         this.cacheLoaderFactory = cacheSimpleConfig.cacheLoaderFactory;
         this.cacheWriterFactory = cacheSimpleConfig.cacheWriterFactory;
         this.expiryPolicyFactoryConfig = cacheSimpleConfig.expiryPolicyFactoryConfig;
-        this.cacheEntryListeners = cacheSimpleConfig.cacheEntryListeners;
+        this.cacheEntryListeners = cacheSimpleConfig.cacheEntryListeners == null
+                ? null
+                : new ArrayList<>(cacheSimpleConfig.cacheEntryListeners);
         this.asyncBackupCount = cacheSimpleConfig.asyncBackupCount;
         this.backupCount = cacheSimpleConfig.backupCount;
         this.inMemoryFormat = cacheSimpleConfig.inMemoryFormat;
@@ -133,28 +137,28 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
             this.evictionConfig = cacheSimpleConfig.evictionConfig;
         }
         this.wanReplicationRef = cacheSimpleConfig.wanReplicationRef;
-        this.partitionLostListenerConfigs =
-                new ArrayList<CachePartitionLostListenerConfig>(cacheSimpleConfig.getPartitionLostListenerConfigs());
-        this.quorumName = cacheSimpleConfig.quorumName;
-        this.mergePolicy = cacheSimpleConfig.mergePolicy;
+        this.partitionLostListenerConfigs = cacheSimpleConfig.partitionLostListenerConfigs == null
+                ? null
+                : new ArrayList<>(cacheSimpleConfig.partitionLostListenerConfigs);
+        this.splitBrainProtectionName = cacheSimpleConfig.splitBrainProtectionName;
+        this.mergePolicyConfig = new MergePolicyConfig(cacheSimpleConfig.mergePolicyConfig);
+        this.merkleTreeConfig = new MerkleTreeConfig(cacheSimpleConfig.merkleTreeConfig);
         this.hotRestartConfig = new HotRestartConfig(cacheSimpleConfig.hotRestartConfig);
+        this.dataPersistenceConfig = new DataPersistenceConfig(cacheSimpleConfig.dataPersistenceConfig);
+        this.eventJournalConfig = new EventJournalConfig(cacheSimpleConfig.eventJournalConfig);
         this.disablePerEntryInvalidationEvents = cacheSimpleConfig.disablePerEntryInvalidationEvents;
     }
 
-    public CacheSimpleConfig() {
+    /**
+     * Create a Cache Simple Config for a cache with a specific name.
+     *
+     * @param name cache name
+     */
+    public CacheSimpleConfig(String name) {
+        setName(name);
     }
 
-    /**
-     * Gets immutable version of this configuration.
-     *
-     * @return immutable version of this configuration
-     * @deprecated this method will be removed in 4.0; it is meant for internal usage only
-     */
-    public CacheSimpleConfig getAsReadOnly() {
-        if (readOnly == null) {
-            readOnly = new CacheSimpleConfigReadOnly(this);
-        }
-        return readOnly;
+    public CacheSimpleConfig() {
     }
 
     /**
@@ -445,7 +449,7 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
      */
     public List<CacheSimpleEntryListenerConfig> getCacheEntryListeners() {
         if (cacheEntryListeners == null) {
-            cacheEntryListeners = new ArrayList<CacheSimpleEntryListenerConfig>();
+            cacheEntryListeners = new ArrayList<>();
         }
         return cacheEntryListeners;
     }
@@ -563,9 +567,11 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
      * Sets the WAN target replication reference.
      *
      * @param wanReplicationRef the WAN target replication reference
+     * @return this configuration
      */
-    public void setWanReplicationRef(WanReplicationRef wanReplicationRef) {
+    public CacheSimpleConfig setWanReplicationRef(WanReplicationRef wanReplicationRef) {
         this.wanReplicationRef = wanReplicationRef;
+        return this;
     }
 
     /**
@@ -575,7 +581,7 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
      */
     public List<CachePartitionLostListenerConfig> getPartitionLostListenerConfigs() {
         if (partitionLostListenerConfigs == null) {
-            partitionLostListenerConfigs = new ArrayList<CachePartitionLostListenerConfig>();
+            partitionLostListenerConfigs = new ArrayList<>();
         }
         return partitionLostListenerConfigs;
     }
@@ -602,47 +608,42 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
     }
 
     /**
-     * Gets the name of the associated quorum if any.
+     * Gets the name of the associated split brain protection if any.
      *
-     * @return the name of the associated quorum if any
+     * @return the name of the associated split brain protection if any
      */
-    public String getQuorumName() {
-        return quorumName;
+    public String getSplitBrainProtectionName() {
+        return splitBrainProtectionName;
     }
 
     /**
-     * Associates this cache configuration to a quorum.
+     * Associates this cache configuration to a split brain protection.
      *
-     * @param quorumName name of the desired quorum
+     * @param splitBrainProtectionName name of the desired split brain protection
      * @return the updated CacheSimpleConfig
      */
-    public CacheSimpleConfig setQuorumName(String quorumName) {
-        this.quorumName = quorumName;
+    public CacheSimpleConfig setSplitBrainProtectionName(String splitBrainProtectionName) {
+        this.splitBrainProtectionName = splitBrainProtectionName;
         return this;
     }
 
     /**
-     * Gets the class name of {@link com.hazelcast.cache.CacheMergePolicy} implementation of this cache config.
+     * Gets the {@link MergePolicyConfig} for this map.
      *
-     * @return the class name of {@link com.hazelcast.cache.CacheMergePolicy} implementation of this cache config
+     * @return the {@link MergePolicyConfig} for this map
      */
-    public String getMergePolicy() {
-        return mergePolicy;
+    public MergePolicyConfig getMergePolicyConfig() {
+        return mergePolicyConfig;
     }
 
     /**
-     * Sets the class name of {@link com.hazelcast.cache.CacheMergePolicy} implementation to this cache config.
+     * Sets the {@link MergePolicyConfig} for this map.
      *
-     * @param mergePolicy the class name of {@link com.hazelcast.cache.CacheMergePolicy} implementation
-     *                    to be set to this cache config
+     * @return the updated map configuration
      */
-    public void setMergePolicy(String mergePolicy) {
-        this.mergePolicy = mergePolicy;
-    }
-
-    @Override
-    public Class getProvidedMergeTypes() {
-        return SplitBrainMergeTypes.CacheMergeTypes.class;
+    public CacheSimpleConfig setMergePolicyConfig(MergePolicyConfig mergePolicyConfig) {
+        this.mergePolicyConfig = checkNotNull(mergePolicyConfig, "mergePolicyConfig cannot be null!");
+        return this;
     }
 
     /**
@@ -655,13 +656,60 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
     }
 
     /**
+     * Gets the {@code DataPersistenceConfig} for this {@code CacheSimpleConfig}
+     *
+     * @return dataPersistenceConfig config
+     */
+    public DataPersistenceConfig getDataPersistenceConfig() {
+        return dataPersistenceConfig;
+    }
+
+    /**
      * Sets the {@code HotRestartConfig} for this {@code CacheSimpleConfig}
      *
      * @param hotRestartConfig hot restart config
      * @return this {@code CacheSimpleConfig} instance
+     *
+     * @deprecated since 5.0 use {@link CacheSimpleConfig#setDataPersistenceConfig(DataPersistenceConfig)}
      */
+    @Deprecated
     public CacheSimpleConfig setHotRestartConfig(HotRestartConfig hotRestartConfig) {
         this.hotRestartConfig = hotRestartConfig;
+
+        DataPersistenceAndHotRestartMerger.merge(hotRestartConfig, dataPersistenceConfig);
+        return this;
+    }
+
+    /**
+     * Sets the {@code DataPersistenceConfig} for this {@code CacheSimpleConfig}
+     *
+     * @param dataPersistenceConfig dataPersistenceConfig config
+     * @return this {@code CacheSimpleConfig} instance
+     */
+    public CacheSimpleConfig setDataPersistenceConfig(DataPersistenceConfig dataPersistenceConfig) {
+        this.dataPersistenceConfig = dataPersistenceConfig;
+
+        DataPersistenceAndHotRestartMerger.merge(hotRestartConfig, dataPersistenceConfig);
+        return this;
+    }
+
+    /**
+     * Gets the {@code EventJournalConfig} for this {@code CacheSimpleConfig}
+     *
+     * @return event journal config
+     */
+    public EventJournalConfig getEventJournalConfig() {
+        return eventJournalConfig;
+    }
+
+    /**
+     * Sets the {@code EventJournalConfig} for this {@code CacheSimpleConfig}
+     *
+     * @param eventJournalConfig event journal config
+     * @return this {@code CacheSimpleConfig} instance
+     */
+    public CacheSimpleConfig setEventJournalConfig(@Nonnull EventJournalConfig eventJournalConfig) {
+        this.eventJournalConfig = checkNotNull(eventJournalConfig, "eventJournalConfig cannot be null!");
         return this;
     }
 
@@ -679,9 +727,32 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
      *
      * @param disablePerEntryInvalidationEvents Disables invalidation event sending behaviour if it is {@code true},
      *                                          otherwise enables it
+     * @return this configuration
      */
-    public void setDisablePerEntryInvalidationEvents(boolean disablePerEntryInvalidationEvents) {
+    public CacheSimpleConfig setDisablePerEntryInvalidationEvents(boolean disablePerEntryInvalidationEvents) {
         this.disablePerEntryInvalidationEvents = disablePerEntryInvalidationEvents;
+        return this;
+    }
+
+    /**
+     * Gets the {@code MerkleTreeConfig} for this {@code CacheSimpleConfig}
+     *
+     * @return merkle tree config
+     */
+    @Nonnull
+    public MerkleTreeConfig getMerkleTreeConfig() {
+        return merkleTreeConfig;
+    }
+
+    /**
+     * Sets the {@code MerkleTreeConfig} for this {@code CacheSimpleConfig}
+     *
+     * @param merkleTreeConfig merkle tree config
+     * @return this {@code CacheSimpleConfig} instance
+     */
+    public CacheSimpleConfig setMerkleTreeConfig(@Nonnull MerkleTreeConfig merkleTreeConfig) {
+        this.merkleTreeConfig = checkNotNull(merkleTreeConfig, "MerkleTreeConfig cannot be null");
+        return this;
     }
 
     @Override
@@ -690,62 +761,70 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return ConfigDataSerializerHook.SIMPLE_CACHE_CONFIG;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(name);
-        out.writeUTF(keyType);
-        out.writeUTF(valueType);
+        out.writeString(name);
+        out.writeString(keyType);
+        out.writeString(valueType);
         out.writeBoolean(statisticsEnabled);
         out.writeBoolean(managementEnabled);
         out.writeBoolean(readThrough);
         out.writeBoolean(writeThrough);
         out.writeBoolean(disablePerEntryInvalidationEvents);
-        out.writeUTF(cacheLoaderFactory);
-        out.writeUTF(cacheWriterFactory);
-        out.writeUTF(cacheLoader);
-        out.writeUTF(cacheWriter);
+        out.writeString(cacheLoaderFactory);
+        out.writeString(cacheWriterFactory);
+        out.writeString(cacheLoader);
+        out.writeString(cacheWriter);
         out.writeObject(expiryPolicyFactoryConfig);
         writeNullableList(cacheEntryListeners, out);
         out.writeInt(asyncBackupCount);
         out.writeInt(backupCount);
-        out.writeUTF(inMemoryFormat.name());
+        out.writeString(inMemoryFormat.name());
         out.writeObject(evictionConfig);
         out.writeObject(wanReplicationRef);
-        out.writeUTF(quorumName);
+        out.writeString(splitBrainProtectionName);
         writeNullableList(partitionLostListenerConfigs, out);
-        out.writeUTF(mergePolicy);
+        out.writeObject(mergePolicyConfig);
         out.writeObject(hotRestartConfig);
+        out.writeObject(eventJournalConfig);
+
+        out.writeObject(merkleTreeConfig);
+        out.writeObject(dataPersistenceConfig);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        name = in.readUTF();
-        keyType = in.readUTF();
-        valueType = in.readUTF();
+        name = in.readString();
+        keyType = in.readString();
+        valueType = in.readString();
         statisticsEnabled = in.readBoolean();
         managementEnabled = in.readBoolean();
         readThrough = in.readBoolean();
         writeThrough = in.readBoolean();
         disablePerEntryInvalidationEvents = in.readBoolean();
-        cacheLoaderFactory = in.readUTF();
-        cacheWriterFactory = in.readUTF();
-        cacheLoader = in.readUTF();
-        cacheWriter = in.readUTF();
+        cacheLoaderFactory = in.readString();
+        cacheWriterFactory = in.readString();
+        cacheLoader = in.readString();
+        cacheWriter = in.readString();
         expiryPolicyFactoryConfig = in.readObject();
         cacheEntryListeners = readNullableList(in);
         asyncBackupCount = in.readInt();
         backupCount = in.readInt();
-        inMemoryFormat = InMemoryFormat.valueOf(in.readUTF());
+        inMemoryFormat = InMemoryFormat.valueOf(in.readString());
         evictionConfig = in.readObject();
         wanReplicationRef = in.readObject();
-        quorumName = in.readUTF();
+        splitBrainProtectionName = in.readString();
         partitionLostListenerConfigs = readNullableList(in);
-        mergePolicy = in.readUTF();
-        hotRestartConfig = in.readObject();
+        mergePolicyConfig = in.readObject();
+        setHotRestartConfig(in.readObject());
+        eventJournalConfig = in.readObject();
+
+        merkleTreeConfig = in.readObject();
+        setDataPersistenceConfig(in.readObject());
     }
 
     @Override
@@ -784,57 +863,59 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
         if (!name.equals(that.name)) {
             return false;
         }
-        if (keyType != null ? !keyType.equals(that.keyType) : that.keyType != null) {
+        if (!Objects.equals(keyType, that.keyType)) {
             return false;
         }
-        if (valueType != null ? !valueType.equals(that.valueType) : that.valueType != null) {
+        if (!Objects.equals(valueType, that.valueType)) {
             return false;
         }
-        if (cacheLoaderFactory != null
-                ? !cacheLoaderFactory.equals(that.cacheLoaderFactory) : that.cacheLoaderFactory != null) {
+        if (!Objects.equals(cacheLoaderFactory, that.cacheLoaderFactory)) {
             return false;
         }
-        if (cacheWriterFactory != null
-                ? !cacheWriterFactory.equals(that.cacheWriterFactory) : that.cacheWriterFactory != null) {
+        if (!Objects.equals(cacheWriterFactory, that.cacheWriterFactory)) {
             return false;
         }
-        if (cacheLoader != null ? !cacheLoader.equals(that.cacheLoader) : that.cacheLoader != null) {
+        if (!Objects.equals(cacheLoader, that.cacheLoader)) {
             return false;
         }
-        if (cacheWriter != null ? !cacheWriter.equals(that.cacheWriter) : that.cacheWriter != null) {
+        if (!Objects.equals(cacheWriter, that.cacheWriter)) {
             return false;
         }
-        if (expiryPolicyFactoryConfig != null
-                ? !expiryPolicyFactoryConfig.equals(that.expiryPolicyFactoryConfig)
-                : that.expiryPolicyFactoryConfig != null) {
+        if (!Objects.equals(expiryPolicyFactoryConfig, that.expiryPolicyFactoryConfig)) {
             return false;
         }
-        if (cacheEntryListeners != null ? !cacheEntryListeners.equals(that.cacheEntryListeners)
-                : that.cacheEntryListeners != null) {
+        if (!Objects.equals(cacheEntryListeners, that.cacheEntryListeners)) {
             return false;
         }
         if (inMemoryFormat != that.inMemoryFormat) {
             return false;
         }
-        if (evictionConfig != null ? !evictionConfig.equals(that.evictionConfig) : that.evictionConfig != null) {
+        if (!Objects.equals(evictionConfig, that.evictionConfig)) {
             return false;
         }
-        if (wanReplicationRef != null ? !wanReplicationRef.equals(that.wanReplicationRef)
-                : that.wanReplicationRef != null) {
+        if (!Objects.equals(wanReplicationRef, that.wanReplicationRef)) {
             return false;
         }
-        if (quorumName != null ? !quorumName.equals(that.quorumName) : that.quorumName != null) {
+        if (!Objects.equals(splitBrainProtectionName, that.splitBrainProtectionName)) {
             return false;
         }
-        if (partitionLostListenerConfigs != null
-                ? !partitionLostListenerConfigs.equals(that.partitionLostListenerConfigs)
-                : that.partitionLostListenerConfigs != null) {
+        if (!Objects.equals(partitionLostListenerConfigs, that.partitionLostListenerConfigs)) {
             return false;
         }
-        if (mergePolicy != null ? !mergePolicy.equals(that.mergePolicy) : that.mergePolicy != null) {
+        if (!Objects.equals(mergePolicyConfig, that.mergePolicyConfig)) {
             return false;
         }
-        return hotRestartConfig != null ? hotRestartConfig.equals(that.hotRestartConfig) : that.hotRestartConfig == null;
+        if (!Objects.equals(merkleTreeConfig, that.merkleTreeConfig)) {
+            return false;
+        }
+        if (!Objects.equals(eventJournalConfig, that.eventJournalConfig)) {
+            return false;
+        }
+        if (!Objects.equals(dataPersistenceConfig, that.dataPersistenceConfig)) {
+            return false;
+        }
+
+        return Objects.equals(hotRestartConfig, that.hotRestartConfig);
     }
 
     @Override
@@ -858,10 +939,13 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
         result = 31 * result + (inMemoryFormat != null ? inMemoryFormat.hashCode() : 0);
         result = 31 * result + (evictionConfig != null ? evictionConfig.hashCode() : 0);
         result = 31 * result + (wanReplicationRef != null ? wanReplicationRef.hashCode() : 0);
-        result = 31 * result + (quorumName != null ? quorumName.hashCode() : 0);
+        result = 31 * result + (splitBrainProtectionName != null ? splitBrainProtectionName.hashCode() : 0);
         result = 31 * result + (partitionLostListenerConfigs != null ? partitionLostListenerConfigs.hashCode() : 0);
-        result = 31 * result + (mergePolicy != null ? mergePolicy.hashCode() : 0);
+        result = 31 * result + (mergePolicyConfig != null ? mergePolicyConfig.hashCode() : 0);
+        result = 31 * result + (merkleTreeConfig != null ? merkleTreeConfig.hashCode() : 0);
         result = 31 * result + (hotRestartConfig != null ? hotRestartConfig.hashCode() : 0);
+        result = 31 * result + (dataPersistenceConfig != null ? dataPersistenceConfig.hashCode() : 0);
+        result = 31 * result + (eventJournalConfig != null ? eventJournalConfig.hashCode() : 0);
         result = 31 * result + (disablePerEntryInvalidationEvents ? 1 : 0);
         return result;
     }
@@ -887,10 +971,13 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
                 + ", cacheEntryListeners=" + cacheEntryListeners
                 + ", evictionConfig=" + evictionConfig
                 + ", wanReplicationRef=" + wanReplicationRef
-                + ", quorumName=" + quorumName
+                + ", splitBrainProtectionName=" + splitBrainProtectionName
                 + ", partitionLostListenerConfigs=" + partitionLostListenerConfigs
-                + ", mergePolicy=" + mergePolicy
+                + ", mergePolicyConfig=" + mergePolicyConfig
+                + ", merkleTreeConfig=" + merkleTreeConfig
                 + ", hotRestartConfig=" + hotRestartConfig
+                + ", dataPersistenceConfig=" + dataPersistenceConfig
+                + ", eventJournal=" + eventJournalConfig
                 + '}';
     }
 
@@ -929,19 +1016,19 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
         }
 
         @Override
-        public int getId() {
+        public int getClassId() {
             return ConfigDataSerializerHook.SIMPLE_CACHE_CONFIG_EXPIRY_POLICY_FACTORY_CONFIG;
         }
 
         @Override
         public void writeData(ObjectDataOutput out) throws IOException {
-            out.writeUTF(className);
+            out.writeString(className);
             out.writeObject(timedExpiryPolicyFactoryConfig);
         }
 
         @Override
         public void readData(ObjectDataInput in) throws IOException {
-            className = in.readUTF();
+            className = in.readString();
             timedExpiryPolicyFactoryConfig = in.readObject();
         }
 
@@ -1010,19 +1097,19 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
             }
 
             @Override
-            public int getId() {
+            public int getClassId() {
                 return ConfigDataSerializerHook.SIMPLE_CACHE_CONFIG_TIMED_EXPIRY_POLICY_FACTORY_CONFIG;
             }
 
             @Override
             public void writeData(ObjectDataOutput out) throws IOException {
-                out.writeUTF(expiryPolicyType.name());
+                out.writeString(expiryPolicyType.name());
                 out.writeObject(durationConfig);
             }
 
             @Override
             public void readData(ObjectDataInput in) throws IOException {
-                expiryPolicyType = ExpiryPolicyType.valueOf(in.readUTF());
+                expiryPolicyType = ExpiryPolicyType.valueOf(in.readString());
                 durationConfig = in.readObject();
             }
 
@@ -1034,23 +1121,47 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
                 /**
                  * Expiry policy type for the {@link javax.cache.expiry.CreatedExpiryPolicy}.
                  */
-                CREATED,
+                CREATED(0),
                 /**
                  * Expiry policy type for the {@link javax.cache.expiry.ModifiedExpiryPolicy}.
                  */
-                MODIFIED,
+                MODIFIED(1),
                 /**
                  * Expiry policy type for the {@link javax.cache.expiry.AccessedExpiryPolicy}.
                  */
-                ACCESSED,
+                ACCESSED(2),
                 /**
                  * Expiry policy type for the {@link javax.cache.expiry.TouchedExpiryPolicy}.
                  */
-                TOUCHED,
+                TOUCHED(3),
                 /**
                  * Expiry policy type for the {@link javax.cache.expiry.EternalExpiryPolicy}.
                  */
-                ETERNAL
+                ETERNAL(4);
+
+                private static final int MIN_ID = CREATED.id;
+                private static final int MAX_ID = ETERNAL.id;
+                private static final ExpiryPolicyType[] CACHED_VALUES = values();
+
+                private int id;
+
+                ExpiryPolicyType(int id) {
+                    this.id = id;
+                }
+
+                /**
+                 * @return unique ID for the expiry policy type
+                 */
+                public int getId() {
+                    return id;
+                }
+
+                public static ExpiryPolicyType getById(int id) {
+                    if (MIN_ID <= id && id <= MAX_ID) {
+                        return CACHED_VALUES[id];
+                    }
+                    return null;
+                }
             }
 
             @Override
@@ -1066,7 +1177,7 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
                 if (expiryPolicyType != that.expiryPolicyType) {
                     return false;
                 }
-                return durationConfig != null ? durationConfig.equals(that.durationConfig) : that.durationConfig == null;
+                return Objects.equals(durationConfig, that.durationConfig);
             }
 
             @Override
@@ -1117,20 +1228,20 @@ public class CacheSimpleConfig implements SplitBrainMergeTypeProvider, Identifie
             }
 
             @Override
-            public int getId() {
+            public int getClassId() {
                 return ConfigDataSerializerHook.SIMPLE_CACHE_CONFIG_DURATION_CONFIG;
             }
 
             @Override
             public void writeData(ObjectDataOutput out) throws IOException {
                 out.writeLong(durationAmount);
-                out.writeUTF(timeUnit.name());
+                out.writeString(timeUnit.name());
             }
 
             @Override
             public void readData(ObjectDataInput in) throws IOException {
                 durationAmount = in.readLong();
-                timeUnit = TimeUnit.valueOf(in.readUTF());
+                timeUnit = TimeUnit.valueOf(in.readString());
             }
 
             @Override

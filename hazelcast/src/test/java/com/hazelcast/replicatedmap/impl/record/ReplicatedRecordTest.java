@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.hazelcast.replicatedmap.impl.record;
 
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -27,13 +27,12 @@ import org.junit.runner.RunWith;
 import static com.hazelcast.test.HazelcastTestSupport.assumeDifferentHashCodes;
 import static com.hazelcast.test.HazelcastTestSupport.sleepAtLeastMillis;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class ReplicatedRecordTest {
 
     private ReplicatedRecord<String, String> replicatedRecord;
@@ -43,8 +42,6 @@ public class ReplicatedRecordTest {
     private ReplicatedRecord<String, String> replicatedRecordOtherValue;
     private ReplicatedRecord<String, String> replicatedRecordOtherTtl;
 
-    private ReplicatedRecord<String, String> tombStone;
-
     @Before
     public void setUp() {
         replicatedRecord = new ReplicatedRecord<String, String>("key", "value", 0);
@@ -53,8 +50,6 @@ public class ReplicatedRecordTest {
         replicatedRecordOtherKey = new ReplicatedRecord<String, String>("otherKey", "value", 0);
         replicatedRecordOtherValue = new ReplicatedRecord<String, String>("key", "otherValue", 0);
         replicatedRecordOtherTtl = new ReplicatedRecord<String, String>("key", "value", 1);
-
-        tombStone = new ReplicatedRecord<String, String>("key", null, 0);
     }
 
     @Test
@@ -83,12 +78,6 @@ public class ReplicatedRecordTest {
         assertEquals(0, replicatedRecord.getHits());
         assertEquals("value", replicatedRecord.getValueInternal());
         assertEquals(0, replicatedRecord.getHits());
-    }
-
-    @Test
-    public void testGetTombStone() {
-        assertFalse(replicatedRecord.isTombstone());
-        assertTrue(tombStone.isTombstone());
     }
 
     @Test

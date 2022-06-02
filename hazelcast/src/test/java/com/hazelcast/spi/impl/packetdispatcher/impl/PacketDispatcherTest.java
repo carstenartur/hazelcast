@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,24 +16,25 @@
 
 package com.hazelcast.spi.impl.packetdispatcher.impl;
 
+import com.hazelcast.internal.nio.Packet;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
-import com.hazelcast.nio.Packet;
 import com.hazelcast.spi.impl.PacketDispatcher;
 import com.hazelcast.test.ExpectedRuntimeException;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.util.function.Consumer;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 import org.mockito.Mockito;
 
-import static com.hazelcast.nio.Packet.FLAG_OP_CONTROL;
-import static com.hazelcast.nio.Packet.FLAG_OP_RESPONSE;
-import static com.hazelcast.nio.Packet.FLAG_URGENT;
+import java.util.function.Consumer;
+
+import static com.hazelcast.internal.nio.Packet.FLAG_OP_CONTROL;
+import static com.hazelcast.internal.nio.Packet.FLAG_OP_RESPONSE;
+import static com.hazelcast.internal.nio.Packet.FLAG_URGENT;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyZeroInteractions;
@@ -65,7 +66,8 @@ public class PacketDispatcherTest extends HazelcastTestSupport {
                 responseHandler,
                 invocationMonitor,
                 eventService,
-                jetService);
+                jetService
+        );
     }
 
     @Test
@@ -150,8 +152,7 @@ public class PacketDispatcherTest extends HazelcastTestSupport {
 
         dispatcher.accept(packet);
 
-        verifyZeroInteractions(responseHandler, operationExecutor, eventService, invocationMonitor,
-                jetService);
+        verifyZeroInteractions(responseHandler, operationExecutor, eventService, invocationMonitor, jetService);
     }
 
     // when one of the handlers throws an exception, the exception is logged but not rethrown

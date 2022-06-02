@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,13 +24,13 @@ import com.hazelcast.config.QueueConfig;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.NodeEngine;
+import com.hazelcast.spi.impl.operationservice.Operation;
 
 import java.io.IOException;
 import java.util.Map;
 
-import static com.hazelcast.util.MapUtil.createHashMap;
+import static com.hazelcast.internal.util.MapUtil.createHashMap;
 
 /**
  * Replication operation for the Queue.
@@ -73,7 +73,7 @@ public class QueueReplicationOperation extends Operation implements IdentifiedDa
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return QueueDataSerializerHook.QUEUE_REPLICATION;
     }
 
@@ -81,9 +81,9 @@ public class QueueReplicationOperation extends Operation implements IdentifiedDa
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         out.writeInt(migrationData.size());
         for (Map.Entry<String, QueueContainer> entry : migrationData.entrySet()) {
-            out.writeUTF(entry.getKey());
+            out.writeString(entry.getKey());
             QueueContainer container = entry.getValue();
-            container.writeData(out);
+            out.writeObject(container);
         }
     }
 
@@ -92,10 +92,13 @@ public class QueueReplicationOperation extends Operation implements IdentifiedDa
         int mapSize = in.readInt();
         migrationData = createHashMap(mapSize);
         for (int i = 0; i < mapSize; i++) {
-            String name = in.readUTF();
-            QueueContainer container = new QueueContainer(name);
-            container.readData(in);
-            migrationData.put(name, container);
+            String name = in.readString();
+            migrationData.put(name, in.readObject());
         }
+    }
+
+    @Override
+    public boolean requiresTenantContext() {
+        return true;
     }
 }

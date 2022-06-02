@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,19 +19,17 @@ package com.hazelcast.map;
 import com.hazelcast.aggregation.Aggregators;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.Data;
+import com.hazelcast.internal.serialization.SerializationService;
 import com.hazelcast.projection.Projections;
 import com.hazelcast.query.PartitionPredicate;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.Predicates;
-import com.hazelcast.query.TruePredicate;
-import com.hazelcast.spi.properties.GroupProperty;
-import com.hazelcast.spi.serialization.SerializationService;
+import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -41,11 +39,12 @@ import org.junit.runner.RunWith;
 import java.util.Collection;
 import java.util.Map;
 
+import static com.hazelcast.test.Accessors.getSerializationService;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class PartitionPredicateTest extends HazelcastTestSupport {
 
     private static final int PARTITIONS = 10;
@@ -68,7 +67,7 @@ public class PartitionPredicateTest extends HazelcastTestSupport {
     @Before
     public void setUp() {
         Config config = getConfig()
-                .setProperty(GroupProperty.PARTITION_COUNT.getName(), "" + PARTITIONS);
+                .setProperty(ClusterProperty.PARTITION_COUNT.getName(), "" + PARTITIONS);
 
         TestHazelcastInstanceFactory nodeFactory = createHazelcastInstanceFactory(2);
 
@@ -88,12 +87,12 @@ public class PartitionPredicateTest extends HazelcastTestSupport {
         partitionKey = randomString();
         partitionId = local.getPartitionService().getPartition(partitionKey).getPartitionId();
 
-        predicate = new PartitionPredicate<String, Integer>(partitionKey, TruePredicate.INSTANCE);
-        aggPredicate = new PartitionPredicate<String, Integer>(partitionKey, Predicates.equal("this", partitionId));
+        predicate = Predicates.partitionPredicate(partitionKey, Predicates.alwaysTrue());
+        aggPredicate = Predicates.partitionPredicate(partitionKey, Predicates.equal("this", partitionId));
 
         localPartitionKey = generateKeyOwnedBy(local);
         localPartitionId = local.getPartitionService().getPartition(localPartitionKey).getPartitionId();
-        localPredicate = new PartitionPredicate<String, Integer>(localPartitionKey, Predicates.equal("this", localPartitionId));
+        localPredicate = Predicates.partitionPredicate(localPartitionKey, Predicates.equal("this", localPartitionId));
 
     }
 
@@ -140,13 +139,13 @@ public class PartitionPredicateTest extends HazelcastTestSupport {
 
     @Test
     public void aggregate() {
-        Long aggregate = aggMap.aggregate(Aggregators.<Map.Entry<String, Integer>>count(), aggPredicate);
+        Long aggregate = aggMap.aggregate(Aggregators.count(), aggPredicate);
         assertEquals(1, aggregate.longValue());
     }
 
     @Test
     public void project() {
-        Collection<Integer> values = aggMap.project(Projections.<Map.Entry<String, Integer>, Integer>
+        Collection<Integer> values = aggMap.project(Projections.
                 singleAttribute("this"), aggPredicate);
         assertEquals(1, values.size());
         assertEquals(partitionId, values.iterator().next().intValue());
@@ -154,14 +153,14 @@ public class PartitionPredicateTest extends HazelcastTestSupport {
 
     @Test
     public void executeOnEntries() {
-        PartitionPredicate<String, Integer> lessThan10pp = new PartitionPredicate<String, Integer>(partitionKey,
+        PartitionPredicate<String, Integer> lessThan10pp = Predicates.partitionPredicate(partitionKey,
                 Predicates.lessThan("this", 10));
-        Map<String, Object> result = aggMap.executeOnEntries(new EntryNoop(), lessThan10pp);
+        Map<String, Integer> result = aggMap.executeOnEntries(new EntryNoop<>(), lessThan10pp);
 
         assertEquals(10, result.size());
-        for (Map.Entry<String, Object> entry : result.entrySet()) {
+        for (Map.Entry<String, Integer> entry : result.entrySet()) {
             assertEquals(partitionId, local.getPartitionService().getPartition(entry.getKey()).getPartitionId());
-            assertEquals(-1, entry.getValue());
+            assertEquals(-1, (int) entry.getValue());
         }
     }
 
@@ -185,7 +184,7 @@ public class PartitionPredicateTest extends HazelcastTestSupport {
         sizeBefore = map.size();
         partitionSizeBefore = map.keySet(predicate).size();
         assertEquals(ITEMS_PER_PARTITION, partitionSizeBefore);
-        map.removeAll(new PartitionPredicate<String, Integer>(partitionKey, Predicates.equal("this", ITEMS_PER_PARTITION - 1)));
+        map.removeAll(Predicates.partitionPredicate(partitionKey, Predicates.equal("this", ITEMS_PER_PARTITION - 1)));
         assertEquals(sizeBefore - 1, map.size());
         assertEquals(partitionSizeBefore - 1, map.keySet(predicate).size());
     }
@@ -208,12 +207,12 @@ public class PartitionPredicateTest extends HazelcastTestSupport {
         PartitionPredicate deserialized = serializationService.toObject(serialized);
 
         assertEquals(partitionKey, deserialized.getPartitionKey());
-        assertEquals(TruePredicate.INSTANCE, deserialized.getTarget());
+        assertEquals(Predicates.alwaysTrue(), deserialized.getTarget());
     }
 
-    private static class EntryNoop extends AbstractEntryProcessor<String, Integer> {
+    private static class EntryNoop<K, V> implements EntryProcessor<K, V, Integer> {
         @Override
-        public Object process(Map.Entry<String, Integer> entry) {
+        public Integer process(Map.Entry<K, V> entry) {
             return -1;
         }
     }

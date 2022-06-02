@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,23 +17,30 @@
 package com.hazelcast.config;
 
 import com.google.common.collect.ImmutableSet;
-import com.hazelcast.config.cp.CPSemaphoreConfig;
+import com.hazelcast.config.LoginModuleConfig.LoginModuleUsage;
 import com.hazelcast.config.cp.CPSubsystemConfig;
 import com.hazelcast.config.cp.FencedLockConfig;
 import com.hazelcast.config.cp.RaftAlgorithmConfig;
-import com.hazelcast.config.helpers.DummyMapStore;
-import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
+import com.hazelcast.config.cp.SemaphoreConfig;
+import com.hazelcast.config.security.KerberosAuthenticationConfig;
+import com.hazelcast.config.security.KerberosIdentityConfig;
+import com.hazelcast.config.security.LdapAuthenticationConfig;
+import com.hazelcast.config.security.RealmConfig;
+import com.hazelcast.config.security.SimpleAuthenticationConfig;
 import com.hazelcast.instance.EndpointQualifier;
-import com.hazelcast.nio.IOUtil;
-import com.hazelcast.quorum.QuorumType;
-import com.hazelcast.quorum.impl.ProbabilisticQuorumFunction;
-import com.hazelcast.quorum.impl.RecentlyActiveQuorumFunction;
+import com.hazelcast.internal.config.SchemaViolationConfigurationException;
+import com.hazelcast.internal.nio.IOUtil;
+import com.hazelcast.internal.serialization.impl.compact.CompactTestUtil;
+import com.hazelcast.memory.MemorySize;
+import com.hazelcast.memory.MemoryUnit;
+import com.hazelcast.splitbrainprotection.SplitBrainProtectionOn;
+import com.hazelcast.splitbrainprotection.impl.ProbabilisticSplitBrainProtectionFunction;
+import com.hazelcast.splitbrainprotection.impl.RecentlyActiveSplitBrainProtectionFunction;
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import com.hazelcast.topic.TopicOverloadPolicy;
-import org.junit.Before;
+import com.hazelcast.wan.WanPublisherState;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -46,7 +53,6 @@ import java.io.PrintWriter;
 import java.io.Writer;
 import java.net.URL;
 import java.text.MessageFormat;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -55,12 +61,26 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
-import static com.hazelcast.config.EvictionConfig.MaxSizePolicy.ENTRY_COUNT;
+import static com.hazelcast.config.DynamicConfigurationConfig.DEFAULT_BACKUP_COUNT;
+import static com.hazelcast.config.DynamicConfigurationConfig.DEFAULT_BACKUP_DIR;
+import static com.hazelcast.config.LocalDeviceConfig.DEFAULT_BLOCK_SIZE_IN_BYTES;
+import static com.hazelcast.config.LocalDeviceConfig.DEFAULT_DEVICE_BASE_DIR;
+import static com.hazelcast.config.LocalDeviceConfig.DEFAULT_DEVICE_NAME;
+import static com.hazelcast.config.LocalDeviceConfig.DEFAULT_READ_IO_THREAD_COUNT;
+import static com.hazelcast.config.LocalDeviceConfig.DEFAULT_WRITE_IO_THREAD_COUNT;
 import static com.hazelcast.config.EvictionPolicy.LRU;
+import static com.hazelcast.config.MaxSizePolicy.ENTRY_COUNT;
+import static com.hazelcast.config.MemoryTierConfig.DEFAULT_CAPACITY;
 import static com.hazelcast.config.PermissionConfig.PermissionType.CACHE;
 import static com.hazelcast.config.PermissionConfig.PermissionType.CONFIG;
-import static com.hazelcast.config.WANQueueFullBehavior.DISCARD_AFTER_MUTATION;
+import static com.hazelcast.config.PersistentMemoryMode.MOUNTED;
+import static com.hazelcast.config.PersistentMemoryMode.SYSTEM_MEMORY;
+import static com.hazelcast.config.WanQueueFullBehavior.DISCARD_AFTER_MUTATION;
+import static com.hazelcast.config.WanQueueFullBehavior.THROW_EXCEPTION;
+import static com.hazelcast.internal.util.StringUtil.lowerCaseInternal;
 import static java.io.File.createTempFile;
+import static java.util.Arrays.asList;
+import static java.util.Collections.singletonList;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -72,12 +92,12 @@ import static org.junit.Assert.fail;
 /**
  * YAML specific implementation of the tests that should be maintained in
  * both XML and YAML configuration builder tests
- * <p/>
- *
+ * <p>
+ * <p>
  * NOTE: This test class must not define test cases, it is meant only to
  * implement test cases defined in {@link AbstractConfigBuilderTest}.
- * <p/>
- *
+ * <p>
+ * <p>
  * NOTE2: Test cases specific to YAML should be added to {@link YamlOnlyConfigBuilderTest}
  *
  * @see AbstractConfigBuilderTest
@@ -85,25 +105,35 @@ import static org.junit.Assert.fail;
  * @see YamlOnlyConfigBuilderTest
  */
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
-public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
-
-    @Before
-    public void assumeRunningOnJdk8() {
-        assumeThatJDK8OrHigher();
-    }
+@Category({QuickTest.class, ParallelJVMTest.class})
+public class YamlConfigBuilderTest
+        extends AbstractConfigBuilderTest {
 
     @Override
     @Test
-    public void testConfigurationURL() throws Exception {
+    public void testConfigurationURL()
+            throws Exception {
         URL configURL = getClass().getClassLoader().getResource("hazelcast-default.yaml");
         Config config = new YamlConfigBuilder(configURL).build();
         assertEquals(configURL, config.getConfigurationUrl());
+        assertNull(config.getConfigurationFile());
     }
 
     @Override
     @Test
-    public void testConfigurationWithFileName() throws Exception {
+    public void testClusterName() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  cluster-name: my-cluster\n";
+
+        Config config = buildConfig(yaml);
+        assertEquals("my-cluster", config.getClusterName());
+    }
+
+    @Override
+    @Test
+    public void testConfigurationWithFileName()
+            throws Exception {
         assumeThatNotZingJDK6(); // https://github.com/hazelcast/hazelcast/issues/9044
 
         File file = createTempFile("foo", "bar");
@@ -111,9 +141,9 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
 
         String yaml = ""
                 + "hazelcast:\n"
-                + "  group:\n"
-                + "    name: foobar\n"
-                + "    password: dev-pass";
+                + "  map:\n"
+                + "    my-map:\n"
+                + "      backup-count: 1";
         Writer writer = new PrintWriter(file, "UTF-8");
         writer.write(yaml);
         writer.close();
@@ -121,23 +151,13 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         String path = file.getAbsolutePath();
         Config config = new YamlConfigBuilder(path).build();
         assertEquals(path, config.getConfigurationFile().getAbsolutePath());
+        assertNull(config.getConfigurationUrl());
     }
 
     @Override
     @Test(expected = IllegalArgumentException.class)
     public void testConfiguration_withNullInputStream() {
         new YamlConfigBuilder((InputStream) null);
-    }
-
-    @Override
-    @Test(expected = InvalidConfigurationException.class)
-    public void testInvalidRootElement() {
-        String yaml = ""
-                + "hazelcast-client:\n"
-                + "  group:\n"
-                + "    name: dev\n"
-                + "    password: clusterpass";
-        buildConfig(yaml);
     }
 
     @Override
@@ -156,7 +176,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
 
     @Override
     @Test
-    public void testSecurityInterceptorConfig() {
+    public void testSecurityConfig() {
         String yaml = ""
                 + "hazelcast:\n"
                 + "  security:\n"
@@ -165,28 +185,70 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "      - foo\n"
                 + "      - bar\n"
                 + "    client-block-unmapped-actions: false\n"
-                + "    member-credentials-factory:\n"
-                + "      class-name: MyCredentialsFactory\n"
-                + "      properties:\n"
-                + "        property: value\n"
-                + "    member-login-modules:\n"
-                + "      - class-name: MyRequiredLoginModule\n"
-                + "        usage: REQUIRED\n"
-                + "        properties:\n"
-                + "          login-property: login-value\n"
-                + "      - class-name: MyRequiredLoginModule2\n"
-                + "        usage: SUFFICIENT\n"
-                + "        properties:\n"
-                + "          login-property2: login-value2\n"
-                + "    client-login-modules:\n"
-                + "      - class-name: MyOptionalLoginModule\n"
-                + "        usage: OPTIONAL\n"
-                + "        properties:\n"
-                + "          client-property: client-value\n"
-                + "      - class-name: MyRequiredLoginModule\n"
-                + "        usage: REQUIRED\n"
-                + "        properties:\n"
-                + "          client-property2: client-value2\n"
+                + "    member-authentication:\n"
+                + "      realm: mr\n"
+                + "    client-authentication:\n"
+                + "      realm: cr\n"
+                + "    realms:\n"
+                + "      - name: mr\n"
+                + "        authentication:\n"
+                + "          jaas:\n"
+                + "            - class-name: MyRequiredLoginModule\n"
+                + "              usage: REQUIRED\n"
+                + "              properties:\n"
+                + "                login-property: login-value\n"
+                + "            - class-name: MyRequiredLoginModule2\n"
+                + "              usage: SUFFICIENT\n"
+                + "              properties:\n"
+                + "                login-property2: login-value2\n"
+                + "        identity:\n"
+                + "          credentials-factory:\n"
+                + "            class-name: MyCredentialsFactory\n"
+                + "            properties:\n"
+                + "              property: value\n"
+                + "      - name: cr\n"
+                + "        authentication:\n"
+                + "          jaas:\n"
+                + "            - class-name: MyOptionalLoginModule\n"
+                + "              usage: OPTIONAL\n"
+                + "              properties:\n"
+                + "                client-property: client-value\n"
+                + "            - class-name: MyRequiredLoginModule\n"
+                + "              usage: REQUIRED\n"
+                + "              properties:\n"
+                + "                client-property2: client-value2\n"
+                + "      - name: kerberos\n"
+                + "        authentication:\n"
+                + "          kerberos:\n"
+                + "            skip-role: false\n"
+                + "            relax-flags-check: true\n"
+                + "            use-name-without-realm: true\n"
+                + "            security-realm: krb5Acceptor\n"
+                + "            principal: jduke@HAZELCAST.COM\n"
+                + "            keytab-file: /opt/jduke.keytab\n"
+                + "            ldap:\n"
+                + "              url: ldap://127.0.0.1\n"
+                + "        identity:\n"
+                + "          kerberos:\n"
+                + "            realm: HAZELCAST.COM\n"
+                + "            security-realm: krb5Initializer\n"
+                + "            principal: jduke@HAZELCAST.COM\n"
+                + "            keytab-file: /opt/jduke.keytab\n"
+                + "            use-canonical-hostname: true\n"
+                + "      - name: simple\n"
+                + "        authentication:\n"
+                + "          simple:\n"
+                + "            skip-role: true\n"
+                + "            users:\n"
+                + "              - username: test\n"
+                + "                password: 'a1234'\n"
+                + "                roles:\n"
+                + "                  - monitor\n"
+                + "                  - hazelcast\n"
+                + "              - username: dev\n"
+                + "                password: secret\n"
+                + "                roles:\n"
+                + "                  - root\n"
                 + "    client-permission-policy:\n"
                 + "      class-name: MyPermissionPolicy\n"
                 + "      properties:\n"
@@ -201,45 +263,81 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertEquals("bar", interceptorConfigs.get(1).className);
         assertFalse(securityConfig.getClientBlockUnmappedActions());
 
-        // member-credentials-factory
-        CredentialsFactoryConfig memberCredentialsConfig = securityConfig.getMemberCredentialsConfig();
+        RealmConfig memberRealm = securityConfig.getRealmConfig(securityConfig.getMemberRealm());
+        CredentialsFactoryConfig memberCredentialsConfig = memberRealm.getCredentialsFactoryConfig();
         assertEquals("MyCredentialsFactory", memberCredentialsConfig.getClassName());
         assertEquals(1, memberCredentialsConfig.getProperties().size());
         assertEquals("value", memberCredentialsConfig.getProperties().getProperty("property"));
 
-        // member-login-modules
-        List<LoginModuleConfig> memberLoginModuleConfigs = securityConfig.getMemberLoginModuleConfigs();
+        List<LoginModuleConfig> memberLoginModuleConfigs = memberRealm.getJaasAuthenticationConfig().getLoginModuleConfigs();
         assertEquals(2, memberLoginModuleConfigs.size());
         Iterator<LoginModuleConfig> memberLoginIterator = memberLoginModuleConfigs.iterator();
 
         LoginModuleConfig memberLoginModuleCfg1 = memberLoginIterator.next();
         assertEquals("MyRequiredLoginModule", memberLoginModuleCfg1.getClassName());
-        assertEquals(LoginModuleConfig.LoginModuleUsage.REQUIRED, memberLoginModuleCfg1.getUsage());
+        assertEquals(LoginModuleUsage.REQUIRED, memberLoginModuleCfg1.getUsage());
         assertEquals(1, memberLoginModuleCfg1.getProperties().size());
         assertEquals("login-value", memberLoginModuleCfg1.getProperties().getProperty("login-property"));
 
         LoginModuleConfig memberLoginModuleCfg2 = memberLoginIterator.next();
         assertEquals("MyRequiredLoginModule2", memberLoginModuleCfg2.getClassName());
-        assertEquals(LoginModuleConfig.LoginModuleUsage.SUFFICIENT, memberLoginModuleCfg2.getUsage());
+        assertEquals(LoginModuleUsage.SUFFICIENT, memberLoginModuleCfg2.getUsage());
         assertEquals(1, memberLoginModuleCfg2.getProperties().size());
         assertEquals("login-value2", memberLoginModuleCfg2.getProperties().getProperty("login-property2"));
 
-        // client-login-modules
-        List<LoginModuleConfig> clientLoginModuleConfigs = securityConfig.getClientLoginModuleConfigs();
+        RealmConfig clientRealm = securityConfig.getRealmConfig(securityConfig.getClientRealm());
+        List<LoginModuleConfig> clientLoginModuleConfigs = clientRealm.getJaasAuthenticationConfig().getLoginModuleConfigs();
         assertEquals(2, clientLoginModuleConfigs.size());
         Iterator<LoginModuleConfig> clientLoginIterator = clientLoginModuleConfigs.iterator();
 
         LoginModuleConfig clientLoginModuleCfg1 = clientLoginIterator.next();
         assertEquals("MyOptionalLoginModule", clientLoginModuleCfg1.getClassName());
-        assertEquals(LoginModuleConfig.LoginModuleUsage.OPTIONAL, clientLoginModuleCfg1.getUsage());
+        assertEquals(LoginModuleUsage.OPTIONAL, clientLoginModuleCfg1.getUsage());
         assertEquals(1, clientLoginModuleCfg1.getProperties().size());
         assertEquals("client-value", clientLoginModuleCfg1.getProperties().getProperty("client-property"));
 
         LoginModuleConfig clientLoginModuleCfg2 = clientLoginIterator.next();
         assertEquals("MyRequiredLoginModule", clientLoginModuleCfg2.getClassName());
-        assertEquals(LoginModuleConfig.LoginModuleUsage.REQUIRED, clientLoginModuleCfg2.getUsage());
+        assertEquals(LoginModuleUsage.REQUIRED, clientLoginModuleCfg2.getUsage());
         assertEquals(1, clientLoginModuleCfg2.getProperties().size());
         assertEquals("client-value2", clientLoginModuleCfg2.getProperties().getProperty("client-property2"));
+
+        RealmConfig kerberosRealm = securityConfig.getRealmConfig("kerberos");
+        assertNotNull(kerberosRealm);
+        KerberosIdentityConfig kerbIdentity = kerberosRealm.getKerberosIdentityConfig();
+        assertNotNull(kerbIdentity);
+        assertEquals("HAZELCAST.COM", kerbIdentity.getRealm());
+        assertEquals("krb5Initializer", kerbIdentity.getSecurityRealm());
+        assertEquals("jduke@HAZELCAST.COM", kerbIdentity.getPrincipal());
+        assertEquals("/opt/jduke.keytab", kerbIdentity.getKeytabFile());
+        assertTrue(kerbIdentity.getUseCanonicalHostname());
+
+        KerberosAuthenticationConfig kerbAuthentication = kerberosRealm.getKerberosAuthenticationConfig();
+        assertNotNull(kerbAuthentication);
+        assertEquals(Boolean.TRUE, kerbAuthentication.getRelaxFlagsCheck());
+        assertEquals(Boolean.FALSE, kerbAuthentication.getSkipRole());
+        assertNull(kerbAuthentication.getSkipIdentity());
+        assertEquals("krb5Acceptor", kerbAuthentication.getSecurityRealm());
+        assertEquals("jduke@HAZELCAST.COM", kerbAuthentication.getPrincipal());
+        assertEquals("/opt/jduke.keytab", kerbAuthentication.getKeytabFile());
+        assertTrue(kerbAuthentication.getUseNameWithoutRealm());
+
+        LdapAuthenticationConfig kerbLdapAuthentication = kerbAuthentication.getLdapAuthenticationConfig();
+        assertNotNull(kerbLdapAuthentication);
+        assertEquals("ldap://127.0.0.1", kerbLdapAuthentication.getUrl());
+
+        RealmConfig simpleRealm = securityConfig.getRealmConfig("simple");
+        assertNotNull(simpleRealm);
+        SimpleAuthenticationConfig simpleAuthnCfg = simpleRealm.getSimpleAuthenticationConfig();
+        assertNotNull(simpleAuthnCfg);
+        assertEquals(2, simpleAuthnCfg.getUsernames().size());
+        assertTrue(simpleAuthnCfg.getUsernames().contains("test"));
+        assertEquals("a1234", simpleAuthnCfg.getPassword("test"));
+        Set<String> expectedRoles = new HashSet<>();
+        expectedRoles.add("monitor");
+        expectedRoles.add("hazelcast");
+        assertEquals(expectedRoles, simpleAuthnCfg.getRoles("test"));
+        assertEquals(Boolean.TRUE, simpleAuthnCfg.getSkipRole());
 
         // client-permission-policy
         PermissionPolicyConfig permissionPolicyConfig = securityConfig.getClientPolicyConfig();
@@ -362,6 +460,8 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "      eureka:\n"
                 + "        enabled: true\n"
                 + "        use-public-ip: true\n"
+                + "        shouldUseDns: false\n"
+                + "        serviceUrl.default: http://localhost:8082/eureka\n"
                 + "        namespace: hazelcast\n";
 
         Config config = buildConfig(yaml);
@@ -371,6 +471,8 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertTrue(eurekaConfig.isEnabled());
         assertTrue(eurekaConfig.isUsePublicIp());
         assertEquals("hazelcast", eurekaConfig.getProperty("namespace"));
+        assertEquals("false", eurekaConfig.getProperty("shouldUseDns"));
+        assertEquals("http://localhost:8082/eureka", eurekaConfig.getProperty("serviceUrl.default"));
     }
 
     @Override
@@ -391,13 +493,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "            properties:\n"
                 + "              key-string: foo\n"
                 + "              key-int: 123\n"
-                + "              key-boolean: true\n"
-                + "          - class: DummyDiscoveryStrategy2\n"
-                + "            enabled: true\n"
-                + "            properties:\n"
-                + "              key-string: foobar\n"
-                + "              key-int: 321\n"
-                + "              key-boolean: false\n";
+                + "              key-boolean: true\n";
 
         Config config = buildConfig(yaml);
         DiscoveryConfig discoveryConfig = config.getNetworkConfig().getJoin().getDiscoveryConfig();
@@ -465,8 +561,10 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         config = buildConfig(""
                 + "hazelcast:\n"
                 + "  network:\n"
-                + "    port: 5701\n");
+                + "    port:\n"
+                + "      port: 5703\n");
         assertEquals(100, config.getNetworkConfig().getPortCount());
+        assertEquals(5703, config.getNetworkConfig().getPort());
     }
 
     @Override
@@ -485,8 +583,10 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         config = buildConfig(""
                 + "hazelcast:\n"
                 + "  network:\n"
-                + "    port: 5701\n");
+                + "    port: \n"
+                + "      port: 5801\n");
         assertTrue(config.getNetworkConfig().isPortAutoIncrement());
+        assertEquals(5801, config.getNetworkConfig().getPort());
     }
 
     @Override
@@ -501,31 +601,12 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
 
     @Override
     @Test
-    public void readSemaphoreConfig() {
-        String yaml = ""
-                + "hazelcast:\n"
-                + "  semaphore:\n"
-                + "    default:\n"
-                + "      initial-permits: 1\n"
-                + "    custom:\n"
-                + "      initial-permits: 10\n"
-                + "      quorum-ref: customQuorumRule";
-
-        Config config = buildConfig(yaml);
-        SemaphoreConfig defaultConfig = config.getSemaphoreConfig("default");
-        SemaphoreConfig customConfig = config.getSemaphoreConfig("custom");
-        assertEquals(1, defaultConfig.getInitialPermits());
-        assertEquals(10, customConfig.getInitialPermits());
-        assertEquals("customQuorumRule", customConfig.getQuorumName());
-    }
-
-    @Override
-    @Test
     public void readQueueConfig() {
         String yaml = ""
                 + "hazelcast:\n"
                 + "  queue:\n"
                 + "    custom:\n"
+                + "      priority-comparator-class-name: com.hazelcast.collection.impl.queue.model.PriorityElementComparator\n"
                 + "      statistics-enabled: false\n"
                 + "      max-size: 100\n"
                 + "      backup-count: 2\n"
@@ -543,7 +624,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "          binary: false\n"
                 + "          memory-limit: 1000\n"
                 + "          bulk-load: 500\n"
-                + "      quorum-ref: customQuorumRule\n"
+                + "      split-brain-protection-ref: customSplitBrainProtectionRule\n"
                 + "      merge-policy:\n"
                 + "        batch-size: 23\n"
                 + "        class-name: CustomMergePolicy\n"
@@ -557,6 +638,8 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertEquals(2, customQueueConfig.getBackupCount());
         assertEquals(1, customQueueConfig.getAsyncBackupCount());
         assertEquals(1, customQueueConfig.getEmptyQueueTtl());
+        assertEquals("com.hazelcast.collection.impl.queue.model.PriorityElementComparator",
+                customQueueConfig.getPriorityComparatorClassName());
 
         MergePolicyConfig mergePolicyConfig = customQueueConfig.getMergePolicyConfig();
         assertEquals("CustomMergePolicy", mergePolicyConfig.getPolicy());
@@ -582,7 +665,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertEquals("1000", storeConfigProperties.getProperty("memory-limit"));
         assertEquals("false", storeConfigProperties.getProperty("binary"));
 
-        assertEquals("customQuorumRule", customQueueConfig.getQuorumName());
+        assertEquals("customSplitBrainProtectionRule", customQueueConfig.getSplitBrainProtectionName());
 
         QueueConfig defaultQueueConfig = config.getQueueConfig("default");
         assertEquals(42, defaultQueueConfig.getMaxSize());
@@ -686,24 +769,6 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
 
     @Override
     @Test
-    public void readLockConfig() {
-        String yaml = ""
-                + "hazelcast:\n"
-                + "  lock:\n"
-                + "    default:\n"
-                + "      quorum-ref: quorumRuleWithThreeNodes\n"
-                + "    custom:\n"
-                + "      quorum-ref: customQuorumRule\n";
-
-        Config config = buildConfig(yaml);
-        LockConfig defaultConfig = config.getLockConfig("default");
-        LockConfig customConfig = config.getLockConfig("custom");
-        assertEquals("quorumRuleWithThreeNodes", defaultConfig.getQuorumName());
-        assertEquals("customQuorumRule", customConfig.getQuorumName());
-    }
-
-    @Override
-    @Test
     public void readReliableTopic() {
         String yaml = ""
                 + "hazelcast:\n"
@@ -756,7 +821,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "        class-name: com.hazelcast.RingbufferStoreImpl\n"
                 + "        properties:\n"
                 + "          store-path: .//tmp//bufferstore\n"
-                + "      quorum-ref: customQuorumRule\n"
+                + "      split-brain-protection-ref: customSplitBrainProtectionRule\n"
                 + "      merge-policy:\n"
                 + "        class-name: CustomMergePolicy\n"
                 + "        batch-size: 2342\n"
@@ -777,7 +842,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertEquals("com.hazelcast.RingbufferStoreImpl", ringbufferStoreConfig.getClassName());
         Properties ringbufferStoreProperties = ringbufferStoreConfig.getProperties();
         assertEquals(".//tmp//bufferstore", ringbufferStoreProperties.get("store-path"));
-        assertEquals("customQuorumRule", ringbufferConfig.getQuorumName());
+        assertEquals("customSplitBrainProtectionRule", ringbufferConfig.getSplitBrainProtectionName());
 
         MergePolicyConfig mergePolicyConfig = ringbufferConfig.getMergePolicyConfig();
         assertEquals("CustomMergePolicy", mergePolicyConfig.getPolicy());
@@ -789,80 +854,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
 
     @Override
     @Test
-    public void readAtomicLong() {
-        String yaml = ""
-                + "hazelcast:\n"
-                + "  atomic-long:\n"
-                + "    custom:\n"
-                + "      merge-policy:\n"
-                + "        class-name: CustomMergePolicy\n"
-                + "        batch-size: 23\n"
-                + "      quorum-ref: customQuorumRule\n"
-                + "    default:\n"
-                + "      quorum-ref: customQuorumRule2\n";
-
-        Config config = buildConfig(yaml);
-        AtomicLongConfig atomicLongConfig = config.getAtomicLongConfig("custom");
-        assertEquals("custom", atomicLongConfig.getName());
-        assertEquals("customQuorumRule", atomicLongConfig.getQuorumName());
-
-        MergePolicyConfig mergePolicyConfig = atomicLongConfig.getMergePolicyConfig();
-        assertEquals("CustomMergePolicy", mergePolicyConfig.getPolicy());
-        assertEquals(23, mergePolicyConfig.getBatchSize());
-
-        AtomicLongConfig defaultAtomicLongConfig = config.getAtomicLongConfig("default");
-        assertEquals("customQuorumRule2", defaultAtomicLongConfig.getQuorumName());
-    }
-
-    @Override
-    @Test
-    public void readAtomicReference() {
-        String yaml = ""
-                + "hazelcast:\n"
-                + "  atomic-reference:\n"
-                + "    custom:\n"
-                + "      merge-policy:\n"
-                + "        class-name: CustomMergePolicy\n"
-                + "        batch-size: 23\n"
-                + "      quorum-ref: customQuorumRule\n"
-                + "    default:\n"
-                + "      quorum-ref: customQuorumRule2\n";
-
-        Config config = buildConfig(yaml);
-        AtomicReferenceConfig atomicReferenceConfig = config.getAtomicReferenceConfig("custom");
-        assertEquals("custom", atomicReferenceConfig.getName());
-        assertEquals("customQuorumRule", atomicReferenceConfig.getQuorumName());
-
-        MergePolicyConfig mergePolicyConfig = atomicReferenceConfig.getMergePolicyConfig();
-        assertEquals("CustomMergePolicy", mergePolicyConfig.getPolicy());
-        assertEquals(23, mergePolicyConfig.getBatchSize());
-
-        AtomicReferenceConfig defaultAtomicReferenceConfig = config.getAtomicReferenceConfig("default");
-        assertEquals("customQuorumRule2", defaultAtomicReferenceConfig.getQuorumName());
-    }
-
-    @Override
-    @Test
-    public void readCountDownLatch() {
-        String yaml = ""
-                + "hazelcast:\n"
-                + "  count-down-latch:\n"
-                + "    custom:\n"
-                + "      quorum-ref: customQuorumRule\n"
-                + "    default:\n"
-                + "      quorum-ref: customQuorumRule2\n";
-
-        Config config = buildConfig(yaml);
-        CountDownLatchConfig countDownLatchConfig = config.getCountDownLatchConfig("custom");
-        assertEquals("custom", countDownLatchConfig.getName());
-        assertEquals("customQuorumRule", countDownLatchConfig.getQuorumName());
-
-        CountDownLatchConfig defaultCountDownLatchConfig = config.getCountDownLatchConfig("default");
-        assertEquals("customQuorumRule2", defaultCountDownLatchConfig.getQuorumName());
-    }
-
-    @Override
-    @Test
+    @Ignore
     public void testCaseInsensitivityOfSettings() {
         String yaml = ""
                 + "hazelcast:\n"
@@ -873,11 +865,10 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "      async-backup-count: 0\n"
                 + "      time-to-live-seconds: 0\n"
                 + "      max-idle-seconds: 0\n"
-                + "      eviction-policy: NONE\n"
-                + "      max-size:\n"
-                + "        policy: per_partition\n"
-                + "        max-size: 0\n"
-                + "      eviction-percentage: 25\n"
+                + "      eviction:\n"
+                + "         eviction-policy: NONE\n"
+                + "         max-size-policy: per_partition\n"
+                + "         size: 0\n"
                 + "      merge-policy:\n"
                 + "        class-name: CustomMergePolicy\n"
                 + "        batch-size: 2342\n";
@@ -886,8 +877,8 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         MapConfig mapConfig = config.getMapConfig("testCaseInsensitivity");
 
         assertEquals(InMemoryFormat.BINARY, mapConfig.getInMemoryFormat());
-        assertEquals(EvictionPolicy.NONE, mapConfig.getEvictionPolicy());
-        assertEquals(MaxSizeConfig.MaxSizePolicy.PER_PARTITION, mapConfig.getMaxSizeConfig().getMaxSizePolicy());
+        assertEquals(EvictionPolicy.NONE, mapConfig.getEvictionConfig().getEvictionPolicy());
+        assertEquals(MaxSizePolicy.PER_PARTITION, mapConfig.getEvictionConfig().getMaxSizePolicy());
 
         MergePolicyConfig mergePolicyConfig = mapConfig.getMergePolicyConfig();
         assertEquals("CustomMergePolicy", mergePolicyConfig.getPolicy());
@@ -900,40 +891,21 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         String yaml = ""
                 + "hazelcast:\n"
                 + "  management-center:\n"
-                + "    enabled: true\n"
-                + "    scripting-enabled: false\n"
-                + "    url: someUrl\n";
+                + "    scripting-enabled: true\n"
+                + "    console-enabled: true\n"
+                + "    data-access-enabled: false\n"
+                + "    trusted-interfaces:\n"
+                + "      - 127.0.0.1\n"
+                + "      - 192.168.1.*\n";
 
         Config config = buildConfig(yaml);
-        ManagementCenterConfig manCenterCfg = config.getManagementCenterConfig();
+        ManagementCenterConfig mcConfig = config.getManagementCenterConfig();
 
-        assertTrue(manCenterCfg.isEnabled());
-        assertFalse(manCenterCfg.isScriptingEnabled());
-        assertEquals("someUrl", manCenterCfg.getUrl());
-    }
-
-    @Override
-    @Test
-    public void testManagementCenterConfigComplex() {
-        String yaml = ""
-                + "hazelcast:\n"
-                + "  management-center:\n"
-                + "    enabled: true\n"
-                + "    url: wowUrl\n"
-                + "    mutual-auth:\n"
-                + "      enabled: true\n"
-                + "      properties:\n"
-                + "        keyStore: /tmp/foo_keystore\n"
-                + "        trustStore: /tmp/foo_truststore\n";
-
-        Config config = buildConfig(yaml);
-        ManagementCenterConfig manCenterCfg = config.getManagementCenterConfig();
-
-        assertTrue(manCenterCfg.isEnabled());
-        assertEquals("wowUrl", manCenterCfg.getUrl());
-        assertTrue(manCenterCfg.getMutualAuthConfig().isEnabled());
-        assertEquals("/tmp/foo_keystore", manCenterCfg.getMutualAuthConfig().getProperty("keyStore"));
-        assertEquals("/tmp/foo_truststore", manCenterCfg.getMutualAuthConfig().getProperty("trustStore"));
+        assertTrue(mcConfig.isScriptingEnabled());
+        assertTrue(mcConfig.isConsoleEnabled());
+        assertFalse(mcConfig.isDataAccessEnabled());
+        assertEquals(2, mcConfig.getTrustedInterfaces().size());
+        assertTrue(mcConfig.getTrustedInterfaces().containsAll(ImmutableSet.of("127.0.0.1", "192.168.1.*")));
     }
 
     @Override
@@ -944,10 +916,11 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "  management-center: {}";
 
         Config config = buildConfig(yaml);
-        ManagementCenterConfig manCenterCfg = config.getManagementCenterConfig();
+        ManagementCenterConfig mcConfig = config.getManagementCenterConfig();
 
-        assertFalse(manCenterCfg.isEnabled());
-        assertNull(manCenterCfg.getUrl());
+        assertFalse(mcConfig.isScriptingEnabled());
+        assertFalse(mcConfig.isConsoleEnabled());
+        assertTrue(mcConfig.isDataAccessEnabled());
     }
 
     @Override
@@ -956,59 +929,11 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         String yaml = "hazelcast: {}";
 
         Config config = buildConfig(yaml);
-        ManagementCenterConfig manCenterCfg = config.getManagementCenterConfig();
+        ManagementCenterConfig mcConfig = config.getManagementCenterConfig();
 
-        assertFalse(manCenterCfg.isEnabled());
-        assertNull(manCenterCfg.getUrl());
-    }
-
-    @Override
-    @Test
-    public void testNotEnabledManagementCenterConfig() {
-        String yaml = ""
-                + "hazelcast:\n"
-                + "  management-center:\n"
-                + "    enabled: false\n";
-
-        Config config = buildConfig(yaml);
-        ManagementCenterConfig manCenterCfg = config.getManagementCenterConfig();
-        assertFalse(manCenterCfg.isEnabled());
-        assertNull(manCenterCfg.getUrl());
-    }
-
-    @Override
-    @Test
-    public void testNotEnabledWithURLManagementCenterConfig() {
-        String yaml = ""
-                + "hazelcast:\n"
-                + "  management-center:\n"
-                + "    enabled: false\n"
-                + "    url: http://localhost:8080/mancenter\n";
-
-        Config config = buildConfig(yaml);
-        ManagementCenterConfig manCenterCfg = config.getManagementCenterConfig();
-
-        assertFalse(manCenterCfg.isEnabled());
-        assertEquals("http://localhost:8080/mancenter", manCenterCfg.getUrl());
-    }
-
-    @Override
-    @Test
-    public void testManagementCenterConfigComplexDisabledMutualAuth() {
-        String yaml = ""
-                + "hazelcast:\n"
-                + "  management-center:\n"
-                + "    enabled: true\n"
-                + "    url: wowUrl\n"
-                + "    mutual-auth:\n"
-                + "      enabled: false\n";
-
-        Config config = buildConfig(yaml);
-        ManagementCenterConfig manCenterCfg = config.getManagementCenterConfig();
-
-        assertTrue(manCenterCfg.isEnabled());
-        assertEquals("wowUrl", manCenterCfg.getUrl());
-        assertFalse(manCenterCfg.getMutualAuthConfig().isEnabled());
+        assertFalse(mcConfig.isScriptingEnabled());
+        assertFalse(mcConfig.isConsoleEnabled());
+        assertTrue(mcConfig.isDataAccessEnabled());
     }
 
     @Override
@@ -1031,35 +956,6 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
 
     @Override
     @Test
-    public void testMapConfig_minEvictionCheckMillis() {
-        String yaml = ""
-                + "hazelcast:\n"
-                + "  map:\n"
-                + "    mymap:\n"
-                + "      min-eviction-check-millis: 123456789\n";
-
-        Config config = buildConfig(yaml);
-        MapConfig mapConfig = config.getMapConfig("mymap");
-
-        assertEquals(123456789L, mapConfig.getMinEvictionCheckMillis());
-    }
-
-    @Override
-    @Test
-    public void testMapConfig_minEvictionCheckMillis_defaultValue() {
-        String yaml = ""
-                + "hazelcast:\n"
-                + "  map:\n"
-                + "    mymap: {}\n";
-
-        Config config = buildConfig(yaml);
-        MapConfig mapConfig = config.getMapConfig("mymap");
-
-        assertEquals(MapConfig.DEFAULT_MIN_EVICTION_CHECK_MILLIS, mapConfig.getMinEvictionCheckMillis());
-    }
-
-    @Override
-    @Test
     public void testMapConfig_metadataPolicy() {
         String yaml = ""
                 + "hazelcast:\n"
@@ -1071,6 +967,34 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         MapConfig mapConfig = config.getMapConfig("mymap");
 
         assertEquals(MetadataPolicy.OFF, mapConfig.getMetadataPolicy());
+    }
+
+    @Override
+    public void testMapConfig_statisticsEnable() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  map:\n"
+                + "    mymap:\n"
+                + "      statistics-enabled: false";
+
+        Config config = buildConfig(yaml);
+        MapConfig mapConfig = config.getMapConfig("mymap");
+
+        assertFalse(mapConfig.isStatisticsEnabled());
+    }
+
+    @Override
+    public void testMapConfig_perEntryStatsEnabled() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  map:\n"
+                + "    mymap:\n"
+                + "      per-entry-stats-enabled: true";
+
+        Config config = buildConfig(yaml);
+        MapConfig mapConfig = config.getMapConfig("mymap");
+
+        assertTrue(mapConfig.isStatisticsEnabled());
     }
 
     @Override
@@ -1094,48 +1018,27 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "hazelcast:\n"
                 + "  map:\n"
                 + "    lruMap:\n"
-                + "      eviction-policy: LRU\n"
+                + "         eviction:\n"
+                + "             eviction-policy: LRU\n"
                 + ""
                 + "    lfuMap:\n"
-                + "      eviction-policy: LFU\n"
+                + "          eviction:\n"
+                + "             eviction-policy: LFU\n"
                 + ""
                 + "    noneMap:\n"
-                + "      eviction-policy: NONE\n"
+                + "         eviction:\n"
+                + "             eviction-policy: NONE\n"
                 + ""
                 + "    randomMap:\n"
-                + "      eviction-policy: RANDOM\n";
+                + "        eviction:\n"
+                + "             eviction-policy: RANDOM\n";
 
         Config config = buildConfig(yaml);
 
-        assertEquals(EvictionPolicy.LRU, config.getMapConfig("lruMap").getEvictionPolicy());
-        assertEquals(EvictionPolicy.LFU, config.getMapConfig("lfuMap").getEvictionPolicy());
-        assertEquals(EvictionPolicy.NONE, config.getMapConfig("noneMap").getEvictionPolicy());
-        assertEquals(EvictionPolicy.RANDOM, config.getMapConfig("randomMap").getEvictionPolicy());
-    }
-
-    @Override
-    @Test
-    public void testMapConfig_optimizeQueries() {
-        String yaml1 = ""
-                + "hazelcast:\n"
-                + "  map:\n"
-                + "    mymap1:\n"
-                + "      optimize-queries: true\n";
-
-        Config config1 = buildConfig(yaml1);
-        MapConfig mapConfig1 = config1.getMapConfig("mymap1");
-        assertEquals(CacheDeserializedValues.ALWAYS, mapConfig1.getCacheDeserializedValues());
-
-        String yaml2 = ""
-                + "hazelcast:\n"
-                + "  map:\n"
-                + "    mymap2:\n"
-                + "      optimize-queries: false\n";
-
-        Config config2 = buildConfig(yaml2);
-        MapConfig mapConfig2 = config2.getMapConfig("mymap2");
-
-        assertEquals(CacheDeserializedValues.INDEX_ONLY, mapConfig2.getCacheDeserializedValues());
+        assertEquals(EvictionPolicy.LRU, config.getMapConfig("lruMap").getEvictionConfig().getEvictionPolicy());
+        assertEquals(EvictionPolicy.LFU, config.getMapConfig("lfuMap").getEvictionConfig().getEvictionPolicy());
+        assertEquals(EvictionPolicy.NONE, config.getMapConfig("noneMap").getEvictionConfig().getEvictionPolicy());
+        assertEquals(EvictionPolicy.RANDOM, config.getMapConfig("randomMap").getEvictionConfig().getEvictionPolicy());
     }
 
     @Override
@@ -1217,6 +1120,56 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
 
     @Override
     @Test
+    public void testMapStoreEnabled() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  map:\n"
+                + "    mymap:\n"
+                + "      map-store:\n"
+                + "        enabled: true\n"
+                + "        initial-mode: EAGER\n";
+
+        Config config = buildConfig(yaml);
+        MapStoreConfig mapStoreConfig = config.getMapConfig("mymap").getMapStoreConfig();
+
+        assertTrue(mapStoreConfig.isEnabled());
+    }
+
+    @Override
+    @Test
+    public void testMapStoreEnabledIfNotDisabled() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  map:\n"
+                + "    mymap:\n"
+                + "      map-store:\n"
+                + "        initial-mode: EAGER\n";
+
+        Config config = buildConfig(yaml);
+        MapStoreConfig mapStoreConfig = config.getMapConfig("mymap").getMapStoreConfig();
+
+        assertTrue(mapStoreConfig.isEnabled());
+    }
+
+    @Override
+    @Test
+    public void testMapStoreDisabled() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  map:\n"
+                + "    mymap:\n"
+                + "      map-store:\n"
+                + "        enabled: false\n"
+                + "        initial-mode: EAGER\n";
+
+        Config config = buildConfig(yaml);
+        MapStoreConfig mapStoreConfig = config.getMapConfig("mymap").getMapStoreConfig();
+
+        assertFalse(mapStoreConfig.isEnabled());
+    }
+
+    @Override
+    @Test
     public void testMapStoreWriteBatchSize() {
         String yaml = ""
                 + "hazelcast:\n"
@@ -1267,7 +1220,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "  map:\n"
                 + "    mymap:\n"
                 + "      map-store:"
-                + (useDefault ? "{}" : "\n        write-coalescing: " + String.valueOf(value) + "\n");
+                + (useDefault ? " {}" : "\n        write-coalescing: " + String.valueOf(value) + "\n");
     }
 
     @Override
@@ -1361,6 +1314,36 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
 
     @Override
     @Test
+    public void testPartitionGroupNodeAware() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  partition-group:\n"
+                + "    enabled: true\n"
+                + "    group-type: NODE_AWARE\n";
+
+        Config config = buildConfig(yaml);
+        PartitionGroupConfig partitionGroupConfig = config.getPartitionGroupConfig();
+        assertTrue(partitionGroupConfig.isEnabled());
+        assertEquals(PartitionGroupConfig.MemberGroupType.NODE_AWARE, partitionGroupConfig.getGroupType());
+    }
+
+    @Override
+    @Test
+    public void testPartitionGroupPlacementAware() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  partition-group:\n"
+                + "    enabled: true\n"
+                + "    group-type: PLACEMENT_AWARE\n";
+
+        Config config = buildConfig(yaml);
+        PartitionGroupConfig partitionGroupConfig = config.getPartitionGroupConfig();
+        assertTrue(partitionGroupConfig.isEnabled());
+        assertEquals(PartitionGroupConfig.MemberGroupType.PLACEMENT_AWARE, partitionGroupConfig.getGroupType());
+    }
+
+    @Override
+    @Test
     public void testPartitionGroupSPI() {
         String yaml = ""
                 + "hazelcast:\n"
@@ -1416,10 +1399,8 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "        name: test\n"
                 + "        in-memory-format: OBJECT\n"
                 + "        serialize-keys: false\n"
-                + "        max-size: 1234\n"
                 + "        time-to-live-seconds: 77\n"
                 + "        max-idle-seconds: 92\n"
-                + "        eviction-policy: LFU\n"
                 + "        invalidate-on-change: false\n"
                 + "        cache-local-entries: false\n"
                 + "        eviction:\n"
@@ -1432,14 +1413,12 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         NearCacheConfig nearCacheConfig = mapConfig.getNearCacheConfig();
 
         assertEquals(InMemoryFormat.OBJECT, nearCacheConfig.getInMemoryFormat());
-        assertEquals(1234, nearCacheConfig.getMaxSize());
         assertEquals(77, nearCacheConfig.getTimeToLiveSeconds());
         assertEquals(92, nearCacheConfig.getMaxIdleSeconds());
-        assertEquals("LFU", nearCacheConfig.getEvictionPolicy());
         assertFalse(nearCacheConfig.isInvalidateOnChange());
         assertFalse(nearCacheConfig.isCacheLocalEntries());
         assertEquals(LRU, nearCacheConfig.getEvictionConfig().getEvictionPolicy());
-        assertEquals(ENTRY_COUNT, nearCacheConfig.getEvictionConfig().getMaximumSizePolicy());
+        assertEquals(ENTRY_COUNT, nearCacheConfig.getEvictionConfig().getMaxSizePolicy());
         assertEquals(3333, nearCacheConfig.getEvictionConfig().getSize());
         assertEquals("test", nearCacheConfig.getName());
     }
@@ -1456,7 +1435,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "    " + mapName + ":\n"
                 + "      wan-replication-ref:\n"
                 + "        test:\n"
-                + "          merge-policy: TestMergePolicy\n"
+                + "          merge-policy-class-name: TestMergePolicy\n"
                 + "          filters:\n"
                 + "            - com.example.SampleFilter\n";
 
@@ -1465,7 +1444,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         WanReplicationRef wanRef = mapConfig.getWanReplicationRef();
 
         assertEquals(refName, wanRef.getName());
-        assertEquals(mergePolicy, wanRef.getMergePolicy());
+        assertEquals(mergePolicy, wanRef.getMergePolicyClassName());
         assertTrue(wanRef.isRepublishingEnabled());
         assertEquals(1, wanRef.getFilters().size());
         assertEquals("com.example.SampleFilter", wanRef.getFilters().get(0));
@@ -1479,16 +1458,32 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "hazelcast:\n"
                 + "  wan-replication:\n"
                 + "    " + configName + ":\n"
-                + "      wan-publisher:\n"
+                + "      batch-publisher:\n"
                 + "        publisherId:\n"
-                + "          group-name: nyc\n"
-                + "          class-name: PublisherClassName\n"
-                + "          queue-capacity: 15000\n"
-                + "          queue-full-behavior: DISCARD_AFTER_MUTATION\n"
+                + "          cluster-name: nyc\n"
+                + "          batch-size: 1000\n"
+                + "          batch-max-delay-millis: 2000\n"
+                + "          response-timeout-millis: 60000\n"
+                + "          acknowledge-type: ACK_ON_RECEIPT\n"
                 + "          initial-publisher-state: STOPPED\n"
+                + "          snapshot-enabled: true\n"
+                + "          idle-max-park-ns: 2000\n"
+                + "          idle-min-park-ns: 1000\n"
+                + "          max-concurrent-invocations: 100\n"
+                + "          discovery-period-seconds: 20\n"
+                + "          use-endpoint-private-address: true\n"
+                + "          queue-full-behavior: DISCARD_AFTER_MUTATION\n"
+                + "          max-target-endpoints: 200\n"
+                + "          queue-capacity: 15000\n"
+                + "          target-endpoints: 10.3.5.1:5701,10.3.5.2:5701\n"
                 + "          properties:\n"
                 + "            propName1: propValue1\n"
-                + "      wan-consumer:\n"
+                + "      custom-publisher:\n"
+                + "        customPublisherId:\n"
+                + "          class-name: PublisherClassName\n"
+                + "          properties:\n"
+                + "            propName1: propValue1\n"
+                + "      consumer:\n"
                 + "        class-name: ConsumerClassName\n"
                 + "        properties:\n"
                 + "          propName1: propValue1\n";
@@ -1498,7 +1493,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
 
         assertEquals(configName, wanReplicationConfig.getName());
 
-        WanConsumerConfig consumerConfig = wanReplicationConfig.getWanConsumerConfig();
+        WanConsumerConfig consumerConfig = wanReplicationConfig.getConsumerConfig();
         assertNotNull(consumerConfig);
         assertEquals("ConsumerClassName", consumerConfig.getClassName());
 
@@ -1507,18 +1502,39 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertEquals(1, properties.size());
         assertEquals("propValue1", properties.get("propName1"));
 
-        List<WanPublisherConfig> publishers = wanReplicationConfig.getWanPublisherConfigs();
-        assertNotNull(publishers);
-        assertEquals(1, publishers.size());
-        WanPublisherConfig publisherConfig = publishers.get(0);
-        assertEquals("PublisherClassName", publisherConfig.getClassName());
-        assertEquals("nyc", publisherConfig.getGroupName());
+        List<WanBatchPublisherConfig> batchPublishers = wanReplicationConfig.getBatchPublisherConfigs();
+        assertNotNull(batchPublishers);
+        assertEquals(1, batchPublishers.size());
+        WanBatchPublisherConfig publisherConfig = batchPublishers.get(0);
+        assertEquals("nyc", publisherConfig.getClusterName());
         assertEquals("publisherId", publisherConfig.getPublisherId());
-        assertEquals(15000, publisherConfig.getQueueCapacity());
-        assertEquals(DISCARD_AFTER_MUTATION, publisherConfig.getQueueFullBehavior());
+        assertEquals(1000, publisherConfig.getBatchSize());
+        assertEquals(2000, publisherConfig.getBatchMaxDelayMillis());
+        assertEquals(60000, publisherConfig.getResponseTimeoutMillis());
+        assertEquals(WanAcknowledgeType.ACK_ON_RECEIPT, publisherConfig.getAcknowledgeType());
         assertEquals(WanPublisherState.STOPPED, publisherConfig.getInitialPublisherState());
-
+        assertTrue(publisherConfig.isSnapshotEnabled());
+        assertEquals(2000, publisherConfig.getIdleMaxParkNs());
+        assertEquals(1000, publisherConfig.getIdleMinParkNs());
+        assertEquals(100, publisherConfig.getMaxConcurrentInvocations());
+        assertEquals(20, publisherConfig.getDiscoveryPeriodSeconds());
+        assertTrue(publisherConfig.isUseEndpointPrivateAddress());
+        assertEquals(DISCARD_AFTER_MUTATION, publisherConfig.getQueueFullBehavior());
+        assertEquals(200, publisherConfig.getMaxTargetEndpoints());
+        assertEquals(15000, publisherConfig.getQueueCapacity());
+        assertEquals("10.3.5.1:5701,10.3.5.2:5701", publisherConfig.getTargetEndpoints());
         properties = publisherConfig.getProperties();
+        assertNotNull(properties);
+        assertEquals(1, properties.size());
+        assertEquals("propValue1", properties.get("propName1"));
+
+        List<WanCustomPublisherConfig> customPublishers = wanReplicationConfig.getCustomPublisherConfigs();
+        assertNotNull(customPublishers);
+        assertEquals(1, customPublishers.size());
+        WanCustomPublisherConfig customPublisher = customPublishers.get(0);
+        assertEquals("customPublisherId", customPublisher.getPublisherId());
+        assertEquals("PublisherClassName", customPublisher.getClassName());
+        properties = customPublisher.getProperties();
         assertNotNull(properties);
         assertEquals(1, properties.size());
         assertEquals("propValue1", properties.get("propName1"));
@@ -1532,11 +1548,11 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "hazelcast:\n"
                 + "  wan-replication:\n"
                 + "    " + configName + ":\n"
-                + "      wan-consumer: {}\n";
+                + "      consumer: {}\n";
 
         Config config = buildConfig(yaml);
         WanReplicationConfig wanReplicationConfig = config.getWanReplicationConfig(configName);
-        WanConsumerConfig consumerConfig = wanReplicationConfig.getWanConsumerConfig();
+        WanConsumerConfig consumerConfig = wanReplicationConfig.getConsumerConfig();
         assertFalse(consumerConfig.isPersistWanReplicatedData());
     }
 
@@ -1548,10 +1564,9 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "hazelcast:\n"
                 + "  wan-replication:\n"
                 + "    " + configName + ":\n"
-                + "      wan-publisher:\n"
+                + "      batch-publisher:\n"
                 + "        nyc:\n"
-                + "          class-name: PublisherClassName\n"
-                + "          wan-sync:\n"
+                + "          sync:\n"
                 + "            consistency-check-strategy: MERKLE_TREES\n";
 
         Config config = buildConfig(yaml);
@@ -1559,92 +1574,12 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
 
         assertEquals(configName, wanReplicationConfig.getName());
 
-        List<WanPublisherConfig> publishers = wanReplicationConfig.getWanPublisherConfigs();
+        List<WanBatchPublisherConfig> publishers = wanReplicationConfig.getBatchPublisherConfigs();
         assertNotNull(publishers);
         assertEquals(1, publishers.size());
-        WanPublisherConfig publisherConfig = publishers.get(0);
-        assertEquals(ConsistencyCheckStrategy.MERKLE_TREES, publisherConfig.getWanSyncConfig()
-                                                                           .getConsistencyCheckStrategy());
-    }
-
-    @Override
-    @Test
-    public void testMapEventJournalConfig() {
-        String journalName = "mapName";
-        String journal2Name = "map2Name";
-        String yaml = ""
-                + "hazelcast:\n"
-                + "  event-journal:\n"
-                + "    map:\n"
-                + "      " + journalName + ":\n"
-                + "        enabled: false\n"
-                + "        capacity: 120\n"
-                + "        time-to-live-seconds: 20\n"
-                + "      " + journal2Name + ":\n"
-                + "        enabled: true\n";
-
-        Config config = buildConfig(yaml);
-        EventJournalConfig journalConfig = config.getMapEventJournalConfig(journalName);
-
-        assertFalse(journalConfig.isEnabled());
-        assertEquals(120, journalConfig.getCapacity());
-        assertEquals(20, journalConfig.getTimeToLiveSeconds());
-
-        EventJournalConfig journal2Config = config.getMapEventJournalConfig(journal2Name);
-        assertTrue(journal2Config.isEnabled());
-    }
-
-    @Override
-    @Test
-    public void testMapMerkleTreeConfig() {
-        String mapName = "mapName";
-        String map2Name = "map2Name";
-        String yaml = ""
-                + "hazelcast:\n"
-                + "  merkle-tree:\n"
-                + "    map:\n"
-                + "      " + mapName + ":\n"
-                + "        enabled: true\n"
-                + "        depth: 20\n"
-                + "      " + map2Name + ":\n"
-                + "        enabled: false\n"
-                + "        depth: 20\n";
-
-        Config config = buildConfig(yaml);
-        MerkleTreeConfig treeConfig = config.getMapMerkleTreeConfig(mapName);
-
-        assertTrue(treeConfig.isEnabled());
-        assertEquals(20, treeConfig.getDepth());
-
-        MerkleTreeConfig tree2Config = config.getMapMerkleTreeConfig(map2Name);
-        assertFalse(tree2Config.isEnabled());
-    }
-
-    @Override
-    @Test
-    public void testCacheEventJournalConfig() {
-        String journalName = "cacheName";
-        String journal2Name = "cache2Name";
-        String yaml = ""
-                + "hazelcast:\n"
-                + "  event-journal:\n"
-                + "    cache:\n"
-                + "      " + journalName + ":\n"
-                + "        enabled: true\n"
-                + "        capacity: 120\n"
-                + "        time-to-live-seconds: 20\n"
-                + "      " + journal2Name + ":\n"
-                + "        enabled: false\n";
-
-        Config config = buildConfig(yaml);
-        EventJournalConfig journalConfig = config.getCacheEventJournalConfig(journalName);
-
-        assertTrue(journalConfig.isEnabled());
-        assertEquals(120, journalConfig.getCapacity());
-        assertEquals(20, journalConfig.getTimeToLiveSeconds());
-
-        EventJournalConfig journal2Config = config.getCacheEventJournalConfig(journal2Name);
-        assertFalse(journal2Config.isEnabled());
+        WanBatchPublisherConfig publisherConfig = publishers.get(0);
+        assertEquals(ConsistencyCheckStrategy.MERKLE_TREES, publisherConfig.getSyncConfig()
+                .getConsistencyCheckStrategy());
     }
 
     @Override
@@ -1656,8 +1591,11 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "    gen:\n"
                 + "      prefetch-count: 3\n"
                 + "      prefetch-validity-millis: 10\n"
-                + "      id-offset: 20\n"
+                + "      epoch-start: 1514764800001\n"
                 + "      node-id-offset: 30\n"
+                + "      bits-sequence: 22\n"
+                + "      bits-node-id: 33\n"
+                + "      allowed-future-millis: 20000\n"
                 + "      statistics-enabled: false\n"
                 + "    gen2:\n"
                 + "      statistics-enabled: true";
@@ -1667,8 +1605,11 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertEquals("gen", fConfig.getName());
         assertEquals(3, fConfig.getPrefetchCount());
         assertEquals(10L, fConfig.getPrefetchValidityMillis());
-        assertEquals(20L, fConfig.getIdOffset());
+        assertEquals(1514764800001L, fConfig.getEpochStart());
         assertEquals(30L, fConfig.getNodeIdOffset());
+        assertEquals(22, fConfig.getBitsSequence());
+        assertEquals(33, fConfig.getBitsNodeId());
+        assertEquals(20000L, fConfig.getAllowedFutureMillis());
         assertFalse(fConfig.isStatisticsEnabled());
 
         FlakeIdGeneratorConfig f2Config = config.findFlakeIdGeneratorConfig("gen2");
@@ -1683,33 +1624,6 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
 
         // if we (for any reason) get through the parsing, then fail
         fail();
-    }
-
-    @Override
-    @Test
-    public void setMapStoreConfigImplementationTest() {
-        String mapName = "mapStoreImpObjTest";
-        String yaml = ""
-                + "hazelcast:\n"
-                + "  map:\n"
-                + "    " + mapName + ":\n"
-                + "      map-store:\n"
-                + "        enabled: true\n"
-                + "        class-name: com.hazelcast.config.helpers.DummyMapStore\n"
-                + "        write-delay-seconds: 5";
-
-        Config config = buildConfig(yaml);
-        HazelcastInstance hz = createHazelcastInstance(config);
-        IMap<String, String> map = hz.getMap(mapName);
-        // MapStore is not instantiated until the MapContainer is created lazily
-        map.put("sample", "data");
-
-        MapConfig mapConfig = hz.getConfig().getMapConfig(mapName);
-        MapStoreConfig mapStoreConfig = mapConfig.getMapStoreConfig();
-        Object o = mapStoreConfig.getImplementation();
-
-        assertNotNull(o);
-        assertTrue(o instanceof DummyMapStore);
     }
 
     @Override
@@ -1810,7 +1724,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         MulticastConfig multicastConfig = config.getNetworkConfig().getJoin().getMulticastConfig();
 
         assertFalse(multicastConfig.isEnabled());
-        assertTrue(multicastConfig.isLoopbackModeEnabled());
+        assertEquals(Boolean.TRUE, multicastConfig.getLoopbackModeEnabled());
         assertEquals("224.2.2.4", multicastConfig.getMulticastGroup());
         assertEquals(65438, multicastConfig.getMulticastPort());
         assertEquals(4, multicastConfig.getMulticastTimeoutSeconds());
@@ -1826,12 +1740,24 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "hazelcast:\n"
                 + "  wan-replication:\n"
                 + "    my-wan-cluster:\n"
-                + "      wan-publisher:\n"
+                + "      batch-publisher:\n"
                 + "        istanbulPublisherId:\n"
-                + "          group-name: istanbul\n"
-                + "          class-name: com.hazelcast.wan.custom.WanPublisher\n"
+                + "          cluster-name: istanbul\n"
+                + "          batch-size: 100\n"
+                + "          batch-max-delay-millis: 200\n"
+                + "          response-timeout-millis: 300\n"
+                + "          acknowledge-type: ACK_ON_RECEIPT\n"
+                + "          initial-publisher-state: STOPPED\n"
+                + "          snapshot-enabled: true\n"
+                + "          idle-min-park-ns: 400\n"
+                + "          idle-max-park-ns: 500\n"
+                + "          max-concurrent-invocations: 600\n"
+                + "          discovery-period-seconds: 700\n"
+                + "          use-endpoint-private-address: true\n"
                 + "          queue-full-behavior: THROW_EXCEPTION\n"
+                + "          max-target-endpoints: 800\n"
                 + "          queue-capacity: 21\n"
+                + "          target-endpoints: a,b,c,d\n"
                 + "          aws:\n"
                 + "            enabled: false\n"
                 + "            connection-timeout-seconds: 10\n"
@@ -1853,65 +1779,66 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "                  key-string: foo\n"
                 + "                  key-int: 123\n"
                 + "                  key-boolean: true\n"
-                + "              - class: DummyDiscoveryStrategy2\n"
-                + "                enabled: true\n"
-                + "                properties:\n"
-                + "                  key-string: foobar\n"
-                + "                  key-int: 321\n"
-                + "                  key-boolean: false\n"
                 + "          properties:\n"
                 + "            custom.prop.publisher: prop.publisher\n"
-                + "            discovery.period: 5\n"
-                + "            maxEndpoints: 2\n"
                 + "        ankara:\n"
-                + "          class-name: com.hazelcast.wan.custom.WanPublisher>\n"
                 + "          queue-full-behavior: THROW_EXCEPTION_ONLY_IF_REPLICATION_ACTIVE\n"
                 + "          initial-publisher-state: STOPPED\n"
-                + "      wan-consumer:\n"
+                + "      consumer:\n"
                 + "        class-name: com.hazelcast.wan.custom.WanConsumer\n"
                 + "        properties:\n"
                 + "          custom.prop.consumer: prop.consumer\n"
                 + "        persist-wan-replicated-data: false\n";
 
         Config config = buildConfig(yaml);
-        WanReplicationConfig wanConfig = config.getWanReplicationConfig("my-wan-cluster");
-        assertNotNull(wanConfig);
+        WanReplicationConfig wanReplicationConfig = config.getWanReplicationConfig("my-wan-cluster");
+        assertNotNull(wanReplicationConfig);
 
-        List<WanPublisherConfig> publisherConfigs = wanConfig.getWanPublisherConfigs();
+        List<WanBatchPublisherConfig> publisherConfigs = wanReplicationConfig.getBatchPublisherConfigs();
         assertEquals(2, publisherConfigs.size());
-        WanPublisherConfig publisherConfig1 = publisherConfigs.get(0);
-        assertEquals("istanbul", publisherConfig1.getGroupName());
-        assertEquals("istanbulPublisherId", publisherConfig1.getPublisherId());
-        assertEquals("com.hazelcast.wan.custom.WanPublisher", publisherConfig1.getClassName());
-        assertEquals(WANQueueFullBehavior.THROW_EXCEPTION, publisherConfig1.getQueueFullBehavior());
-        assertEquals(WanPublisherState.REPLICATING, publisherConfig1.getInitialPublisherState());
-        assertEquals(21, publisherConfig1.getQueueCapacity());
-        Map<String, Comparable> pubProperties = publisherConfig1.getProperties();
+        WanBatchPublisherConfig pc1 = publisherConfigs.get(0);
+        assertEquals("istanbul", pc1.getClusterName());
+        assertEquals("istanbulPublisherId", pc1.getPublisherId());
+        assertEquals(100, pc1.getBatchSize());
+        assertEquals(200, pc1.getBatchMaxDelayMillis());
+        assertEquals(300, pc1.getResponseTimeoutMillis());
+        assertEquals(WanAcknowledgeType.ACK_ON_RECEIPT, pc1.getAcknowledgeType());
+        assertEquals(WanPublisherState.STOPPED, pc1.getInitialPublisherState());
+        assertTrue(pc1.isSnapshotEnabled());
+        assertEquals(400, pc1.getIdleMinParkNs());
+        assertEquals(500, pc1.getIdleMaxParkNs());
+        assertEquals(600, pc1.getMaxConcurrentInvocations());
+        assertEquals(700, pc1.getDiscoveryPeriodSeconds());
+        assertTrue(pc1.isUseEndpointPrivateAddress());
+        assertEquals(THROW_EXCEPTION, pc1.getQueueFullBehavior());
+        assertEquals(800, pc1.getMaxTargetEndpoints());
+        assertEquals(21, pc1.getQueueCapacity());
+        assertEquals("a,b,c,d", pc1.getTargetEndpoints());
+
+        Map<String, Comparable> pubProperties = pc1.getProperties();
         assertEquals("prop.publisher", pubProperties.get("custom.prop.publisher"));
-        assertEquals("5", pubProperties.get("discovery.period"));
-        assertEquals("2", pubProperties.get("maxEndpoints"));
-        assertFalse(publisherConfig1.getAwsConfig().isEnabled());
-        assertAwsConfig(publisherConfig1.getAwsConfig());
-        assertFalse(publisherConfig1.getGcpConfig().isEnabled());
-        assertFalse(publisherConfig1.getAzureConfig().isEnabled());
-        assertFalse(publisherConfig1.getKubernetesConfig().isEnabled());
-        assertFalse(publisherConfig1.getEurekaConfig().isEnabled());
-        assertDiscoveryConfig(publisherConfig1.getDiscoveryConfig());
+        assertFalse(pc1.getAwsConfig().isEnabled());
+        assertAwsConfig(pc1.getAwsConfig());
+        assertFalse(pc1.getGcpConfig().isEnabled());
+        assertFalse(pc1.getAzureConfig().isEnabled());
+        assertFalse(pc1.getKubernetesConfig().isEnabled());
+        assertFalse(pc1.getEurekaConfig().isEnabled());
+        assertDiscoveryConfig(pc1.getDiscoveryConfig());
 
-        WanPublisherConfig publisherConfig2 = publisherConfigs.get(1);
-        assertEquals("ankara", publisherConfig2.getGroupName());
-        assertNull(publisherConfig2.getPublisherId());
-        assertEquals(WANQueueFullBehavior.THROW_EXCEPTION_ONLY_IF_REPLICATION_ACTIVE, publisherConfig2.getQueueFullBehavior());
-        assertEquals(WanPublisherState.STOPPED, publisherConfig2.getInitialPublisherState());
+        WanBatchPublisherConfig pc2 = publisherConfigs.get(1);
+        assertEquals("ankara", pc2.getClusterName());
+        assertNull(pc2.getPublisherId());
+        assertEquals(WanQueueFullBehavior.THROW_EXCEPTION_ONLY_IF_REPLICATION_ACTIVE, pc2.getQueueFullBehavior());
+        assertEquals(WanPublisherState.STOPPED, pc2.getInitialPublisherState());
 
-        WanConsumerConfig consumerConfig = wanConfig.getWanConsumerConfig();
+        WanConsumerConfig consumerConfig = wanReplicationConfig.getConsumerConfig();
         assertEquals("com.hazelcast.wan.custom.WanConsumer", consumerConfig.getClassName());
         Map<String, Comparable> consProperties = consumerConfig.getProperties();
         assertEquals("prop.consumer", consProperties.get("custom.prop.consumer"));
         assertFalse(consumerConfig.isPersistWanReplicatedData());
     }
 
-    protected Config buildConfig(String yaml) {
+    protected static Config buildConfig(String yaml) {
         ByteArrayInputStream bis = new ByteArrayInputStream(yaml.getBytes());
         YamlConfigBuilder configBuilder = new YamlConfigBuilder(bis);
         return configBuilder.build();
@@ -1919,7 +1846,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
 
     private void assertDiscoveryConfig(DiscoveryConfig c) {
         assertEquals("DummyFilterClass", c.getNodeFilterClass());
-        assertEquals(2, c.getDiscoveryStrategyConfigs().size());
+        assertEquals(1, c.getDiscoveryStrategyConfigs().size());
 
         Iterator<DiscoveryStrategyConfig> iterator = c.getDiscoveryStrategyConfigs().iterator();
         DiscoveryStrategyConfig config = iterator.next();
@@ -1929,183 +1856,180 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertEquals("foo", props.get("key-string"));
         assertEquals("123", props.get("key-int"));
         assertEquals("true", props.get("key-boolean"));
-
-        DiscoveryStrategyConfig config2 = iterator.next();
-        assertEquals("DummyDiscoveryStrategy2", config2.getClassName());
-
-        Map<String, Comparable> props2 = config2.getProperties();
-        assertEquals("foobar", props2.get("key-string"));
-        assertEquals("321", props2.get("key-int"));
-        assertEquals("false", props2.get("key-boolean"));
     }
 
     @Override
     @Test
-    public void testQuorumConfig() {
+    public void testSplitBrainProtectionConfig() {
         String yaml = ""
                 + "hazelcast:\n"
-                + "  quorum:\n"
-                + "    myQuorum:\n"
+                + "  split-brain-protection:\n"
+                + "    mySplitBrainProtection:\n"
                 + "      enabled: true\n"
-                + "      quorum-size: 3\n"
-                + "      quorum-function-class-name: com.my.quorum.function\n"
-                + "      quorum-type: READ\n";
+                + "      minimum-cluster-size: 3\n"
+                + "      function-class-name: com.my.splitbrainprotection.function\n"
+                + "      protect-on: READ\n";
 
         Config config = buildConfig(yaml);
-        QuorumConfig quorumConfig = config.getQuorumConfig("myQuorum");
+        SplitBrainProtectionConfig splitBrainProtectionConfig = config.getSplitBrainProtectionConfig("mySplitBrainProtection");
 
-        assertTrue("quorum should be enabled", quorumConfig.isEnabled());
-        assertEquals(3, quorumConfig.getSize());
-        assertEquals(QuorumType.READ, quorumConfig.getType());
-        assertEquals("com.my.quorum.function", quorumConfig.getQuorumFunctionClassName());
-        assertTrue(quorumConfig.getListenerConfigs().isEmpty());
+        assertTrue("split brain protection should be enabled", splitBrainProtectionConfig.isEnabled());
+        assertEquals(3, splitBrainProtectionConfig.getMinimumClusterSize());
+        assertEquals(SplitBrainProtectionOn.READ, splitBrainProtectionConfig.getProtectOn());
+        assertEquals("com.my.splitbrainprotection.function", splitBrainProtectionConfig.getFunctionClassName());
+        assertTrue(splitBrainProtectionConfig.getListenerConfigs().isEmpty());
     }
 
     @Override
     @Test
-    public void testQuorumListenerConfig() {
+    public void testSplitBrainProtectionListenerConfig() {
         String yaml = ""
                 + "hazelcast:\n"
-                + "  quorum:\n"
-                + "    myQuorum:\n"
+                + "  split-brain-protection:\n"
+                + "    mySplitBrainProtection:\n"
                 + "      enabled: true\n"
-                + "      quorum-size: 3\n"
-                + "      quorum-listeners:\n"
-                + "         - com.abc.my.quorum.listener\n"
+                + "      minimum-cluster-size: 3\n"
+                + "      listeners:\n"
+                + "         - com.abc.my.splitbrainprotection.listener\n"
                 + "         - com.abc.my.second.listener\n"
-                + "      quorum-function-class-name: com.hazelcast.SomeQuorumFunction\n";
+                + "      function-class-name: com.hazelcast.SomeSplitBrainProtectionFunction\n";
 
         Config config = buildConfig(yaml);
-        QuorumConfig quorumConfig = config.getQuorumConfig("myQuorum");
+        SplitBrainProtectionConfig splitBrainProtectionConfig = config.getSplitBrainProtectionConfig("mySplitBrainProtection");
 
-        assertFalse(quorumConfig.getListenerConfigs().isEmpty());
-        assertEquals("com.abc.my.quorum.listener", quorumConfig.getListenerConfigs().get(0).getClassName());
-        assertEquals("com.abc.my.second.listener", quorumConfig.getListenerConfigs().get(1).getClassName());
-        assertEquals("com.hazelcast.SomeQuorumFunction", quorumConfig.getQuorumFunctionClassName());
+        assertFalse(splitBrainProtectionConfig.getListenerConfigs().isEmpty());
+        assertEquals("com.abc.my.splitbrainprotection.listener",
+                splitBrainProtectionConfig.getListenerConfigs().get(0).getClassName());
+        assertEquals("com.abc.my.second.listener", splitBrainProtectionConfig.getListenerConfigs().get(1).getClassName());
+        assertEquals("com.hazelcast.SomeSplitBrainProtectionFunction", splitBrainProtectionConfig.getFunctionClassName());
     }
 
     @Override
-    @Test(expected = ConfigurationException.class)
-    public void testQuorumConfig_whenClassNameAndRecentlyActiveQuorumDefined_exceptionIsThrown() {
+    @Test(expected = InvalidConfigurationException.class)
+    public void testConfig_whenClassNameAndRecentlyActiveSplitBrainProtectionDefined_exceptionIsThrown() {
         String yaml = ""
                 + "hazelcast:\n"
-                + "  quorum:\n"
-                + "    myQuorum:\n"
+                + "  split-brain-protection:\n"
+                + "    mysplit-brain-protection:\n"
                 + "      enabled: true\n"
-                + "      quorum-size: 3\n"
-                + "      quorum-function-class-name: com.hazelcast.SomeQuorumFunction\n"
-                + "      recently-active-quorum: {}";
-
-        buildConfig(yaml);
-    }
-
-    @Override
-    @Test(expected = ConfigurationException.class)
-    public void testQuorumConfig_whenClassNameAndProbabilisticQuorumDefined_exceptionIsThrown() {
-        String yaml = ""
-                + "hazelcast:\n"
-                + "  quorum:\n"
-                + "    myQuorum:\n"
-                + "      enabled: true\n"
-                + "      quorum-size: 3\n"
-                + "      quorum-function-class-name: com.hazelcast.SomeQuorumFunction\n"
-                + "      probabilistic-quorum: {}";
+                + "      minimum-cluster-size: 3\n"
+                + "      function-class-name: com.hazelcast.SomeSplitBrainProtectionFunction\n"
+                + "      recently-active-split-brain-protection: {}";
 
         buildConfig(yaml);
     }
 
     @Override
     @Test(expected = InvalidConfigurationException.class)
-    @Ignore("Schema validation is supposed to fail, two quorum implementation is defined")
-    public void testQuorumConfig_whenBothBuiltinQuorumsDefined_exceptionIsThrown() {
+    public void testConfig_whenClassNameAndProbabilisticSplitBrainProtectionDefined_exceptionIsThrown() {
         String yaml = ""
                 + "hazelcast:\n"
-                + "  quorum:\n"
-                + "    myQuorum:\n"
+                + "  split-brain-protection:\n"
+                + "    mysplit-brain-protection:\n"
                 + "      enabled: true\n"
-                + "      quorum-size: 3\n"
-                + "      probabilistic-quorum: {}\n"
-                + "      recently-active-quorum: {}\n";
+                + "      minimum-cluster-size: 3\n"
+                + "      function-class-name: com.hazelcast.SomeSplitBrainProtectionFunction\n"
+                + "      probabilistic-split-brain-protection: {}";
+
+        buildConfig(yaml);
+    }
+
+    @Override
+    @Test(expected = InvalidConfigurationException.class)
+    @Ignore("Schema validation is supposed to fail, two split brain protection implementation is defined")
+    public void testConfig_whenBothBuiltinSplitBrainProtectionsDefined_exceptionIsThrown() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  split-brain-protection:\n"
+                + "    mysplit-brain-protection:\n"
+                + "      enabled: true\n"
+                + "      minimum-cluster-size: 3\n"
+                + "      probabilistic-split-brain-protection: {}\n"
+                + "      recently-active-split-brain-protection: {}\n";
 
         buildConfig(yaml);
     }
 
     @Override
     @Test
-    public void testQuorumConfig_whenRecentlyActiveQuorum_withDefaultValues() {
+    public void testConfig_whenRecentlyActiveSplitBrainProtection_withDefaultValues() {
         String yaml = ""
                 + "hazelcast:\n"
-                + "  quorum:\n"
-                + "    myQuorum:\n"
+                + "  split-brain-protection:\n"
+                + "    mySplitBrainProtection:\n"
                 + "      enabled: true\n"
-                + "      quorum-size: 3\n"
-                + "      recently-active-quorum: {}";
+                + "      minimum-cluster-size: 3\n"
+                + "      recently-active-split-brain-protection: {}";
 
         Config config = buildConfig(yaml);
-        QuorumConfig quorumConfig = config.getQuorumConfig("myQuorum");
-        assertInstanceOf(RecentlyActiveQuorumFunction.class, quorumConfig.getQuorumFunctionImplementation());
-        RecentlyActiveQuorumFunction quorumFunction = (RecentlyActiveQuorumFunction) quorumConfig
-                .getQuorumFunctionImplementation();
-        assertEquals(RecentlyActiveQuorumConfigBuilder.DEFAULT_HEARTBEAT_TOLERANCE_MILLIS,
-                quorumFunction.getHeartbeatToleranceMillis());
+        SplitBrainProtectionConfig splitBrainProtectionConfig = config.getSplitBrainProtectionConfig("mySplitBrainProtection");
+        assertInstanceOf(RecentlyActiveSplitBrainProtectionFunction.class,
+                splitBrainProtectionConfig.getFunctionImplementation());
+        RecentlyActiveSplitBrainProtectionFunction splitBrainProtectionFunction = (RecentlyActiveSplitBrainProtectionFunction) splitBrainProtectionConfig
+                .getFunctionImplementation();
+        assertEquals(RecentlyActiveSplitBrainProtectionConfigBuilder.DEFAULT_HEARTBEAT_TOLERANCE_MILLIS,
+                splitBrainProtectionFunction.getHeartbeatToleranceMillis());
     }
 
     @Override
     @Test
-    public void testQuorumConfig_whenRecentlyActiveQuorum_withCustomValues() {
+    public void testConfig_whenRecentlyActiveSplitBrainProtection_withCustomValues() {
         String yaml = ""
                 + "hazelcast:\n"
-                + "  quorum:\n"
-                + "    myQuorum:\n"
+                + "  split-brain-protection:\n"
+                + "    mySplitBrainProtection:\n"
                 + "      enabled: true\n"
-                + "      quorum-size: 3\n"
-                + "      recently-active-quorum:\n"
+                + "      minimum-cluster-size: 3\n"
+                + "      recently-active-split-brain-protection:\n"
                 + "        heartbeat-tolerance-millis: 13000\n";
 
         Config config = buildConfig(yaml);
-        QuorumConfig quorumConfig = config.getQuorumConfig("myQuorum");
-        assertEquals(3, quorumConfig.getSize());
-        assertInstanceOf(RecentlyActiveQuorumFunction.class, quorumConfig.getQuorumFunctionImplementation());
-        RecentlyActiveQuorumFunction quorumFunction = (RecentlyActiveQuorumFunction) quorumConfig
-                .getQuorumFunctionImplementation();
-        assertEquals(13000, quorumFunction.getHeartbeatToleranceMillis());
+        SplitBrainProtectionConfig splitBrainProtectionConfig = config.getSplitBrainProtectionConfig("mySplitBrainProtection");
+        assertEquals(3, splitBrainProtectionConfig.getMinimumClusterSize());
+        assertInstanceOf(RecentlyActiveSplitBrainProtectionFunction.class,
+                splitBrainProtectionConfig.getFunctionImplementation());
+        RecentlyActiveSplitBrainProtectionFunction splitBrainProtectionFunction = (RecentlyActiveSplitBrainProtectionFunction) splitBrainProtectionConfig
+                .getFunctionImplementation();
+        assertEquals(13000, splitBrainProtectionFunction.getHeartbeatToleranceMillis());
     }
 
     @Override
     @Test
-    public void testQuorumConfig_whenProbabilisticQuorum_withDefaultValues() {
+    public void testConfig_whenProbabilisticSplitBrainProtection_withDefaultValues() {
         String yaml = ""
                 + "hazelcast:\n"
-                + "  quorum:\n"
-                + "    myQuorum:\n"
+                + "  split-brain-protection:\n"
+                + "    mySplitBrainProtection:\n"
                 + "      enabled: true\n"
-                + "      quorum-size: 3\n"
-                + "      probabilistic-quorum: {}";
+                + "      minimum-cluster-size: 3\n"
+                + "      probabilistic-split-brain-protection: {}";
 
         Config config = buildConfig(yaml);
-        QuorumConfig quorumConfig = config.getQuorumConfig("myQuorum");
-        assertInstanceOf(ProbabilisticQuorumFunction.class, quorumConfig.getQuorumFunctionImplementation());
-        ProbabilisticQuorumFunction quorumFunction = (ProbabilisticQuorumFunction) quorumConfig.getQuorumFunctionImplementation();
-        assertEquals(ProbabilisticQuorumConfigBuilder.DEFAULT_HEARTBEAT_INTERVAL_MILLIS,
-                quorumFunction.getHeartbeatIntervalMillis());
-        assertEquals(ProbabilisticQuorumConfigBuilder.DEFAULT_HEARTBEAT_PAUSE_MILLIS,
-                quorumFunction.getAcceptableHeartbeatPauseMillis());
-        assertEquals(ProbabilisticQuorumConfigBuilder.DEFAULT_MIN_STD_DEVIATION,
-                quorumFunction.getMinStdDeviationMillis());
-        assertEquals(ProbabilisticQuorumConfigBuilder.DEFAULT_PHI_THRESHOLD, quorumFunction.getSuspicionThreshold(), 0.01);
-        assertEquals(ProbabilisticQuorumConfigBuilder.DEFAULT_SAMPLE_SIZE, quorumFunction.getMaxSampleSize());
+        SplitBrainProtectionConfig splitBrainProtectionConfig = config.getSplitBrainProtectionConfig("mySplitBrainProtection");
+        assertInstanceOf(ProbabilisticSplitBrainProtectionFunction.class, splitBrainProtectionConfig.getFunctionImplementation());
+        ProbabilisticSplitBrainProtectionFunction splitBrainProtectionFunction = (ProbabilisticSplitBrainProtectionFunction) splitBrainProtectionConfig.getFunctionImplementation();
+        assertEquals(ProbabilisticSplitBrainProtectionConfigBuilder.DEFAULT_HEARTBEAT_INTERVAL_MILLIS,
+                splitBrainProtectionFunction.getHeartbeatIntervalMillis());
+        assertEquals(ProbabilisticSplitBrainProtectionConfigBuilder.DEFAULT_HEARTBEAT_PAUSE_MILLIS,
+                splitBrainProtectionFunction.getAcceptableHeartbeatPauseMillis());
+        assertEquals(ProbabilisticSplitBrainProtectionConfigBuilder.DEFAULT_MIN_STD_DEVIATION,
+                splitBrainProtectionFunction.getMinStdDeviationMillis());
+        assertEquals(ProbabilisticSplitBrainProtectionConfigBuilder.DEFAULT_PHI_THRESHOLD,
+                splitBrainProtectionFunction.getSuspicionThreshold(), 0.01);
+        assertEquals(ProbabilisticSplitBrainProtectionConfigBuilder.DEFAULT_SAMPLE_SIZE,
+                splitBrainProtectionFunction.getMaxSampleSize());
     }
 
     @Override
     @Test
-    public void testQuorumConfig_whenProbabilisticQuorum_withCustomValues() {
+    public void testConfig_whenProbabilisticSplitBrainProtection_withCustomValues() {
         String yaml = ""
                 + "hazelcast:\n"
-                + "  quorum:\n"
-                + "    myQuorum:\n"
+                + "  split-brain-protection:\n"
+                + "    mySplitBrainProtection:\n"
                 + "      enabled: true\n"
-                + "      quorum-size: 3\n"
-                + "      probabilistic-quorum:\n"
+                + "      minimum-cluster-size: 3\n"
+                + "      probabilistic-split-brain-protection:\n"
                 + "        acceptable-heartbeat-pause-millis: 37400\n"
                 + "        suspicion-threshold: 3.14592\n"
                 + "        max-sample-size: 42\n"
@@ -2113,14 +2037,14 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "        heartbeat-interval-millis: 4321";
 
         Config config = buildConfig(yaml);
-        QuorumConfig quorumConfig = config.getQuorumConfig("myQuorum");
-        assertInstanceOf(ProbabilisticQuorumFunction.class, quorumConfig.getQuorumFunctionImplementation());
-        ProbabilisticQuorumFunction quorumFunction = (ProbabilisticQuorumFunction) quorumConfig.getQuorumFunctionImplementation();
-        assertEquals(4321, quorumFunction.getHeartbeatIntervalMillis());
-        assertEquals(37400, quorumFunction.getAcceptableHeartbeatPauseMillis());
-        assertEquals(1234, quorumFunction.getMinStdDeviationMillis());
-        assertEquals(3.14592d, quorumFunction.getSuspicionThreshold(), 0.001d);
-        assertEquals(42, quorumFunction.getMaxSampleSize());
+        SplitBrainProtectionConfig splitBrainProtectionConfig = config.getSplitBrainProtectionConfig("mySplitBrainProtection");
+        assertInstanceOf(ProbabilisticSplitBrainProtectionFunction.class, splitBrainProtectionConfig.getFunctionImplementation());
+        ProbabilisticSplitBrainProtectionFunction splitBrainProtectionFunction = (ProbabilisticSplitBrainProtectionFunction) splitBrainProtectionConfig.getFunctionImplementation();
+        assertEquals(4321, splitBrainProtectionFunction.getHeartbeatIntervalMillis());
+        assertEquals(37400, splitBrainProtectionFunction.getAcceptableHeartbeatPauseMillis());
+        assertEquals(1234, splitBrainProtectionFunction.getMinStdDeviationMillis());
+        assertEquals(3.14592d, splitBrainProtectionFunction.getSuspicionThreshold(), 0.001d);
+        assertEquals(42, splitBrainProtectionFunction.getMaxSampleSize());
     }
 
     @Override
@@ -2131,7 +2055,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "hazelcast:\n"
                 + "  cache:\n"
                 + "    foobar:\n"
-                + "      quorum-ref: customQuorumRule\n"
+                + "      split-brain-protection-ref: customSplitBrainProtectionRule\n"
                 + "      key-type:\n"
                 + "        class-name: java.lang.Object\n"
                 + "      value-type:\n"
@@ -2153,16 +2077,27 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "        size: 1000\n"
                 + "        max-size-policy: ENTRY_COUNT\n"
                 + "        eviction-policy: LFU\n"
-                + "      merge-policy: com.hazelcast.cache.merge.LatestAccessCacheMergePolicy\n"
+                + "      merge-policy:\n"
+                + "         batch-size: 100\n"
+                + "         class-name: LatestAccessMergePolicy\n"
                 + "      disable-per-entry-invalidation-events: true\n"
+                + "      merkle-tree:\n"
+                + "        enabled: true\n"
+                + "        depth: 20\n"
                 + "      hot-restart:\n"
                 + "        enabled: false\n"
                 + "        fsync: false\n"
+                + "      data-persistence:\n"
+                + "        enabled: true\n"
+                + "        fsync: true\n"
+                + "      event-journal:\n"
+                + "        enabled: true\n"
+                + "        capacity: 120\n"
+                + "        time-to-live-seconds: 20\n"
                 + "      partition-lost-listeners:\n"
                 + "        - com.your-package.YourPartitionLostListener\n"
                 + "      cache-entry-listeners:\n"
-                + "        cache-entry-listener:\n"
-                + "          old-value-required: false\n"
+                + "        - old-value-required: false\n"
                 + "          synchronous: false\n"
                 + "          cache-entry-listener-factory:\n"
                 + "            class-name: com.example.cache.MyEntryListenerFactory\n"
@@ -2173,7 +2108,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         CacheSimpleConfig cacheConfig = config.getCacheConfig("foobar");
 
         assertFalse(config.getCacheConfigs().isEmpty());
-        assertEquals("customQuorumRule", cacheConfig.getQuorumName());
+        assertEquals("customSplitBrainProtectionRule", cacheConfig.getSplitBrainProtectionName());
         assertEquals("java.lang.Object", cacheConfig.getKeyType());
         assertEquals("java.lang.Object", cacheConfig.getValueType());
         assertFalse(cacheConfig.isStatisticsEnabled());
@@ -2187,12 +2122,25 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertEquals(1, cacheConfig.getBackupCount());
         assertEquals(0, cacheConfig.getAsyncBackupCount());
         assertEquals(1000, cacheConfig.getEvictionConfig().getSize());
-        assertEquals(EvictionConfig.MaxSizePolicy.ENTRY_COUNT, cacheConfig.getEvictionConfig().getMaximumSizePolicy());
+        assertEquals(MaxSizePolicy.ENTRY_COUNT,
+                cacheConfig.getEvictionConfig().getMaxSizePolicy());
         assertEquals(EvictionPolicy.LFU, cacheConfig.getEvictionConfig().getEvictionPolicy());
-        assertEquals("com.hazelcast.cache.merge.LatestAccessCacheMergePolicy", cacheConfig.getMergePolicy());
+        assertEquals("LatestAccessMergePolicy",
+                cacheConfig.getMergePolicyConfig().getPolicy());
         assertTrue(cacheConfig.isDisablePerEntryInvalidationEvents());
-        assertFalse(cacheConfig.getHotRestartConfig().isEnabled());
-        assertFalse(cacheConfig.getHotRestartConfig().isFsync());
+        assertTrue(cacheConfig.getMerkleTreeConfig().isEnabled());
+        assertEquals(20, cacheConfig.getMerkleTreeConfig().getDepth());
+        // overrides by the conflicting dataPersistenceConfig
+        assertTrue(cacheConfig.getHotRestartConfig().isEnabled());
+        assertTrue(cacheConfig.getHotRestartConfig().isFsync());
+        assertTrue(cacheConfig.getDataPersistenceConfig().isEnabled());
+        assertTrue(cacheConfig.getDataPersistenceConfig().isFsync());
+
+        EventJournalConfig journalConfig = cacheConfig.getEventJournalConfig();
+        assertTrue(journalConfig.isEnabled());
+        assertEquals(120, journalConfig.getCapacity());
+        assertEquals(20, journalConfig.getTimeToLiveSeconds());
+
         assertEquals(1, cacheConfig.getPartitionLostListenerConfigs().size());
         assertEquals("com.your-package.YourPartitionLostListener",
                 cacheConfig.getPartitionLostListenerConfigs().get(0).getClassName());
@@ -2211,8 +2159,8 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "  executor-service:\n"
                 + "    foobar:\n"
                 + "      pool-size: 2\n"
-                + "      quorum-ref: customQuorumRule\n"
-                + "      statistics-enabled: true\n"
+                + "      split-brain-protection-ref: customSplitBrainProtectionRule\n"
+                + "      statistics-enabled: false\n"
                 + "      queue-capacity: 0\n";
 
         Config config = buildConfig(yaml);
@@ -2220,8 +2168,8 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
 
         assertFalse(config.getExecutorConfigs().isEmpty());
         assertEquals(2, executorConfig.getPoolSize());
-        assertEquals("customQuorumRule", executorConfig.getQuorumName());
-        assertTrue(executorConfig.isStatisticsEnabled());
+        assertEquals("customSplitBrainProtectionRule", executorConfig.getSplitBrainProtectionName());
+        assertFalse(executorConfig.isStatisticsEnabled());
         assertEquals(0, executorConfig.getQueueCapacity());
     }
 
@@ -2235,7 +2183,8 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "      pool-size: 2\n"
                 + "      durability: 3\n"
                 + "      capacity: 4\n"
-                + "      quorum-ref: customQuorumRule\n";
+                + "      split-brain-protection-ref: customSplitBrainProtectionRule\n"
+                + "      statistics-enabled: false\n";
 
         Config config = buildConfig(yaml);
         DurableExecutorConfig durableExecutorConfig = config.getDurableExecutorConfig("foobar");
@@ -2244,7 +2193,8 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertEquals(2, durableExecutorConfig.getPoolSize());
         assertEquals(3, durableExecutorConfig.getDurability());
         assertEquals(4, durableExecutorConfig.getCapacity());
-        assertEquals("customQuorumRule", durableExecutorConfig.getQuorumName());
+        assertEquals("customSplitBrainProtectionRule", durableExecutorConfig.getSplitBrainProtectionName());
+        assertFalse(durableExecutorConfig.isStatisticsEnabled());
     }
 
     @Override
@@ -2257,7 +2207,8 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "      durability: 4\n"
                 + "      pool-size: 5\n"
                 + "      capacity: 2\n"
-                + "      quorum-ref: customQuorumRule\n"
+                + "      split-brain-protection-ref: customSplitBrainProtectionRule\n"
+                + "      statistics-enabled: false\n"
                 + "      merge-policy:\n"
                 + "        batch-size: 99\n"
                 + "        class-name: PutIfAbsent";
@@ -2269,9 +2220,10 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertEquals(4, scheduledExecutorConfig.getDurability());
         assertEquals(5, scheduledExecutorConfig.getPoolSize());
         assertEquals(2, scheduledExecutorConfig.getCapacity());
-        assertEquals("customQuorumRule", scheduledExecutorConfig.getQuorumName());
+        assertEquals("customSplitBrainProtectionRule", scheduledExecutorConfig.getSplitBrainProtectionName());
         assertEquals(99, scheduledExecutorConfig.getMergePolicyConfig().getBatchSize());
         assertEquals("PutIfAbsent", scheduledExecutorConfig.getMergePolicyConfig().getPolicy());
+        assertFalse(scheduledExecutorConfig.isStatisticsEnabled());
     }
 
     @Override
@@ -2283,7 +2235,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "    foobar:\n"
                 + "      backup-count: 2\n"
                 + "      async-backup-count: 3\n"
-                + "      quorum-ref: customQuorumRule\n"
+                + "      split-brain-protection-ref: customSplitBrainProtectionRule\n"
                 + "      merge-policy:\n"
                 + "        class-name: com.hazelcast.spi.merge.HyperLogLogMergePolicy";
 
@@ -2295,7 +2247,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertEquals(3, cardinalityEstimatorConfig.getAsyncBackupCount());
         assertEquals("com.hazelcast.spi.merge.HyperLogLogMergePolicy",
                 cardinalityEstimatorConfig.getMergePolicyConfig().getPolicy());
-        assertEquals("customQuorumRule", cardinalityEstimatorConfig.getQuorumName());
+        assertEquals("customSplitBrainProtectionRule", cardinalityEstimatorConfig.getSplitBrainProtectionName());
     }
 
     @Override
@@ -2307,7 +2259,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "    foobar:\n"
                 + "      backup-count: 2\n"
                 + "      async-backup-count: 3\n"
-                + "      quorum-ref: customQuorumRule\n"
+                + "      split-brain-protection-ref: customSplitBrainProtectionRule\n"
                 + "      merge-policy:\n"
                 + "        class-name: CustomMergePolicy";
 
@@ -2323,7 +2275,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "  pn-counter:\n"
                 + "    pn-counter-1:\n"
                 + "      replica-count: 100\n"
-                + "      quorum-ref: quorumRuleWithThreeMembers\n"
+                + "      split-brain-protection-ref: splitBrainProtectionRuleWithThreeMembers\n"
                 + "      statistics-enabled: false\n";
 
         Config config = buildConfig(yaml);
@@ -2331,7 +2283,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
 
         assertFalse(config.getPNCounterConfigs().isEmpty());
         assertEquals(100, pnCounterConfig.getReplicaCount());
-        assertEquals("quorumRuleWithThreeMembers", pnCounterConfig.getQuorumName());
+        assertEquals("splitBrainProtectionRuleWithThreeMembers", pnCounterConfig.getSplitBrainProtectionName());
         assertFalse(pnCounterConfig.isStatisticsEnabled());
     }
 
@@ -2346,7 +2298,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "      async-backup-count: 3\n"
                 + "      binary: false\n"
                 + "      value-collection-type: SET\n"
-                + "      quorum-ref: customQuorumRule\n"
+                + "      split-brain-protection-ref: customSplitBrainProtectionRule\n"
                 + "      entry-listeners:\n"
                 + "        - class-name: com.hazelcast.examples.EntryListener\n"
                 + "          include-value: true\n"
@@ -2370,7 +2322,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
 
         MergePolicyConfig mergePolicyConfig = multiMapConfig.getMergePolicyConfig();
         assertEquals("CustomMergePolicy", mergePolicyConfig.getPolicy());
-        assertEquals("customQuorumRule", multiMapConfig.getQuorumName());
+        assertEquals("customSplitBrainProtectionRule", multiMapConfig.getSplitBrainProtectionName());
         assertEquals(23, mergePolicyConfig.getBatchSize());
     }
 
@@ -2384,7 +2336,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "      in-memory-format: BINARY\n"
                 + "      async-fillup: false\n"
                 + "      statistics-enabled: false\n"
-                + "      quorum-ref: CustomQuorumRule\n"
+                + "      split-brain-protection-ref: customSplitBrainProtectionRule\n"
                 + "      merge-policy:\n"
                 + "        batch-size: 2342\n"
                 + "        class-name: CustomMergePolicy\n";
@@ -2396,7 +2348,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertEquals(InMemoryFormat.BINARY, replicatedMapConfig.getInMemoryFormat());
         assertFalse(replicatedMapConfig.isAsyncFillup());
         assertFalse(replicatedMapConfig.isStatisticsEnabled());
-        assertEquals("CustomQuorumRule", replicatedMapConfig.getQuorumName());
+        assertEquals("customSplitBrainProtectionRule", replicatedMapConfig.getSplitBrainProtectionName());
 
         MergePolicyConfig mergePolicyConfig = replicatedMapConfig.getMergePolicyConfig();
         assertEquals("CustomMergePolicy", mergePolicyConfig.getPolicy());
@@ -2410,7 +2362,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "hazelcast:\n"
                 + "  list:\n"
                 + "    foobar:\n"
-                + "      quorum-ref: customQuorumRule\n"
+                + "      split-brain-protection-ref: customSplitBrainProtectionRule\n"
                 + "      statistics-enabled: false\n"
                 + "      max-size: 42\n"
                 + "      backup-count: 2\n"
@@ -2426,7 +2378,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         ListConfig listConfig = config.getListConfig("foobar");
 
         assertFalse(config.getListConfigs().isEmpty());
-        assertEquals("customQuorumRule", listConfig.getQuorumName());
+        assertEquals("customSplitBrainProtectionRule", listConfig.getSplitBrainProtectionName());
         assertEquals(42, listConfig.getMaxSize());
         assertEquals(2, listConfig.getBackupCount());
         assertEquals(1, listConfig.getAsyncBackupCount());
@@ -2445,7 +2397,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "hazelcast:\n"
                 + "  set:\n"
                 + "    foobar:\n"
-                + "     quorum-ref: customQuorumRule\n"
+                + "     split-brain-protection-ref: customSplitBrainProtectionRule\n"
                 + "     backup-count: 2\n"
                 + "     async-backup-count: 1\n"
                 + "     max-size: 42\n"
@@ -2460,7 +2412,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         SetConfig setConfig = config.getSetConfig("foobar");
 
         assertFalse(config.getSetConfigs().isEmpty());
-        assertEquals("customQuorumRule", setConfig.getQuorumName());
+        assertEquals("customSplitBrainProtectionRule", setConfig.getSplitBrainProtectionName());
         assertEquals(2, setConfig.getBackupCount());
         assertEquals(1, setConfig.getAsyncBackupCount());
         assertEquals(42, setConfig.getMaxSize());
@@ -2480,25 +2432,32 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "hazelcast:\n"
                 + "  map:\n"
                 + "    foobar:\n"
-                + "      quorum-ref: customQuorumRule\n"
+                + "      split-brain-protection-ref: customSplitBrainProtectionRule\n"
                 + "      in-memory-format: BINARY\n"
                 + "      statistics-enabled: true\n"
-                + "      optimize-queries: false\n"
                 + "      cache-deserialized-values: INDEX-ONLY\n"
                 + "      backup-count: 2\n"
                 + "      async-backup-count: 1\n"
                 + "      time-to-live-seconds: 42\n"
                 + "      max-idle-seconds: 42\n"
-                + "      eviction-policy: RANDOM\n"
-                + "      max-size:\n"
-                + "        policy: PER_NODE\n"
-                + "        max-size: 42\n"
-                + "      eviction-percentage: 25\n"
-                + "      min-eviction-check-millis: 256\n"
+                + "      eviction:\n"
+                + "         eviction-policy: RANDOM\n"
+                + "         max-size-policy: PER_NODE\n"
+                + "         size: 42\n"
                 + "      read-backup-data: true\n"
+                + "      merkle-tree:\n"
+                + "        enabled: true\n"
+                + "        depth: 20\n"
+                + "      event-journal:\n"
+                + "        enabled: true\n"
+                + "        capacity: 120\n"
+                + "        time-to-live-seconds: 20\n"
                 + "      hot-restart:\n"
                 + "        enabled: false\n"
                 + "        fsync: false\n"
+                + "      data-persistence:\n"
+                + "        enabled: true\n"
+                + "        fsync: true\n"
                 + "      map-store:\n"
                 + "        enabled: true \n"
                 + "        initial-mode: LAZY\n"
@@ -2509,10 +2468,8 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "        properties:\n"
                 + "           jdbc_url: my.jdbc.com\n"
                 + "      near-cache:\n"
-                + "        max-size: 5000\n"
                 + "        time-to-live-seconds: 42\n"
                 + "        max-idle-seconds: 42\n"
-                + "        eviction-policy: LRU\n"
                 + "        invalidate-on-change: true\n"
                 + "        in-memory-format: BINARY\n"
                 + "        cache-local-entries: false\n"
@@ -2522,16 +2479,16 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "          eviction-policy: LFU\n"
                 + "      wan-replication-ref:\n"
                 + "        my-wan-cluster-batch:\n"
-                + "          merge-policy: com.hazelcast.map.merge.PassThroughMergePolicy\n"
+                + "          merge-policy-class-name: PassThroughMergePolicy\n"
                 + "          filters:\n"
                 + "            - com.example.SampleFilter\n"
                 + "          republishing-enabled: false\n"
                 + "      indexes:\n"
-                + "        age:\n"
-                + "          ordered: true\n"
+                + "        - attributes:\n"
+                + "          - \"age\"\n"
                 + "      attributes:\n"
                 + "        currency:\n"
-                + "          extractor: com.bank.CurrencyExtractor\n"
+                + "          extractor-class-name: com.bank.CurrencyExtractor\n"
                 + "      partition-lost-listeners:\n"
                 + "         - com.your-package.YourPartitionLostListener\n"
                 + "      entry-listeners:\n"
@@ -2543,28 +2500,25 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         MapConfig mapConfig = config.getMapConfig("foobar");
 
         assertFalse(config.getMapConfigs().isEmpty());
-        assertEquals("customQuorumRule", mapConfig.getQuorumName());
+        assertEquals("customSplitBrainProtectionRule", mapConfig.getSplitBrainProtectionName());
         assertEquals(InMemoryFormat.BINARY, mapConfig.getInMemoryFormat());
         assertTrue(mapConfig.isStatisticsEnabled());
-        assertFalse(mapConfig.isOptimizeQueries());
         assertEquals(CacheDeserializedValues.INDEX_ONLY, mapConfig.getCacheDeserializedValues());
         assertEquals(2, mapConfig.getBackupCount());
         assertEquals(1, mapConfig.getAsyncBackupCount());
         assertEquals(1, mapConfig.getAsyncBackupCount());
         assertEquals(42, mapConfig.getTimeToLiveSeconds());
         assertEquals(42, mapConfig.getMaxIdleSeconds());
-        assertEquals(EvictionPolicy.RANDOM, mapConfig.getEvictionPolicy());
-        assertEquals(MaxSizeConfig.MaxSizePolicy.PER_NODE, mapConfig.getMaxSizeConfig().getMaxSizePolicy());
-        assertEquals(42, mapConfig.getMaxSizeConfig().getSize());
-        assertEquals(25, mapConfig.getEvictionPercentage());
-        assertEquals(256, mapConfig.getMinEvictionCheckMillis());
+        assertEquals(EvictionPolicy.RANDOM, mapConfig.getEvictionConfig().getEvictionPolicy());
+        assertEquals(MaxSizePolicy.PER_NODE, mapConfig.getEvictionConfig().getMaxSizePolicy());
+        assertEquals(42, mapConfig.getEvictionConfig().getSize());
         assertTrue(mapConfig.isReadBackupData());
-        assertEquals(1, mapConfig.getMapIndexConfigs().size());
-        assertEquals("age", mapConfig.getMapIndexConfigs().get(0).getAttribute());
-        assertTrue(mapConfig.getMapIndexConfigs().get(0).isOrdered());
-        assertEquals(1, mapConfig.getMapAttributeConfigs().size());
-        assertEquals("com.bank.CurrencyExtractor", mapConfig.getMapAttributeConfigs().get(0).getExtractor());
-        assertEquals("currency", mapConfig.getMapAttributeConfigs().get(0).getName());
+        assertEquals(1, mapConfig.getIndexConfigs().size());
+        assertEquals("age", mapConfig.getIndexConfigs().get(0).getAttributes().get(0));
+        assertTrue(mapConfig.getIndexConfigs().get(0).getType() == IndexType.SORTED);
+        assertEquals(1, mapConfig.getAttributeConfigs().size());
+        assertEquals("com.bank.CurrencyExtractor", mapConfig.getAttributeConfigs().get(0).getExtractorClassName());
+        assertEquals("currency", mapConfig.getAttributeConfigs().get(0).getName());
         assertEquals(1, mapConfig.getPartitionLostListenerConfigs().size());
         assertEquals("com.your-package.YourPartitionLostListener",
                 mapConfig.getPartitionLostListenerConfigs().get(0).getClassName());
@@ -2572,8 +2526,18 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertFalse(mapConfig.getEntryListenerConfigs().get(0).isIncludeValue());
         assertFalse(mapConfig.getEntryListenerConfigs().get(0).isLocal());
         assertEquals("com.your-package.MyEntryListener", mapConfig.getEntryListenerConfigs().get(0).getClassName());
-        assertFalse(mapConfig.getHotRestartConfig().isEnabled());
-        assertFalse(mapConfig.getHotRestartConfig().isFsync());
+        assertTrue(mapConfig.getMerkleTreeConfig().isEnabled());
+        assertEquals(20, mapConfig.getMerkleTreeConfig().getDepth());
+        // conflict with dataPersistenceConfig, so overrides occur
+        assertTrue(mapConfig.getHotRestartConfig().isEnabled());
+        assertTrue(mapConfig.getHotRestartConfig().isFsync());
+        assertTrue(mapConfig.getDataPersistenceConfig().isEnabled());
+        assertTrue(mapConfig.getDataPersistenceConfig().isFsync());
+
+        EventJournalConfig journalConfig = mapConfig.getEventJournalConfig();
+        assertTrue(journalConfig.isEnabled());
+        assertEquals(120, journalConfig.getCapacity());
+        assertEquals(20, journalConfig.getTimeToLiveSeconds());
 
         MapStoreConfig mapStoreConfig = mapConfig.getMapStoreConfig();
         assertNotNull(mapStoreConfig);
@@ -2588,7 +2552,6 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
 
         NearCacheConfig nearCacheConfig = mapConfig.getNearCacheConfig();
         assertNotNull(nearCacheConfig);
-        assertEquals(5000, nearCacheConfig.getMaxSize());
         assertEquals(42, nearCacheConfig.getMaxIdleSeconds());
         assertEquals(42, nearCacheConfig.getTimeToLiveSeconds());
         assertEquals(InMemoryFormat.BINARY, nearCacheConfig.getInMemoryFormat());
@@ -2596,14 +2559,31 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertTrue(nearCacheConfig.isInvalidateOnChange());
         assertEquals(1000, nearCacheConfig.getEvictionConfig().getSize());
         assertEquals(EvictionPolicy.LFU, nearCacheConfig.getEvictionConfig().getEvictionPolicy());
-        assertEquals(EvictionConfig.MaxSizePolicy.ENTRY_COUNT, nearCacheConfig.getEvictionConfig().getMaximumSizePolicy());
+        assertEquals(MaxSizePolicy.ENTRY_COUNT, nearCacheConfig.getEvictionConfig().getMaxSizePolicy());
 
         WanReplicationRef wanReplicationRef = mapConfig.getWanReplicationRef();
         assertNotNull(wanReplicationRef);
         assertFalse(wanReplicationRef.isRepublishingEnabled());
-        assertEquals("com.hazelcast.map.merge.PassThroughMergePolicy", wanReplicationRef.getMergePolicy());
+        assertEquals("PassThroughMergePolicy", wanReplicationRef.getMergePolicyClassName());
         assertEquals(1, wanReplicationRef.getFilters().size());
-        assertEquals("com.example.SampleFilter".toLowerCase(), wanReplicationRef.getFilters().get(0).toLowerCase());
+        assertEquals(lowerCaseInternal("com.example.SampleFilter"), lowerCaseInternal(wanReplicationRef.getFilters().get(0)));
+    }
+
+    @Override
+    public void testMapCustomEvictionPolicy() {
+        String comparatorClassName = "com.my.custom.eviction.policy.class";
+
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  map:\n"
+                + "    mappy:\n"
+                + "      eviction:\n"
+                + "         comparator-class-name: " + comparatorClassName + "\n";
+
+        Config config = buildConfig(yaml);
+        MapConfig mapConfig = config.getMapConfig("mappy");
+
+        assertEquals(comparatorClassName, mapConfig.getEvictionConfig().getComparatorClassName());
     }
 
     @Override
@@ -2614,17 +2594,18 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "  map:\n"
                 + "    people:\n"
                 + "      indexes:\n"
-                + "        name:\n"
-                + "          ordered: false\n"
-                + "        age:\n"
-                + "          ordered: true\n";
+                + "        - type: HASH\n"
+                + "          attributes:\n"
+                + "            - \"name\"\n"
+                + "        - attributes:\n"
+                + "          - \"age\"\n";
 
         Config config = buildConfig(yaml);
         MapConfig mapConfig = config.getMapConfig("people");
 
-        assertFalse(mapConfig.getMapIndexConfigs().isEmpty());
-        assertIndexEqual("name", false, mapConfig.getMapIndexConfigs().get(0));
-        assertIndexEqual("age", true, mapConfig.getMapIndexConfigs().get(1));
+        assertFalse(mapConfig.getIndexConfigs().isEmpty());
+        assertIndexEqual("name", false, mapConfig.getIndexConfigs().get(0));
+        assertIndexEqual("age", true, mapConfig.getIndexConfigs().get(1));
     }
 
     @Override
@@ -2636,50 +2617,50 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "    people:\n"
                 + "      attributes:\n"
                 + "        power:\n"
-                + "          extractor: com.car.PowerExtractor\n"
+                + "          extractor-class-name: com.car.PowerExtractor\n"
                 + "        weight:\n"
-                + "          extractor: com.car.WeightExtractor\n";
+                + "          extractor-class-name: com.car.WeightExtractor\n";
 
         Config config = buildConfig(yaml);
         MapConfig mapConfig = config.getMapConfig("people");
 
-        assertFalse(mapConfig.getMapAttributeConfigs().isEmpty());
-        assertAttributeEqual("power", "com.car.PowerExtractor", mapConfig.getMapAttributeConfigs().get(0));
-        assertAttributeEqual("weight", "com.car.WeightExtractor", mapConfig.getMapAttributeConfigs().get(1));
+        assertFalse(mapConfig.getAttributeConfigs().isEmpty());
+        assertAttributeEqual("power", "com.car.PowerExtractor", mapConfig.getAttributeConfigs().get(0));
+        assertAttributeEqual("weight", "com.car.WeightExtractor", mapConfig.getAttributeConfigs().get(1));
     }
 
     @Override
-    @Test(expected = IllegalArgumentException.class)
+    @Test(expected = SchemaViolationConfigurationException.class)
     public void testAttributeConfig_noName_emptyTag() {
         String yaml = ""
                 + "hazelcast:\n"
                 + "  map:\n"
                 + "    people:\n"
                 + "      attributes:\n"
-                + "        - extractor: com.car.WeightExtractor\n";
+                + "        - extractor-class-name: com.car.WeightExtractor\n";
 
         buildConfig(yaml);
     }
 
-    private static void assertAttributeEqual(String expectedName, String expectedExtractor, MapAttributeConfig attributeConfig) {
+    private static void assertAttributeEqual(String expectedName, String expectedExtractor, AttributeConfig attributeConfig) {
         assertEquals(expectedName, attributeConfig.getName());
-        assertEquals(expectedExtractor, attributeConfig.getExtractor());
+        assertEquals(expectedExtractor, attributeConfig.getExtractorClassName());
     }
 
     @Override
-    @Test(expected = IllegalArgumentException.class)
+    @Test(expected = SchemaViolationConfigurationException.class)
     public void testAttributeConfig_noName_singleTag() {
         String yaml = ""
                 + "hazelcast:\n"
                 + "  map:\n"
                 + "   people:\n"
                 + "     attributes:\n"
-                + "       - extractor: com.car.WeightExtractor\n";
+                + "       - extractor-class-name: com.car.WeightExtractor\n";
         buildConfig(yaml);
     }
 
     @Override
-    @Test(expected = IllegalArgumentException.class)
+    @Test(expected = SchemaViolationConfigurationException.class)
     public void testAttributeConfig_noExtractor() {
         String yaml = ""
                 + "hazelcast:\n"
@@ -2699,7 +2680,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "    people:\n"
                 + "      attributes:\n"
                 + "        weight:\n"
-                + "          extractor: \"\"\n";
+                + "          extractor-class-name: \"\"\n";
         buildConfig(yaml);
     }
 
@@ -2723,9 +2704,11 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "          in-memory-format: BINARY\n"
                 + "          coalesce: false\n"
                 + "          populate: true\n"
+                + "          serialize-keys: true\n"
                 + "          indexes:\n"
-                + "            name:\n"
-                + "              ordered: false\n"
+                + "            - type: HASH\n"
+                + "              attributes:\n"
+                + "                - \"name\"\n"
                 + "          predicate:\n"
                 + "            class-name: com.hazelcast.examples.SimplePredicate\n"
                 + "          eviction:\n"
@@ -2748,17 +2731,18 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertEquals(InMemoryFormat.BINARY, queryCacheConfig.getInMemoryFormat());
         assertFalse(queryCacheConfig.isCoalesce());
         assertTrue(queryCacheConfig.isPopulate());
+        assertTrue(queryCacheConfig.isSerializeKeys());
         assertIndexesEqual(queryCacheConfig);
         assertEquals("com.hazelcast.examples.SimplePredicate", queryCacheConfig.getPredicateConfig().getClassName());
         assertEquals(LRU, queryCacheConfig.getEvictionConfig().getEvictionPolicy());
-        assertEquals(ENTRY_COUNT, queryCacheConfig.getEvictionConfig().getMaximumSizePolicy());
+        assertEquals(ENTRY_COUNT, queryCacheConfig.getEvictionConfig().getMaxSizePolicy());
         assertEquals(133, queryCacheConfig.getEvictionConfig().getSize());
     }
 
     private void assertIndexesEqual(QueryCacheConfig queryCacheConfig) {
-        for (MapIndexConfig mapIndexConfig : queryCacheConfig.getIndexConfigs()) {
-            assertEquals("name", mapIndexConfig.getAttribute());
-            assertFalse(mapIndexConfig.isOrdered());
+        for (IndexConfig indexConfig : queryCacheConfig.getIndexConfigs()) {
+            assertEquals("name", indexConfig.getAttributes().get(0));
+            assertFalse(indexConfig.getType() == IndexType.SORTED);
         }
     }
 
@@ -2812,8 +2796,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
     }
 
     @Override
-    @Test(expected = InvalidConfigurationException.class)
-    @Ignore("Schema validation is supposed to fail with missing mandatory field: enabled")
+    @Test(expected = SchemaViolationConfigurationException.class)
     public void testNonLiteMemberConfigWithoutEnabledField() {
         String yaml = ""
                 + "hazelcast:\n"
@@ -2823,8 +2806,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
     }
 
     @Override
-    @Test(expected = InvalidConfigurationException.class)
-    @Ignore("Schema validation is supposed to fail with invalid boolean in enabled")
+    @Test(expected = SchemaViolationConfigurationException.class)
     public void testInvalidLiteMemberConfig() {
         String yaml = ""
                 + "hazelcast:\n"
@@ -2848,9 +2830,9 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         fail();
     }
 
-    private static void assertIndexEqual(String expectedAttribute, boolean expectedOrdered, MapIndexConfig indexConfig) {
-        assertEquals(expectedAttribute, indexConfig.getAttribute());
-        assertEquals(expectedOrdered, indexConfig.isOrdered());
+    private static void assertIndexEqual(String expectedAttribute, boolean expectedOrdered, IndexConfig indexConfig) {
+        assertEquals(expectedAttribute, indexConfig.getAttributes().get(0));
+        assertEquals(expectedOrdered, indexConfig.getType() == IndexType.SORTED);
     }
 
     @Override
@@ -2861,21 +2843,26 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "  map:\n"
                 + "    mymap:\n"
                 + "      in-memory-format: NATIVE\n"
-                + "      max-size:\n"
-                + "        policy: \"{0}\"\n"
-                + "        max-size: 9991\n";
+                + "      eviction:\n"
+                + "        max-size-policy: \"{0}\"\n"
+                + "        size: 9991\n";
+
         MessageFormat messageFormat = new MessageFormat(yamlFormat);
 
-        MaxSizeConfig.MaxSizePolicy[] maxSizePolicies = MaxSizeConfig.MaxSizePolicy.values();
-        for (MaxSizeConfig.MaxSizePolicy maxSizePolicy : maxSizePolicies) {
+        MaxSizePolicy[] maxSizePolicies = MaxSizePolicy.values();
+        for (MaxSizePolicy maxSizePolicy : maxSizePolicies) {
+            if (maxSizePolicy == ENTRY_COUNT) {
+                // imap does not support ENTRY_COUNT
+                continue;
+            }
             Object[] objects = {maxSizePolicy.toString()};
             String yaml = messageFormat.format(objects);
             Config config = buildConfig(yaml);
             MapConfig mapConfig = config.getMapConfig("mymap");
-            MaxSizeConfig maxSizeConfig = mapConfig.getMaxSizeConfig();
+            EvictionConfig evictionConfig = mapConfig.getEvictionConfig();
 
-            assertEquals(9991, maxSizeConfig.getSize());
-            assertEquals(maxSizePolicy, maxSizeConfig.getMaxSizePolicy());
+            assertEquals(9991, evictionConfig.getSize());
+            assertEquals(maxSizePolicy, evictionConfig.getMaxSizePolicy());
         }
     }
 
@@ -2912,6 +2899,23 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertEquals("com.blacklisted,com.other.blacklisted", dcConfig.getBlacklistedPrefixes());
         assertEquals("com.whitelisted,com.other.whitelisted", dcConfig.getWhitelistedPrefixes());
         assertEquals("HAS_ATTRIBUTE:foo", dcConfig.getProviderFilter());
+    }
+
+    @Override
+    public void testEmptyUserCodeDeployment() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  user-code-deployment:\n"
+                + "    enabled: true\n";
+
+        Config config = buildConfig(yaml);
+        UserCodeDeploymentConfig userCodeDeploymentConfig = config.getUserCodeDeploymentConfig();
+        assertTrue(userCodeDeploymentConfig.isEnabled());
+        assertEquals(UserCodeDeploymentConfig.ClassCacheMode.ETERNAL, userCodeDeploymentConfig.getClassCacheMode());
+        assertEquals(UserCodeDeploymentConfig.ProviderMode.LOCAL_AND_CACHED_CLASSES, userCodeDeploymentConfig.getProviderMode());
+        assertNull(userCodeDeploymentConfig.getBlacklistedPrefixes());
+        assertNull(userCodeDeploymentConfig.getWhitelistedPrefixes());
+        assertNull(userCodeDeploymentConfig.getProviderFilter());
     }
 
     @Override
@@ -2988,6 +2992,90 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
     }
 
     @Override
+    public void testCompactSerialization() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "    serialization:\n"
+                + "        compact-serialization:\n"
+                + "            enabled: true\n";
+
+        Config config = buildConfig(yaml);
+        assertTrue(config.getSerializationConfig().getCompactSerializationConfig().isEnabled());
+    }
+
+    @Override
+    public void testCompactSerialization_explicitSerializationRegistration() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "    serialization:\n"
+                + "        compact-serialization:\n"
+                + "            enabled: true\n"
+                + "            registered-classes:\n"
+                + "                - class: example.serialization.EmployeeDTO\n"
+                + "                  type-name: obj\n"
+                + "                  serializer: example.serialization.EmployeeDTOSerializer\n";
+
+        Config config = buildConfig(yaml);
+        CompactTestUtil.verifyExplicitSerializerIsUsed(config.getSerializationConfig());
+    }
+
+    @Override
+    public void testCompactSerialization_reflectiveSerializerRegistration() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "    serialization:\n"
+                + "        compact-serialization:\n"
+                + "            enabled: true\n"
+                + "            registered-classes:\n"
+                + "                - class: example.serialization.ExternalizableEmployeeDTO\n";
+
+        Config config = buildConfig(yaml);
+        CompactTestUtil.verifyReflectiveSerializerIsUsed(config.getSerializationConfig());
+    }
+
+    @Override
+    public void testCompactSerialization_registrationWithJustTypeName() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "    serialization:\n"
+                + "        compact-serialization:\n"
+                + "            enabled: true\n"
+                + "            registered-classes:\n"
+                + "                - class: example.serialization.EmployeeDTO\n"
+                + "                  type-name: employee\n";
+
+        buildConfig(yaml);
+    }
+
+    @Override
+    public void testCompactSerialization_registrationWithJustSerializer() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "    serialization:\n"
+                + "        compact-serialization:\n"
+                + "            enabled: true\n"
+                + "            registered-classes:\n"
+                + "                - class: example.serialization.EmployeeDTO\n"
+                + "                  serializer: example.serialization.EmployeeDTOSerializer\n";
+
+        buildConfig(yaml);
+    }
+
+    @Override
+    @Test
+    public void testAllowOverrideDefaultSerializers() {
+        final String yaml = ""
+                + "hazelcast:\n"
+                + "  serialization:\n"
+                + "    allow-override-default-serializers: true\n";
+
+        final Config config = new InMemoryYamlConfig(yaml);
+        final boolean isAllowOverrideDefaultSerializers
+                = config.getSerializationConfig().isAllowOverrideDefaultSerializers();
+        assertTrue(isAllowOverrideDefaultSerializers);
+    }
+
+    @Override
     @Test
     public void testHotRestart() {
         String dir = "/mnt/hot-restart-root/";
@@ -2999,6 +3087,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         String yaml = ""
                 + "hazelcast:\n"
                 + "  hot-restart-persistence:\n"
+                + "    auto-remove-stale-data: true\n"
                 + "    enabled: true\n"
                 + "    base-dir: " + dir + "\n"
                 + "    backup-dir: " + backupDir + "\n"
@@ -3011,6 +3100,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         HotRestartPersistenceConfig hotRestartPersistenceConfig = config.getHotRestartPersistenceConfig();
 
         assertTrue(hotRestartPersistenceConfig.isEnabled());
+        assertTrue(hotRestartPersistenceConfig.isAutoRemoveStaleData());
         assertEquals(new File(dir).getAbsolutePath(), hotRestartPersistenceConfig.getBaseDir().getAbsolutePath());
         assertEquals(new File(backupDir).getAbsolutePath(), hotRestartPersistenceConfig.getBackupDir().getAbsolutePath());
         assertEquals(parallelism, hotRestartPersistenceConfig.getParallelism());
@@ -3021,35 +3111,438 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
 
     @Override
     @Test
-    public void testMapEvictionPolicyClassName() {
-        String mapEvictionPolicyClassName = "com.hazelcast.map.eviction.LRUEvictionPolicy";
+    public void testPersistence() {
+        String dir = "/mnt/persistence-root/";
+        String backupDir = "/mnt/persistence-backup/";
+        int parallelism = 3;
+        int validationTimeout = 13131;
+        int dataLoadTimeout = 45454;
+        int rebalanceDelaySeconds = 240;
+        PersistenceClusterDataRecoveryPolicy policy = PersistenceClusterDataRecoveryPolicy.PARTIAL_RECOVERY_MOST_RECENT;
         String yaml = ""
                 + "hazelcast:\n"
-                + "  map:\n"
-                + "    test:\n"
-                + "      map-eviction-policy-class-name: " + mapEvictionPolicyClassName;
+                + "  persistence:\n"
+                + "    enabled: true\n"
+                + "    auto-remove-stale-data: true\n"
+                + "    base-dir: " + dir + "\n"
+                + "    backup-dir: " + backupDir + "\n"
+                + "    parallelism: " + parallelism + "\n"
+                + "    validation-timeout-seconds: " + validationTimeout + "\n"
+                + "    data-load-timeout-seconds: " + dataLoadTimeout + "\n"
+                + "    cluster-data-recovery-policy: " + policy + "\n"
+                + "    rebalance-delay-seconds: " + rebalanceDelaySeconds + "\n";
 
-        Config config = buildConfig(yaml);
-        MapConfig mapConfig = config.getMapConfig("test");
+        Config config = new InMemoryYamlConfig(yaml);
+        PersistenceConfig persistenceConfig = config.getPersistenceConfig();
 
-        assertEquals(mapEvictionPolicyClassName, mapConfig.getMapEvictionPolicy().getClass().getName());
+        assertTrue(persistenceConfig.isEnabled());
+        assertTrue(persistenceConfig.isAutoRemoveStaleData());
+        assertEquals(new File(dir).getAbsolutePath(), persistenceConfig.getBaseDir().getAbsolutePath());
+        assertEquals(new File(backupDir).getAbsolutePath(), persistenceConfig.getBackupDir().getAbsolutePath());
+        assertEquals(parallelism, persistenceConfig.getParallelism());
+        assertEquals(validationTimeout, persistenceConfig.getValidationTimeoutSeconds());
+        assertEquals(dataLoadTimeout, persistenceConfig.getDataLoadTimeoutSeconds());
+        assertEquals(policy, persistenceConfig.getClusterDataRecoveryPolicy());
+        assertEquals(rebalanceDelaySeconds, persistenceConfig.getRebalanceDelaySeconds());
     }
 
     @Override
     @Test
-    public void testMapEvictionPolicyIsSelected_whenEvictionPolicySet() {
-        String mapEvictionPolicyClassName = "com.hazelcast.map.eviction.LRUEvictionPolicy";
+    public void testDynamicConfig() {
+        boolean persistenceEnabled = true;
+        String backupDir = "/mnt/dynamic-configuration/backup-dir";
+        int backupCount = 7;
+
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  dynamic-configuration:\n"
+                + "    persistence-enabled: " + persistenceEnabled + "\n"
+                + "    backup-dir: " + backupDir + "\n"
+                + "    backup-count: " + backupCount + "\n";
+
+        Config config = new InMemoryYamlConfig(yaml);
+        DynamicConfigurationConfig dynamicConfigurationConfig = config.getDynamicConfigurationConfig();
+
+        assertEquals(persistenceEnabled, dynamicConfigurationConfig.isPersistenceEnabled());
+        assertEquals(new File(backupDir).getAbsolutePath(), dynamicConfigurationConfig.getBackupDir().getAbsolutePath());
+        assertEquals(backupCount, dynamicConfigurationConfig.getBackupCount());
+
+        yaml = ""
+                + "hazelcast:\n"
+                + "  dynamic-configuration:\n"
+                + "    persistence-enabled: " + persistenceEnabled + "\n";
+
+        config = new InMemoryYamlConfig(yaml);
+        dynamicConfigurationConfig = config.getDynamicConfigurationConfig();
+
+        assertEquals(persistenceEnabled, dynamicConfigurationConfig.isPersistenceEnabled());
+        assertEquals(new File(DEFAULT_BACKUP_DIR).getAbsolutePath(), dynamicConfigurationConfig.getBackupDir().getAbsolutePath());
+        assertEquals(DEFAULT_BACKUP_COUNT, dynamicConfigurationConfig.getBackupCount());
+    }
+
+    @Override
+    @Test
+    public void testLocalDevice() {
+        String baseDir = "base-directory";
+        int blockSize = 2048;
+        int readIOThreadCount = 16;
+        int writeIOThreadCount = 1;
+
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  local-device:\n"
+                + "    my-device:\n"
+                + "      base-dir: " + baseDir + "\n"
+                + "      capacity:\n"
+                + "        unit: GIGABYTES\n"
+                + "        value: 100\n"
+                + "      block-size: " + blockSize + "\n"
+                + "      read-io-thread-count: " + readIOThreadCount + "\n"
+                + "      write-io-thread-count: " + writeIOThreadCount + "\n";
+
+        Config config = new InMemoryYamlConfig(yaml);
+        LocalDeviceConfig localDeviceConfig = config.getDeviceConfig("my-device");
+
+        assertEquals("my-device", localDeviceConfig.getName());
+        assertEquals(new File(baseDir).getAbsolutePath(), localDeviceConfig.getBaseDir().getAbsolutePath());
+        assertEquals(blockSize, localDeviceConfig.getBlockSize());
+        assertEquals(new MemorySize(100, MemoryUnit.GIGABYTES), localDeviceConfig.getCapacity());
+        assertEquals(readIOThreadCount, localDeviceConfig.getReadIOThreadCount());
+        assertEquals(writeIOThreadCount, localDeviceConfig.getWriteIOThreadCount());
+
+        int device0Multiplier = 2;
+        int device1Multiplier = 4;
+        yaml = ""
+                + "hazelcast:\n"
+                + "  local-device:\n"
+                + "    device0:\n"
+                + "      capacity:\n"
+                + "        unit: MEGABYTES\n"
+                + "        value: 1234567890\n"
+                + "      block-size: " + (blockSize * device0Multiplier) + "\n"
+                + "      read-io-thread-count: " + (readIOThreadCount * device0Multiplier) + "\n"
+                + "      write-io-thread-count: " + (writeIOThreadCount * device0Multiplier) + "\n"
+                + "    device1:\n"
+                + "      block-size: " + (blockSize * device1Multiplier) + "\n"
+                + "      read-io-thread-count: " + (readIOThreadCount * device1Multiplier) + "\n"
+                + "      write-io-thread-count: " + (writeIOThreadCount * device1Multiplier) + "\n";
+
+        config = new InMemoryYamlConfig(yaml);
+        assertEquals(3, config.getDeviceConfigs().size());
+
+        localDeviceConfig = config.getDeviceConfig("device0");
+        assertEquals(blockSize * device0Multiplier, localDeviceConfig.getBlockSize());
+        assertEquals(readIOThreadCount * device0Multiplier, localDeviceConfig.getReadIOThreadCount());
+        assertEquals(writeIOThreadCount * device0Multiplier, localDeviceConfig.getWriteIOThreadCount());
+        assertEquals(new MemorySize(1234567890, MemoryUnit.MEGABYTES), localDeviceConfig.getCapacity());
+
+        localDeviceConfig = config.getDeviceConfig("device1");
+        assertEquals(blockSize * device1Multiplier, localDeviceConfig.getBlockSize());
+        assertEquals(readIOThreadCount * device1Multiplier, localDeviceConfig.getReadIOThreadCount());
+        assertEquals(writeIOThreadCount * device1Multiplier, localDeviceConfig.getWriteIOThreadCount());
+
+        // default device
+        localDeviceConfig = config.getDeviceConfig(DEFAULT_DEVICE_NAME);
+        assertEquals(DEFAULT_DEVICE_NAME, localDeviceConfig.getName());
+        assertEquals(new File(DEFAULT_DEVICE_BASE_DIR).getAbsoluteFile(), localDeviceConfig.getBaseDir());
+        assertEquals(DEFAULT_BLOCK_SIZE_IN_BYTES, localDeviceConfig.getBlockSize());
+        assertEquals(DEFAULT_READ_IO_THREAD_COUNT, localDeviceConfig.getReadIOThreadCount());
+        assertEquals(DEFAULT_WRITE_IO_THREAD_COUNT, localDeviceConfig.getWriteIOThreadCount());
+        assertEquals(LocalDeviceConfig.DEFAULT_CAPACITY, localDeviceConfig.getCapacity());
+
+        // override the default device config
+        String newBaseDir = "/some/random/base/dir/for/tiered/store";
+        yaml = ""
+                + "hazelcast:\n"
+                + "  local-device:\n"
+                + "    " + DEFAULT_DEVICE_NAME + ":\n"
+                + "      base-dir: " + newBaseDir + "\n"
+                + "      block-size: " + (DEFAULT_BLOCK_SIZE_IN_BYTES * 2) + "\n"
+                + "      read-io-thread-count: " + (DEFAULT_READ_IO_THREAD_COUNT * 2) + "\n";
+
+        config = new InMemoryYamlConfig(yaml);
+        assertEquals(1, config.getDeviceConfigs().size());
+
+        localDeviceConfig = config.getDeviceConfig(DEFAULT_DEVICE_NAME);
+        assertEquals(DEFAULT_DEVICE_NAME, localDeviceConfig.getName());
+        assertEquals(new File(newBaseDir).getAbsoluteFile(), localDeviceConfig.getBaseDir());
+        assertEquals(2 * DEFAULT_BLOCK_SIZE_IN_BYTES, localDeviceConfig.getBlockSize());
+        assertEquals(2 * DEFAULT_READ_IO_THREAD_COUNT, localDeviceConfig.getReadIOThreadCount());
+        assertEquals(DEFAULT_WRITE_IO_THREAD_COUNT, localDeviceConfig.getWriteIOThreadCount());
+    }
+
+    @Override
+    @Test
+    public void testTieredStore() {
         String yaml = ""
                 + "hazelcast:\n"
                 + "  map:\n"
-                + "    test:\n"
-                + "      map-eviction-policy-class-name: " + mapEvictionPolicyClassName + "\n"
-                + "      eviction-policy: LFU";
+                + "    map0:\n"
+                + "      tiered-store:\n"
+                + "        enabled: true\n"
+                + "        memory-tier:\n"
+                + "          capacity:\n"
+                + "            unit: MEGABYTES\n"
+                + "            value: 1024\n"
+                + "        disk-tier:\n"
+                + "          enabled: true\n"
+                + "          device-name: local-device\n"
+                + "    map1:\n"
+                + "      tiered-store:\n"
+                + "        enabled: true\n"
+                + "        disk-tier:\n"
+                + "          enabled: true\n"
+                + "    map2:\n"
+                + "      tiered-store:\n"
+                + "        enabled: true\n"
+                + "        memory-tier:\n"
+                + "          capacity:\n"
+                + "            unit: GIGABYTES\n"
+                + "            value: 1\n"
+                + "    map3:\n"
+                + "      tiered-store:\n"
+                + "        enabled: true\n";
 
-        Config config = buildConfig(yaml);
-        MapConfig mapConfig = config.getMapConfig("test");
+        Config config = new InMemoryYamlConfig(yaml);
+        TieredStoreConfig tieredStoreConfig = config.getMapConfig("map0").getTieredStoreConfig();
+        assertTrue(tieredStoreConfig.isEnabled());
 
-        assertEquals(mapEvictionPolicyClassName, mapConfig.getMapEvictionPolicy().getClass().getName());
+        MemoryTierConfig memoryTierConfig = tieredStoreConfig.getMemoryTierConfig();
+        assertEquals(MemoryUnit.MEGABYTES, memoryTierConfig.getCapacity().getUnit());
+        assertEquals(1024, memoryTierConfig.getCapacity().getValue());
+
+        DiskTierConfig diskTierConfig = tieredStoreConfig.getDiskTierConfig();
+        assertTrue(tieredStoreConfig.getDiskTierConfig().isEnabled());
+        assertEquals("local-device", diskTierConfig.getDeviceName());
+
+        assertEquals(DEFAULT_DEVICE_NAME,
+                config.getMapConfig("map1").getTieredStoreConfig().getDiskTierConfig().getDeviceName());
+        assertNotNull(config.getDeviceConfig(DEFAULT_DEVICE_NAME));
+
+        tieredStoreConfig = config.getMapConfig("map2").getTieredStoreConfig();
+        assertTrue(tieredStoreConfig.isEnabled());
+
+        memoryTierConfig = tieredStoreConfig.getMemoryTierConfig();
+        assertEquals(MemoryUnit.GIGABYTES, memoryTierConfig.getCapacity().getUnit());
+        assertEquals(1L, memoryTierConfig.getCapacity().getValue());
+
+        assertFalse(tieredStoreConfig.getDiskTierConfig().isEnabled());
+
+        tieredStoreConfig = config.getMapConfig("map3").getTieredStoreConfig();
+        memoryTierConfig = tieredStoreConfig.getMemoryTierConfig();
+        assertEquals(DEFAULT_CAPACITY, memoryTierConfig.getCapacity());
+
+        diskTierConfig = tieredStoreConfig.getDiskTierConfig();
+        assertFalse(diskTierConfig.isEnabled());
+        assertEquals(DEFAULT_DEVICE_NAME, diskTierConfig.getDeviceName());
+
+        yaml = ""
+                + "hazelcast:\n"
+                + "  map:\n"
+                + "    some-map:\n"
+                + "      tiered-store:\n"
+                + "        enabled: true\n";
+
+        config = new InMemoryYamlConfig(yaml);
+        assertEquals(1, config.getDeviceConfigs().size());
+        assertEquals(1, config.getDeviceConfigs().size());
+        assertEquals(new LocalDeviceConfig(), config.getDeviceConfig(DEFAULT_DEVICE_NAME));
+        assertEquals(DEFAULT_DEVICE_NAME,
+                config.getMapConfig("some-map").getTieredStoreConfig().getDiskTierConfig().getDeviceName());
+    }
+
+    @Override
+    @Test
+    public void testHotRestartEncryptionAtRest_whenJavaKeyStore() {
+        int keySize = 16;
+        String keyStorePath = "/tmp/keystore.p12";
+        String keyStoreType = "PKCS12";
+        String keyStorePassword = "password";
+        int pollingInterval = 60;
+        String currentKeyAlias = "current";
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  hot-restart-persistence:\n"
+                + "    enabled: true\n"
+                + "    encryption-at-rest:\n"
+                + "      enabled: true\n"
+                + "      algorithm: AES\n"
+                + "      salt: some-salt\n"
+                + "      key-size: " + keySize + "\n"
+                + "      secure-store:\n"
+                + "        keystore:\n"
+                + "          path: " + keyStorePath + "\n"
+                + "          type: " + keyStoreType + "\n"
+                + "          password: " + keyStorePassword + "\n"
+                + "          polling-interval: " + pollingInterval + "\n"
+                + "          current-key-alias: " + currentKeyAlias + "\n";
+
+        Config config = new InMemoryYamlConfig(yaml);
+        HotRestartPersistenceConfig hotRestartPersistenceConfig = config.getHotRestartPersistenceConfig();
+        assertTrue(hotRestartPersistenceConfig.isEnabled());
+
+        EncryptionAtRestConfig encryptionAtRestConfig = hotRestartPersistenceConfig.getEncryptionAtRestConfig();
+        assertTrue(encryptionAtRestConfig.isEnabled());
+        assertEquals("AES", encryptionAtRestConfig.getAlgorithm());
+        assertEquals("some-salt", encryptionAtRestConfig.getSalt());
+        assertEquals(keySize, encryptionAtRestConfig.getKeySize());
+        SecureStoreConfig secureStoreConfig = encryptionAtRestConfig.getSecureStoreConfig();
+        assertTrue(secureStoreConfig instanceof JavaKeyStoreSecureStoreConfig);
+        JavaKeyStoreSecureStoreConfig keyStoreConfig = (JavaKeyStoreSecureStoreConfig) secureStoreConfig;
+        assertEquals(new File(keyStorePath).getAbsolutePath(), keyStoreConfig.getPath().getAbsolutePath());
+        assertEquals(keyStoreType, keyStoreConfig.getType());
+        assertEquals(keyStorePassword, keyStoreConfig.getPassword());
+        assertEquals(pollingInterval, keyStoreConfig.getPollingInterval());
+        assertEquals(currentKeyAlias, keyStoreConfig.getCurrentKeyAlias());
+    }
+
+    @Override
+    @Test
+    public void testPersistenceEncryptionAtRest_whenJavaKeyStore() {
+        int keySize = 16;
+        String keyStorePath = "/tmp/keystore.p12";
+        String keyStoreType = "PKCS12";
+        String keyStorePassword = "password";
+        int pollingInterval = 60;
+        String currentKeyAlias = "current";
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  persistence:\n"
+                + "    enabled: true\n"
+                + "    encryption-at-rest:\n"
+                + "      enabled: true\n"
+                + "      algorithm: AES\n"
+                + "      salt: some-salt\n"
+                + "      key-size: " + keySize + "\n"
+                + "      secure-store:\n"
+                + "        keystore:\n"
+                + "          path: " + keyStorePath + "\n"
+                + "          type: " + keyStoreType + "\n"
+                + "          password: " + keyStorePassword + "\n"
+                + "          polling-interval: " + pollingInterval + "\n"
+                + "          current-key-alias: " + currentKeyAlias + "\n";
+
+        Config config = new InMemoryYamlConfig(yaml);
+        PersistenceConfig persistenceConfig = config.getPersistenceConfig();
+        assertTrue(persistenceConfig.isEnabled());
+
+        EncryptionAtRestConfig encryptionAtRestConfig = persistenceConfig.getEncryptionAtRestConfig();
+        assertTrue(encryptionAtRestConfig.isEnabled());
+        assertEquals("AES", encryptionAtRestConfig.getAlgorithm());
+        assertEquals("some-salt", encryptionAtRestConfig.getSalt());
+        assertEquals(keySize, encryptionAtRestConfig.getKeySize());
+        SecureStoreConfig secureStoreConfig = encryptionAtRestConfig.getSecureStoreConfig();
+        assertTrue(secureStoreConfig instanceof JavaKeyStoreSecureStoreConfig);
+        JavaKeyStoreSecureStoreConfig keyStoreConfig = (JavaKeyStoreSecureStoreConfig) secureStoreConfig;
+        assertEquals(new File(keyStorePath).getAbsolutePath(), keyStoreConfig.getPath().getAbsolutePath());
+        assertEquals(keyStoreType, keyStoreConfig.getType());
+        assertEquals(keyStorePassword, keyStoreConfig.getPassword());
+        assertEquals(pollingInterval, keyStoreConfig.getPollingInterval());
+        assertEquals(currentKeyAlias, keyStoreConfig.getCurrentKeyAlias());
+    }
+
+    @Override
+    @Test
+    public void testHotRestartEncryptionAtRest_whenVault() {
+        int keySize = 16;
+        String address = "https://localhost:1234";
+        String secretPath = "secret/path";
+        String token = "token";
+        int pollingInterval = 60;
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  hot-restart-persistence:\n"
+                + "    enabled: true\n"
+                + "    encryption-at-rest:\n"
+                + "      enabled: true\n"
+                + "      algorithm: AES\n"
+                + "      salt: some-salt\n"
+                + "      key-size: " + keySize + "\n"
+                + "      secure-store:\n"
+                + "        vault:\n"
+                + "          address: " + address + "\n"
+                + "          secret-path: " + secretPath + "\n"
+                + "          token: " + token + "\n"
+                + "          polling-interval: " + pollingInterval + "\n"
+                + "          ssl:\n"
+                + "            enabled: true\n"
+                + "            factory-class-name: com.hazelcast.nio.ssl.BasicSSLContextFactory\n"
+                + "            properties:\n"
+                + "              protocol: TLS\n";
+
+        Config config = new InMemoryYamlConfig(yaml);
+        HotRestartPersistenceConfig hotRestartPersistenceConfig = config.getHotRestartPersistenceConfig();
+        assertTrue(hotRestartPersistenceConfig.isEnabled());
+
+        EncryptionAtRestConfig encryptionAtRestConfig = hotRestartPersistenceConfig.getEncryptionAtRestConfig();
+        assertTrue(encryptionAtRestConfig.isEnabled());
+        assertEquals("AES", encryptionAtRestConfig.getAlgorithm());
+        assertEquals("some-salt", encryptionAtRestConfig.getSalt());
+        assertEquals(keySize, encryptionAtRestConfig.getKeySize());
+        SecureStoreConfig secureStoreConfig = encryptionAtRestConfig.getSecureStoreConfig();
+        assertTrue(secureStoreConfig instanceof VaultSecureStoreConfig);
+        VaultSecureStoreConfig vaultConfig = (VaultSecureStoreConfig) secureStoreConfig;
+        assertEquals(address, vaultConfig.getAddress());
+        assertEquals(secretPath, vaultConfig.getSecretPath());
+        assertEquals(token, vaultConfig.getToken());
+        assertEquals(pollingInterval, vaultConfig.getPollingInterval());
+        SSLConfig sslConfig = vaultConfig.getSSLConfig();
+        assertTrue(sslConfig.isEnabled());
+        assertEquals("com.hazelcast.nio.ssl.BasicSSLContextFactory", sslConfig.getFactoryClassName());
+        assertEquals(1, sslConfig.getProperties().size());
+        assertEquals("TLS", sslConfig.getProperties().get("protocol"));
+    }
+
+    @Override
+    @Test
+    public void testPersistenceEncryptionAtRest_whenVault() {
+        int keySize = 16;
+        String address = "https://localhost:1234";
+        String secretPath = "secret/path";
+        String token = "token";
+        int pollingInterval = 60;
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  persistence:\n"
+                + "    enabled: true\n"
+                + "    encryption-at-rest:\n"
+                + "      enabled: true\n"
+                + "      algorithm: AES\n"
+                + "      salt: some-salt\n"
+                + "      key-size: " + keySize + "\n"
+                + "      secure-store:\n"
+                + "        vault:\n"
+                + "          address: " + address + "\n"
+                + "          secret-path: " + secretPath + "\n"
+                + "          token: " + token + "\n"
+                + "          polling-interval: " + pollingInterval + "\n"
+                + "          ssl:\n"
+                + "            enabled: true\n"
+                + "            factory-class-name: com.hazelcast.nio.ssl.BasicSSLContextFactory\n"
+                + "            properties:\n"
+                + "              protocol: TLS\n";
+
+        Config config = new InMemoryYamlConfig(yaml);
+        PersistenceConfig persistenceConfig = config.getPersistenceConfig();
+        assertTrue(persistenceConfig.isEnabled());
+
+        EncryptionAtRestConfig encryptionAtRestConfig = persistenceConfig.getEncryptionAtRestConfig();
+        assertTrue(encryptionAtRestConfig.isEnabled());
+        assertEquals("AES", encryptionAtRestConfig.getAlgorithm());
+        assertEquals("some-salt", encryptionAtRestConfig.getSalt());
+        assertEquals(keySize, encryptionAtRestConfig.getKeySize());
+        SecureStoreConfig secureStoreConfig = encryptionAtRestConfig.getSecureStoreConfig();
+        assertTrue(secureStoreConfig instanceof VaultSecureStoreConfig);
+        VaultSecureStoreConfig vaultConfig = (VaultSecureStoreConfig) secureStoreConfig;
+        assertEquals(address, vaultConfig.getAddress());
+        assertEquals(secretPath, vaultConfig.getSecretPath());
+        assertEquals(token, vaultConfig.getToken());
+        assertEquals(pollingInterval, vaultConfig.getPollingInterval());
+        SSLConfig sslConfig = vaultConfig.getSSLConfig();
+        assertTrue(sslConfig.isEnabled());
+        assertEquals("com.hazelcast.nio.ssl.BasicSSLContextFactory", sslConfig.getFactoryClassName());
+        assertEquals(1, sslConfig.getProperties().size());
+        assertEquals("TLS", sslConfig.getProperties().get("protocol"));
     }
 
     @Override
@@ -3103,7 +3596,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "          - 127.0.0.1";
 
         Config config = buildConfig(yaml);
-        PermissionConfig expected = new PermissionConfig(CONFIG, "*", "dev");
+        PermissionConfig expected = new PermissionConfig(CONFIG, null, "dev");
         expected.getEndpoints().add("127.0.0.1");
         assertPermissionConfig(expected, config);
     }
@@ -3128,14 +3621,13 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
     @Test
     public void testAllPermissionsCovered() {
         InputStream yamlResource = YamlConfigBuilderTest.class.getClassLoader().getResourceAsStream("hazelcast-fullconfig.yaml");
-        Config config = null;
+        Config config;
         try {
             config = new YamlConfigBuilder(yamlResource).build();
         } finally {
             IOUtil.closeResource(yamlResource);
         }
-        Set<PermissionConfig.PermissionType> permTypes = new HashSet<PermissionConfig.PermissionType>(Arrays
-                .asList(PermissionConfig.PermissionType.values()));
+        Set<PermissionConfig.PermissionType> permTypes = new HashSet<>(asList(PermissionConfig.PermissionType.values()));
         for (PermissionConfig pc : config.getSecurityConfig().getClientPermissionConfigs()) {
             permTypes.remove(pc.getType());
         }
@@ -3235,7 +3727,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         Config config = buildConfig(yaml);
         MemberAttributeConfig memberAttributeConfig = config.getMemberAttributeConfig();
         assertNotNull(memberAttributeConfig);
-        assertEquals("ID", memberAttributeConfig.getStringAttribute("IDENTIFIER"));
+        assertEquals("ID", memberAttributeConfig.getAttribute("IDENTIFIER"));
     }
 
     @Override
@@ -3323,7 +3815,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         MemberAddressProviderConfig providerConfig = advancedNetworkConfig.getMemberAddressProviderConfig();
 
         assertFalse(advancedNetworkConfig.isEnabled());
-        assertTrue(joinConfig.getMulticastConfig().isEnabled());
+        assertTrue(joinConfig.getAutoDetectionConfig().isEnabled());
         assertNull(fdConfig);
         assertFalse(providerConfig.isEnabled());
 
@@ -3372,6 +3864,30 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         expected.expect(InvalidConfigurationException.class);
         buildConfig(yaml);
 
+    }
+
+    @Test
+    public void outboundPorts_asObject_ParsingTest() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  network:\n"
+                + "    outbound-ports:\n"
+                + "      ports: 2500-3000\n"
+                + "      more-ports: 2600-3500\n";
+        Config actual = buildConfig(yaml);
+        assertEquals(new HashSet<>(asList("2500-3000", "2600-3500")), actual.getNetworkConfig().getOutboundPortDefinitions());
+    }
+
+    @Test
+    public void outboundPorts_asSequence_ParsingTest() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  network:\n"
+                + "    outbound-ports:\n"
+                + "      - 1234-1999\n"
+                + "      - 2500\n";
+        Config actual = buildConfig(yaml);
+        assertEquals(new HashSet<>(asList("2500", "1234-1999")), actual.getNetworkConfig().getOutboundPortDefinitions());
     }
 
     @Override
@@ -3478,6 +3994,7 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
     }
 
     @Override
+    @Test
     public void testCPSubsystemConfig() {
         String yaml = ""
                 + "hazelcast:\n"
@@ -3488,6 +4005,9 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "    session-heartbeat-interval-seconds: 3\n"
                 + "    missing-cp-member-auto-removal-seconds: 120\n"
                 + "    fail-on-indeterminate-operation-state: true\n"
+                + "    persistence-enabled: true\n"
+                + "    base-dir: /mnt/cp-data\n"
+                + "    data-load-timeout-seconds: 30\n"
                 + "    raft-algorithm:\n"
                 + "      leader-election-timeout-in-millis: 500\n"
                 + "      leader-heartbeat-period-in-millis: 100\n"
@@ -3499,8 +4019,10 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
                 + "    semaphores:\n"
                 + "      sem1:\n"
                 + "        jdk-compatible: true\n"
+                + "        initial-permits: 1\n"
                 + "      sem2:\n"
                 + "        jdk-compatible: false\n"
+                + "        initial-permits: 2\n"
                 + "    locks:\n"
                 + "      lock1:\n"
                 + "        lock-acquire-limit: 1\n"
@@ -3514,6 +4036,9 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertEquals(3, cpSubsystemConfig.getSessionHeartbeatIntervalSeconds());
         assertEquals(120, cpSubsystemConfig.getMissingCPMemberAutoRemovalSeconds());
         assertTrue(cpSubsystemConfig.isFailOnIndeterminateOperationState());
+        assertTrue(cpSubsystemConfig.isPersistenceEnabled());
+        assertEquals(new File("/mnt/cp-data").getAbsoluteFile(), cpSubsystemConfig.getBaseDir().getAbsoluteFile());
+        assertEquals(30, cpSubsystemConfig.getDataLoadTimeoutSeconds());
         RaftAlgorithmConfig raftAlgorithmConfig = cpSubsystemConfig.getRaftAlgorithmConfig();
         assertEquals(500, raftAlgorithmConfig.getLeaderElectionTimeoutInMillis());
         assertEquals(100, raftAlgorithmConfig.getLeaderHeartbeatPeriodInMillis());
@@ -3522,17 +4047,381 @@ public class YamlConfigBuilderTest extends AbstractConfigBuilderTest {
         assertEquals(250, raftAlgorithmConfig.getCommitIndexAdvanceCountToSnapshot());
         assertEquals(75, raftAlgorithmConfig.getUncommittedEntryCountToRejectNewAppends());
         assertEquals(50, raftAlgorithmConfig.getAppendRequestBackoffTimeoutInMillis());
-        CPSemaphoreConfig semaphoreConfig1 = cpSubsystemConfig.findSemaphoreConfig("sem1");
-        CPSemaphoreConfig semaphoreConfig2 = cpSubsystemConfig.findSemaphoreConfig("sem2");
+        SemaphoreConfig semaphoreConfig1 = cpSubsystemConfig.findSemaphoreConfig("sem1");
+        SemaphoreConfig semaphoreConfig2 = cpSubsystemConfig.findSemaphoreConfig("sem2");
         assertNotNull(semaphoreConfig1);
         assertNotNull(semaphoreConfig2);
         assertTrue(semaphoreConfig1.isJDKCompatible());
         assertFalse(semaphoreConfig2.isJDKCompatible());
+        assertEquals(1, semaphoreConfig1.getInitialPermits());
+        assertEquals(2, semaphoreConfig2.getInitialPermits());
         FencedLockConfig lockConfig1 = cpSubsystemConfig.findLockConfig("lock1");
         FencedLockConfig lockConfig2 = cpSubsystemConfig.findLockConfig("lock2");
         assertNotNull(lockConfig1);
         assertNotNull(lockConfig2);
         assertEquals(1, lockConfig1.getLockAcquireLimit());
         assertEquals(2, lockConfig2.getLockAcquireLimit());
+    }
+
+    @Override
+    @Test
+    public void testSqlConfig() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  sql:\n"
+                + "    statement-timeout-millis: 30\n";
+        Config config = buildConfig(yaml);
+        SqlConfig sqlConfig = config.getSqlConfig();
+        assertEquals(30L, sqlConfig.getStatementTimeoutMillis());
+    }
+
+    @Override
+    @Test
+    public void testWhitespaceInNonSpaceStrings() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  split-brain-protection:\n"
+                + "    name-of-split-brain-protection:\n"
+                + "      enabled: true\n"
+                + "      protect-on:   WRITE   \n";
+
+        buildConfig(yaml);
+    }
+
+    @Override
+    @Test
+    public void testPersistentMemoryDirectoryConfiguration() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  native-memory:\n"
+                + "    persistent-memory:\n"
+                + "      directories:\n"
+                + "        - directory: /mnt/pmem0\n"
+                + "          numa-node: 0\n"
+                + "        - directory: /mnt/pmem1\n"
+                + "          numa-node: 1\n";
+
+        Config yamlConfig = new InMemoryYamlConfig(yaml);
+
+        PersistentMemoryConfig pmemConfig = yamlConfig.getNativeMemoryConfig()
+                .getPersistentMemoryConfig();
+        List<PersistentMemoryDirectoryConfig> directoryConfigs = pmemConfig
+                .getDirectoryConfigs();
+        assertFalse(pmemConfig.isEnabled());
+        assertEquals(MOUNTED, pmemConfig.getMode());
+        assertEquals(2, directoryConfigs.size());
+        PersistentMemoryDirectoryConfig dir0Config = directoryConfigs.get(0);
+        PersistentMemoryDirectoryConfig dir1Config = directoryConfigs.get(1);
+        assertEquals("/mnt/pmem0", dir0Config.getDirectory());
+        assertEquals(0, dir0Config.getNumaNode());
+        assertEquals("/mnt/pmem1", dir1Config.getDirectory());
+        assertEquals(1, dir1Config.getNumaNode());
+    }
+
+    @Test
+    public void cacheEntryListenerConfigParsing() {
+        String yaml = "hazelcast:\n"
+                + "  cache:\n"
+                + "    my-cache:\n"
+                + "      cache-entry-listeners:\n"
+                + "        - old-value-required: true\n"
+                + "          synchronous: true\n"
+                + "          cache-entry-listener-factory:\n"
+                + "            class-name: com.example.cache.MyEntryListenerFactory\n"
+                + "          cache-entry-event-filter-factory:\n"
+                + "            class-name: com.example.cache.MyEntryEventFilterFactory";
+        Config actual = buildConfig(yaml);
+        CacheSimpleEntryListenerConfig expected = new CacheSimpleEntryListenerConfig()
+                .setOldValueRequired(true)
+                .setSynchronous(true)
+                .setCacheEntryListenerFactory("com.example.cache.MyEntryListenerFactory")
+                .setCacheEntryEventFilterFactory("com.example.cache.MyEntryEventFilterFactory");
+
+        List<CacheSimpleEntryListenerConfig> actualListeners = actual.findCacheConfig("my-cache").getCacheEntryListeners();
+        assertEquals(singletonList(expected), actualListeners);
+    }
+
+    @Override
+    @Test
+    public void testPersistentMemoryDirectoryConfigurationSimple() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  native-memory:\n"
+                + "    persistent-memory-directory: /mnt/pmem0";
+
+        Config config = buildConfig(yaml);
+        PersistentMemoryConfig pmemConfig = config.getNativeMemoryConfig().getPersistentMemoryConfig();
+        assertTrue(pmemConfig.isEnabled());
+
+        List<PersistentMemoryDirectoryConfig> directoryConfigs = pmemConfig.getDirectoryConfigs();
+        assertEquals(1, directoryConfigs.size());
+        PersistentMemoryDirectoryConfig dir0Config = directoryConfigs.get(0);
+        assertEquals("/mnt/pmem0", dir0Config.getDirectory());
+        assertFalse(dir0Config.isNumaNodeSet());
+    }
+
+    @Override
+    @Test(expected = InvalidConfigurationException.class)
+    public void testPersistentMemoryDirectoryConfiguration_uniqueDirViolationThrows() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  native-memory:\n"
+                + "    persistent-memory:\n"
+                + "      directories:\n"
+                + "        - directory: /mnt/pmem0\n"
+                + "          numa-node: 0\n"
+                + "        - directory: /mnt/pmem0\n"
+                + "          numa-node: 1\n";
+
+        buildConfig(yaml);
+    }
+
+    @Override
+    @Test(expected = InvalidConfigurationException.class)
+    public void testPersistentMemoryDirectoryConfiguration_uniqueNumaNodeViolationThrows() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  native-memory:\n"
+                + "    persistent-memory:\n"
+                + "      directories:\n"
+                + "        - directory: /mnt/pmem0\n"
+                + "          numa-node: 0\n"
+                + "        - directory: /mnt/pmem1\n"
+                + "          numa-node: 0\n";
+
+        buildConfig(yaml);
+    }
+
+    @Override
+    @Test(expected = InvalidConfigurationException.class)
+    public void testPersistentMemoryDirectoryConfiguration_numaNodeConsistencyViolationThrows() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  native-memory:\n"
+                + "    persistent-memory:\n"
+                + "      directories:\n"
+                + "        - directory: /mnt/pmem0\n"
+                + "          numa-node: 0\n"
+                + "        - directory: /mnt/pmem1\n";
+
+        buildConfig(yaml);
+    }
+
+    @Override
+    @Test
+    public void testPersistentMemoryDirectoryConfiguration_simpleAndAdvancedPasses() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  native-memory:\n"
+                + "    persistent-memory-directory: /mnt/optane\n"
+                + "    persistent-memory:\n"
+                + "      directories:\n"
+                + "        - directory: /mnt/pmem0\n"
+                + "        - directory: /mnt/pmem1\n";
+
+        Config config = buildConfig(yaml);
+
+        PersistentMemoryConfig pmemConfig = config.getNativeMemoryConfig().getPersistentMemoryConfig();
+        assertTrue(pmemConfig.isEnabled());
+        assertEquals(MOUNTED, pmemConfig.getMode());
+
+        List<PersistentMemoryDirectoryConfig> directoryConfigs = pmemConfig.getDirectoryConfigs();
+        assertEquals(3, directoryConfigs.size());
+        PersistentMemoryDirectoryConfig dir0Config = directoryConfigs.get(0);
+        PersistentMemoryDirectoryConfig dir1Config = directoryConfigs.get(1);
+        PersistentMemoryDirectoryConfig dir2Config = directoryConfigs.get(2);
+        assertEquals("/mnt/optane", dir0Config.getDirectory());
+        assertFalse(dir0Config.isNumaNodeSet());
+        assertEquals("/mnt/pmem0", dir1Config.getDirectory());
+        assertFalse(dir1Config.isNumaNodeSet());
+        assertEquals("/mnt/pmem1", dir2Config.getDirectory());
+        assertFalse(dir2Config.isNumaNodeSet());
+    }
+
+    @Override
+    @Test
+    public void testPersistentMemoryConfiguration_SystemMemoryMode() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  native-memory:\n"
+                + "    persistent-memory:\n"
+                + "      enabled: true\n"
+                + "      mode: SYSTEM_MEMORY\n";
+
+        Config config = buildConfig(yaml);
+        PersistentMemoryConfig pmemConfig = config.getNativeMemoryConfig().getPersistentMemoryConfig();
+        assertTrue(pmemConfig.isEnabled());
+        assertEquals(SYSTEM_MEMORY, pmemConfig.getMode());
+    }
+
+    @Override
+    @Test(expected = InvalidConfigurationException.class)
+    public void testPersistentMemoryConfiguration_NotExistingModeThrows() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  native-memory:\n"
+                + "    persistent-memory:\n"
+                + "      mode: NOT_EXISTING_MODE\n";
+
+        buildConfig(yaml);
+    }
+
+    @Override
+    @Test(expected = InvalidConfigurationException.class)
+    public void testPersistentMemoryDirectoryConfiguration_SystemMemoryModeThrows() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  native-memory:\n"
+                + "    persistent-memory:\n"
+                + "      mode: SYSTEM_MEMORY\n"
+                + "      directories:\n"
+                + "        - directory: /mnt/pmem0\n";
+
+        buildConfig(yaml);
+    }
+
+    @Override
+    @Test
+    public void testMetricsConfig() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  metrics:\n"
+                + "    enabled: false\n"
+                + "    management-center:\n"
+                + "      enabled: false\n"
+                + "      retention-seconds: 11\n"
+                + "    jmx:\n"
+                + "      enabled: false\n"
+                + "    collection-frequency-seconds: 10";
+        Config config = new InMemoryYamlConfig(yaml);
+        MetricsConfig metricsConfig = config.getMetricsConfig();
+        assertFalse(metricsConfig.isEnabled());
+        MetricsManagementCenterConfig metricsMcConfig = metricsConfig.getManagementCenterConfig();
+        assertFalse(metricsMcConfig.isEnabled());
+        assertFalse(metricsConfig.getJmxConfig().isEnabled());
+        assertEquals(10, metricsConfig.getCollectionFrequencySeconds());
+        assertEquals(11, metricsMcConfig.getRetentionSeconds());
+    }
+
+    @Override
+    @Test
+    public void testInstanceTrackingConfig() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  instance-tracking:\n"
+                + "    enabled: true\n"
+                + "    file-name: /dummy/file\n"
+                + "    format-pattern: dummy-pattern with $HZ_INSTANCE_TRACKING{placeholder} and $RND{placeholder}";
+        Config config = new InMemoryYamlConfig(yaml);
+        InstanceTrackingConfig trackingConfig = config.getInstanceTrackingConfig();
+        assertTrue(trackingConfig.isEnabled());
+        assertEquals("/dummy/file", trackingConfig.getFileName());
+        assertEquals("dummy-pattern with $HZ_INSTANCE_TRACKING{placeholder} and $RND{placeholder}",
+                trackingConfig.getFormatPattern());
+    }
+
+    @Override
+    @Test
+    public void testMetricsConfigMasterSwitchDisabled() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  metrics:\n"
+                + "    enabled: false";
+        Config config = new InMemoryYamlConfig(yaml);
+        MetricsConfig metricsConfig = config.getMetricsConfig();
+        assertFalse(metricsConfig.isEnabled());
+        assertTrue(metricsConfig.getManagementCenterConfig().isEnabled());
+        assertTrue(metricsConfig.getJmxConfig().isEnabled());
+    }
+
+    @Override
+    @Test
+    public void testMetricsConfigMcDisabled() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  metrics:\n"
+                + "    management-center:\n"
+                + "      enabled: false";
+        Config config = new InMemoryYamlConfig(yaml);
+        MetricsConfig metricsConfig = config.getMetricsConfig();
+        assertTrue(metricsConfig.isEnabled());
+        assertFalse(metricsConfig.getManagementCenterConfig().isEnabled());
+        assertTrue(metricsConfig.getJmxConfig().isEnabled());
+    }
+
+    @Override
+    @Test
+    public void testMetricsConfigJmxDisabled() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  metrics:\n"
+                + "    jmx:\n"
+                + "      enabled: false";
+        Config config = new InMemoryYamlConfig(yaml);
+        MetricsConfig metricsConfig = config.getMetricsConfig();
+        assertTrue(metricsConfig.isEnabled());
+        assertTrue(metricsConfig.getManagementCenterConfig().isEnabled());
+        assertFalse(metricsConfig.getJmxConfig().isEnabled());
+    }
+
+    @Override
+    protected Config buildAuditlogConfig() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  auditlog:\n"
+                + "    enabled: true\n"
+                + "    factory-class-name: com.acme.auditlog.AuditlogToSyslogFactory\n"
+                + "    properties:\n"
+                + "      host: syslogserver.acme.com\n"
+                + "      port: 514\n"
+                + "      type: tcp\n";
+        return new InMemoryYamlConfig(yaml);
+    }
+
+    @Override
+    protected Config buildMapWildcardConfig() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  map:\n"
+                + "    map*:\n"
+                + "      attributes:\n"
+                + "        name:\n"
+                + "          extractor-class-name: usercodedeployment.CapitalizingFirstNameExtractor\n"
+                + "    mapBackup2*:\n"
+                + "      backup-count: 2\n"
+                + "      attributes:\n"
+                + "        name:\n"
+                + "          extractor-class-name: usercodedeployment.CapitalizingFirstNameExtractor\n";
+
+        return new InMemoryYamlConfig(yaml);
+    }
+
+    @Override
+    @Test
+    public void testIntegrityCheckerConfig() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  integrity-checker:\n"
+                + "    enabled: false\n";
+
+        Config config = buildConfig(yaml);
+
+        assertFalse(config.getIntegrityCheckerConfig().isEnabled());
+    }
+
+    @Override
+    public void testMapExpiryConfig() {
+        String yaml = ""
+                + "hazelcast:\n"
+                + "  map:\n"
+                + "    expiry:\n"
+                + "      time-to-live-seconds: 2147483647\n"
+                + "      max-idle-seconds: 2147483647\n";
+
+        Config config = buildConfig(yaml);
+        MapConfig mapConfig = config.getMapConfig("expiry");
+
+        assertEquals(Integer.MAX_VALUE, mapConfig.getTimeToLiveSeconds());
+        assertEquals(Integer.MAX_VALUE, mapConfig.getMaxIdleSeconds());
     }
 }

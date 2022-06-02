@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,16 +21,16 @@ import com.hazelcast.cache.impl.operation.CacheDestroyOperation;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.CacheDestroyCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractInvocationMessageTask;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
-import com.hazelcast.spi.InvocationBuilder;
-import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.impl.operationservice.InternalOperationService;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
+import com.hazelcast.spi.impl.operationservice.InvocationBuilder;
+import com.hazelcast.spi.impl.operationservice.Operation;
+import com.hazelcast.spi.impl.operationservice.impl.OperationServiceImpl;
 
 import java.security.Permission;
 
 public class CacheDestroyMessageTask
-        extends AbstractInvocationMessageTask<CacheDestroyCodec.RequestParameters> {
+        extends AbstractInvocationMessageTask<String> {
 
     public CacheDestroyMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -38,7 +38,7 @@ public class CacheDestroyMessageTask
 
     @Override
     protected InvocationBuilder getInvocationBuilder(Operation op) {
-        InternalOperationService operationService = nodeEngine.getOperationService();
+        OperationServiceImpl operationService = nodeEngine.getOperationService();
 
         return operationService.createInvocationBuilder(CacheService.SERVICE_NAME, op,
                 nodeEngine.getThisAddress());
@@ -46,11 +46,11 @@ public class CacheDestroyMessageTask
 
     @Override
     protected Operation prepareOperation() {
-        return new CacheDestroyOperation(parameters.name);
+        return new CacheDestroyOperation(parameters);
     }
 
     @Override
-    protected CacheDestroyCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+    protected String decodeClientMessage(ClientMessage clientMessage) {
         return CacheDestroyCodec.decodeRequest(clientMessage);
     }
 

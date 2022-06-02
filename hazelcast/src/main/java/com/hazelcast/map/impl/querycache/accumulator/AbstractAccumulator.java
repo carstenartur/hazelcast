@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import com.hazelcast.map.impl.querycache.event.QueryCacheEventData;
 import com.hazelcast.map.impl.querycache.event.sequence.DefaultPartitionSequencer;
 import com.hazelcast.map.impl.querycache.event.sequence.PartitionSequencer;
 import com.hazelcast.map.impl.querycache.event.sequence.Sequenced;
-import com.hazelcast.util.Clock;
+import com.hazelcast.internal.util.Clock;
 
 /**
  * Contains helpers for an {@code Accumulator} implementation.
@@ -35,11 +35,11 @@ abstract class AbstractAccumulator<E extends Sequenced> implements Accumulator<E
     protected final CyclicBuffer<E> buffer;
     protected final PartitionSequencer partitionSequencer;
 
-    public AbstractAccumulator(QueryCacheContext context, AccumulatorInfo info) {
+    AbstractAccumulator(QueryCacheContext context, AccumulatorInfo info) {
         this.context = context;
         this.info = info;
         this.partitionSequencer = new DefaultPartitionSequencer();
-        this.buffer = new DefaultCyclicBuffer<E>(info.getBufferSize());
+        this.buffer = new DefaultCyclicBuffer<>(info.getBufferSize());
     }
 
     public CyclicBuffer<E> getBuffer() {

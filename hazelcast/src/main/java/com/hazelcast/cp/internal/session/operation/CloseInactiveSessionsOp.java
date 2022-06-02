@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -71,7 +71,7 @@ public class CloseInactiveSessionsOp extends RaftOp implements IndeterminateOper
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftSessionServiceDataSerializerHook.CLOSE_INACTIVE_SESSIONS_OP;
     }
 
@@ -87,7 +87,7 @@ public class CloseInactiveSessionsOp extends RaftOp implements IndeterminateOper
     @Override
     public void readData(ObjectDataInput in) throws IOException {
         int count = in.readInt();
-        sessions = new ArrayList<Long>();
+        sessions = new ArrayList<>();
         for (int i = 0; i < count; i++) {
             long sessionId = in.readLong();
             sessions.add(sessionId);

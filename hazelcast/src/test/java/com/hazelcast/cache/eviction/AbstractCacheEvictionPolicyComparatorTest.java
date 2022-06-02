@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import static junit.framework.Assert.assertNotNull;
 import static junit.framework.TestCase.assertTrue;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 public abstract class AbstractCacheEvictionPolicyComparatorTest extends HazelcastTestSupport {
 
@@ -53,7 +54,7 @@ public abstract class AbstractCacheEvictionPolicyComparatorTest extends Hazelcas
     }
 
     protected CacheConfig<Integer, String> createCacheConfig(String cacheName) {
-        return new CacheConfig<Integer, String>(cacheName);
+        return new CacheConfig<>(cacheName);
     }
 
     void testEvictionPolicyComparator(EvictionConfig evictionConfig, int iterationCount) {
@@ -68,15 +69,16 @@ public abstract class AbstractCacheEvictionPolicyComparatorTest extends Hazelcas
         for (int i = 0; i < iterationCount; i++) {
             icache.put(i, "Value-" + i);
             icache.setExpiryPolicy(i, new EternalExpiryPolicy());
+            AtomicLong callCounter = (AtomicLong) getUserContext(instance).get("callCounter");
+            if (callCounter != null && callCounter.get() > 0) {
+                return;
+            }
         }
-
-        AtomicLong callCounter = (AtomicLong) getUserContext(instance).get("callCounter");
-        assertTrue(callCounter.get() > 0);
+        fail("CacheEvictionPolicyComparator was not invoked");
     }
 
     public static class MyEvictionPolicyComparator
-            extends CacheEvictionPolicyComparator<Integer, String>
-            implements HazelcastInstanceAware {
+            implements CacheEvictionPolicyComparator<Integer, String>, HazelcastInstanceAware {
 
         private final AtomicLong callCounter = new AtomicLong();
 
@@ -90,7 +92,7 @@ public abstract class AbstractCacheEvictionPolicyComparatorTest extends Hazelcas
             assertEquals("Value-" + key1, value1);
             assertTrue(e1.getCreationTime() > 0);
             assertEquals(CacheRecord.TIME_NOT_AVAILABLE, e1.getLastAccessTime());
-            assertEquals(0, e1.getAccessHit());
+            assertEquals(0, e1.getHits());
             assertInstanceOf(EternalExpiryPolicy.class, e1.getExpiryPolicy());
 
             Integer key2 = e2.getKey();
@@ -101,12 +103,12 @@ public abstract class AbstractCacheEvictionPolicyComparatorTest extends Hazelcas
             assertEquals("Value-" + key2, value2);
             assertTrue(e2.getCreationTime() > 0);
             assertEquals(CacheRecord.TIME_NOT_AVAILABLE, e2.getLastAccessTime());
-            assertEquals(0, e2.getAccessHit());
+            assertEquals(0, e2.getHits());
             assertInstanceOf(EternalExpiryPolicy.class, e2.getExpiryPolicy());
 
             callCounter.incrementAndGet();
 
-            return CacheEvictionPolicyComparator.BOTH_OF_ENTRIES_HAVE_SAME_PRIORITY_TO_BE_EVICTED;
+            return 0;
         }
 
         @Override

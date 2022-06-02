@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,15 @@ package com.hazelcast.cluster;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.spi.properties.GroupProperty;
+import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastTestSupport;
+
+import java.io.IOException;
+import java.net.Inet6Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.util.Enumeration;
 
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -29,7 +35,7 @@ import static org.junit.Assert.fail;
 public class AbstractJoinTest extends HazelcastTestSupport {
 
     protected void testJoin(Config config) throws Exception {
-        config.setProperty(GroupProperty.WAIT_SECONDS_BEFORE_JOIN.getName(), "0");
+        config.setProperty(ClusterProperty.WAIT_SECONDS_BEFORE_JOIN.getName(), "1");
 
         HazelcastInstance h1 = Hazelcast.newHazelcastInstance(config);
         assertClusterSize(1, h1);
@@ -41,12 +47,25 @@ public class AbstractJoinTest extends HazelcastTestSupport {
         h1 = Hazelcast.newHazelcastInstance(config);
         // when h1 is returned, it's guaranteed that it should see 2 members
         assertClusterSize(2, h1);
-
         assertClusterSize(2, h2);
     }
 
+    protected void testJoinEventually(Config config) throws Exception {
+        HazelcastInstance h1 = Hazelcast.newHazelcastInstance(config);
+        assertClusterSize(1, h1);
+
+        HazelcastInstance h2 = Hazelcast.newHazelcastInstance(config);
+        assertClusterSize(2, h1, h2);
+
+        h1.shutdown();
+        h1 = Hazelcast.newHazelcastInstance(config);
+        // when h1 is returned, it's guaranteed that it should see 2 members
+        assertClusterSizeEventually(2, h1);
+        assertClusterSizeEventually(2, h2);
+    }
+
     protected void testJoin_With_DifferentBuildNumber(Config config) {
-        config.setProperty(GroupProperty.WAIT_SECONDS_BEFORE_JOIN.getName(), "0");
+        config.setProperty(ClusterProperty.WAIT_SECONDS_BEFORE_JOIN.getName(), "0");
 
         String buildNumberProp = "hazelcast.build";
         System.setProperty(buildNumberProp, "1");
@@ -64,7 +83,7 @@ public class AbstractJoinTest extends HazelcastTestSupport {
 
     /**
      * Checks if a HazelcastInstance created with config2, can be added to a HazelcastInstance created with config 1.
-     * <p/>
+     * <p>
      * This method expects that an IllegalStateException is thrown when the second HazelcastInstance is created and
      * it doesn't join the cluster but gets killed instead.
      *
@@ -113,5 +132,24 @@ public class AbstractJoinTest extends HazelcastTestSupport {
                 assertClusterSize(1, hz2);
             }
         }, durationSeconds);
+    }
+
+    protected static InetAddress pickLocalInetAddress() throws IOException {
+        Enumeration<NetworkInterface> networkInterfaces = NetworkInterface.getNetworkInterfaces();
+        while (networkInterfaces.hasMoreElements()) {
+            NetworkInterface ni = networkInterfaces.nextElement();
+            if (!ni.isUp() || ni.isVirtual() || ni.isLoopback() || !ni.supportsMulticast()) {
+                continue;
+            }
+            Enumeration<InetAddress> e = ni.getInetAddresses();
+            while (e.hasMoreElements()) {
+                InetAddress inetAddress = e.nextElement();
+                if (inetAddress instanceof Inet6Address) {
+                    continue;
+                }
+                return inetAddress;
+            }
+        }
+        return InetAddress.getLocalHost();
     }
 }

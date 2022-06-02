@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,22 +17,21 @@
 package com.hazelcast.internal.networking.nio;
 
 import com.hazelcast.core.HazelcastException;
-import com.hazelcast.internal.metrics.MetricsRegistry;
-import com.hazelcast.internal.networking.AbstractChannel;
+import com.hazelcast.internal.networking.Channel;
 import com.hazelcast.internal.networking.ChannelInitializer;
 import com.hazelcast.internal.networking.OutboundFrame;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 
 /**
- * A {@link com.hazelcast.internal.networking.Channel} implementation tailored
- * for non blocking IO using {@link java.nio.channels.Selector} in combination
- * with a non blocking {@link SocketChannel}.
+ * A {@link Channel} implementation tailored for non-blocking IO using
+ * {@link Selector} in combination with a non-blocking {@link SocketChannel}.
  */
 public final class NioChannel extends AbstractChannel {
 
@@ -41,18 +40,15 @@ public final class NioChannel extends AbstractChannel {
     NioOutboundPipeline outboundPipeline;
 
     private final Executor closeListenerExecutor;
-    private final MetricsRegistry metricsRegistry;
     private final ChannelInitializer channelInitializer;
     private final NioChannelOptions config;
 
     public NioChannel(SocketChannel socketChannel,
                       boolean clientMode,
                       ChannelInitializer channelInitializer,
-                      MetricsRegistry metricsRegistry,
                       Executor closeListenerExecutor) {
         super(socketChannel, clientMode);
         this.channelInitializer = channelInitializer;
-        this.metricsRegistry = metricsRegistry;
         this.closeListenerExecutor = closeListenerExecutor;
         this.config = new NioChannelOptions(socketChannel.socket());
     }
@@ -85,13 +81,6 @@ public final class NioChannel extends AbstractChannel {
     }
 
     @Override
-    protected void onConnect() {
-        String metricsId = localSocketAddress() + "->" + remoteSocketAddress();
-        metricsRegistry.scanAndRegister(outboundPipeline, "tcp.connection[" + metricsId + "].out");
-        metricsRegistry.scanAndRegister(inboundPipeline, "tcp.connection[" + metricsId + "].in");
-    }
-
-    @Override
     public long lastReadTimeMillis() {
         return inboundPipeline.lastReadTimeMillis();
     }
@@ -105,7 +94,7 @@ public final class NioChannel extends AbstractChannel {
     public void start() {
         try {
             // before starting the channel, the socketChannel need to be put in
-            // non blocking mode since that is mandatory for the NioChannel.
+            // non-blocking mode since that is mandatory for the NioChannel.
             socketChannel.configureBlocking(false);
             channelInitializer.initChannel(this);
         } catch (Exception e) {
@@ -131,7 +120,13 @@ public final class NioChannel extends AbstractChannel {
         if (Thread.currentThread() instanceof NioThread) {
             // we don't want to do any tasks on an io thread; we offload it instead
             try {
-                closeListenerExecutor.execute(new NotifyCloseListenersTask());
+                closeListenerExecutor.execute(() -> {
+                    try {
+                        notifyCloseListeners();
+                    } catch (Exception e) {
+                        logger.warning(e.getMessage(), e);
+                    }
+                });
             } catch (RejectedExecutionException e) {
                 // if the task gets rejected, the networking must be shutting down.
                 logger.fine(e);
@@ -142,6 +137,16 @@ public final class NioChannel extends AbstractChannel {
     }
 
     @Override
+    public long bytesRead() {
+        return inboundPipeline.bytesRead();
+    }
+
+    @Override
+    public long bytesWritten() {
+        return outboundPipeline.bytesWritten();
+    }
+
+    @Override
     public String toString() {
         return "NioChannel{" + localSocketAddress() + "->" + remoteSocketAddress() + '}';
     }
@@ -149,7 +154,7 @@ public final class NioChannel extends AbstractChannel {
     //  this toString implementation is very useful for debugging. Please don't remove it.
 //    @Override
 //    public String toString() {
-//        String local = getPort(localSocketAddress());it
+//        String local = getPort(localSocketAddress());
 //        String remote = getPort(remoteSocketAddress());
 //        String s = local + (isClientMode() ? "=>" : "->") + remote;
 //
@@ -164,16 +169,5 @@ public final class NioChannel extends AbstractChannel {
 
     private String getPort(SocketAddress socketAddress) {
         return socketAddress == null ? "*missing*" : Integer.toString(((InetSocketAddress) socketAddress).getPort());
-    }
-
-    private class NotifyCloseListenersTask implements Runnable {
-        @Override
-        public void run() {
-            try {
-                notifyCloseListeners();
-            } catch (Exception e) {
-                logger.warning(e.getMessage(), e);
-            }
-        }
     }
 }

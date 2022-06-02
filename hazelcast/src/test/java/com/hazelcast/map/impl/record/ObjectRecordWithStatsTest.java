@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,10 @@
 
 package com.hazelcast.map.impl.record;
 
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.util.Clock;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -32,7 +31,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.mockito.Mockito.mock;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class ObjectRecordWithStatsTest {
 
     private static final Object VALUE = new Object();
@@ -40,37 +39,26 @@ public class ObjectRecordWithStatsTest {
     private ObjectRecordWithStats record;
     private ObjectRecordWithStats recordSameAttributes;
     private ObjectRecordWithStats recordOtherLastStoredTime;
-    private ObjectRecordWithStats recordOtherExpirationTime;
     private ObjectRecordWithStats recordOtherKeyAndValue;
     private DataRecordWithStats dataRecord;
 
     @Before
     public void setUp() {
         Data key = mock(Data.class);
-        Data otherKey = mock(Data.class);
         Object otherValue = new Object();
 
         record = new ObjectRecordWithStats(VALUE);
-        record.setKey(key);
 
         recordSameAttributes = new ObjectRecordWithStats();
-        recordSameAttributes.setKey(key);
         recordSameAttributes.setValue(VALUE);
 
         recordOtherLastStoredTime = new ObjectRecordWithStats(VALUE);
-        recordOtherLastStoredTime.setKey(key);
         recordOtherLastStoredTime.onStore();
 
-        recordOtherExpirationTime = new ObjectRecordWithStats(VALUE);
-        recordOtherExpirationTime.setKey(key);
-        recordOtherExpirationTime.setExpirationTime(Clock.currentTimeMillis());
-
         recordOtherKeyAndValue = new ObjectRecordWithStats();
-        recordOtherKeyAndValue.setKey(otherKey);
         recordOtherKeyAndValue.setValue(otherValue);
 
         dataRecord = new DataRecordWithStats();
-        dataRecord.setKey(key);
         dataRecord.setValue(key);
     }
 
@@ -97,7 +85,6 @@ public class ObjectRecordWithStatsTest {
 
         assertNotEquals(record, dataRecord);
         assertNotEquals(record, recordOtherLastStoredTime);
-        assertNotEquals(record, recordOtherExpirationTime);
         assertNotEquals(record, recordOtherKeyAndValue);
     }
 
@@ -109,7 +96,6 @@ public class ObjectRecordWithStatsTest {
         assumeDifferentHashCodes();
         assertNotEquals(record.hashCode(), dataRecord.hashCode());
         assertNotEquals(record.hashCode(), recordOtherLastStoredTime.hashCode());
-        assertNotEquals(record.hashCode(), recordOtherExpirationTime.hashCode());
         assertNotEquals(record.hashCode(), recordOtherKeyAndValue.hashCode());
     }
 }

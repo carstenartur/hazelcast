@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package com.hazelcast.cp.internal.datastructures.atomicref.operation;
 
-import com.hazelcast.cp.internal.datastructures.atomicref.RaftAtomicRef;
-import com.hazelcast.cp.internal.datastructures.atomicref.RaftAtomicRefService;
-import com.hazelcast.cp.internal.datastructures.atomicref.RaftAtomicReferenceDataSerializerHook;
+import com.hazelcast.cp.internal.datastructures.atomicref.AtomicRef;
+import com.hazelcast.cp.internal.datastructures.atomicref.AtomicRefService;
+import com.hazelcast.cp.internal.datastructures.atomicref.AtomicRefDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
@@ -41,29 +41,29 @@ public abstract class AbstractAtomicRefOp extends RaftOp implements IdentifiedDa
         this.name = name;
     }
 
-    RaftAtomicRef getAtomicRef(CPGroupId groupId) {
-        RaftAtomicRefService service = getService();
-        return service.getAtomicRef(groupId, name);
+    AtomicRef getAtomicRef(CPGroupId groupId) {
+        AtomicRefService service = getService();
+        return service.getAtomicValue(groupId, name);
     }
 
     @Override
     public final String getServiceName() {
-        return RaftAtomicRefService.SERVICE_NAME;
+        return AtomicRefService.SERVICE_NAME;
     }
 
     @Override
     public final int getFactoryId() {
-        return RaftAtomicReferenceDataSerializerHook.F_ID;
+        return AtomicRefDataSerializerHook.F_ID;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(name);
+        out.writeString(name);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        name = in.readUTF();
+        name = in.readString();
     }
 
     @Override

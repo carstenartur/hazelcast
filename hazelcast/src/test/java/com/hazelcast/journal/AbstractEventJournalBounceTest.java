@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import com.hazelcast.internal.journal.EventJournalInitialSubscriberState;
 import com.hazelcast.internal.journal.EventJournalReader;
 import com.hazelcast.ringbuffer.ReadResultSet;
 import com.hazelcast.test.bounce.BounceMemberRule;
+import com.hazelcast.test.bounce.BounceTestConfiguration;
 import com.hazelcast.test.jitter.JitterRule;
 import org.junit.Before;
 import org.junit.Rule;
@@ -29,11 +30,11 @@ import org.junit.Test;
 
 import java.util.LinkedList;
 
-import static com.hazelcast.spi.properties.GroupProperty.EVENT_THREAD_COUNT;
-import static com.hazelcast.spi.properties.GroupProperty.GENERIC_OPERATION_THREAD_COUNT;
-import static com.hazelcast.spi.properties.GroupProperty.PARTITION_COUNT;
-import static com.hazelcast.spi.properties.GroupProperty.PARTITION_OPERATION_THREAD_COUNT;
-import static com.hazelcast.util.ExceptionUtil.rethrow;
+import static com.hazelcast.internal.util.ExceptionUtil.rethrow;
+import static com.hazelcast.spi.properties.ClusterProperty.EVENT_THREAD_COUNT;
+import static com.hazelcast.spi.properties.ClusterProperty.GENERIC_OPERATION_THREAD_COUNT;
+import static com.hazelcast.spi.properties.ClusterProperty.PARTITION_COUNT;
+import static com.hazelcast.spi.properties.ClusterProperty.PARTITION_OPERATION_THREAD_COUNT;
 import static java.util.concurrent.TimeUnit.MINUTES;
 import static org.junit.Assert.assertEquals;
 
@@ -50,8 +51,10 @@ public abstract class AbstractEventJournalBounceTest {
 
     @Rule
     public BounceMemberRule bounceMemberRule = BounceMemberRule.with(getConfig())
-                                                               .clusterSize(4)
-                                                               .driverCount(4).build();
+            .clusterSize(4)
+            .driverCount(4)
+            .driverType(BounceTestConfiguration.DriverType.MEMBER)
+            .build();
 
     @Rule
     public JitterRule jitterRule = new JitterRule();
@@ -112,11 +115,11 @@ public abstract class AbstractEventJournalBounceTest {
 
         for (int i = 1; i < TEST_PARTITION_COUNT; i++) {
             try {
-                final EventJournalInitialSubscriberState state = reader.subscribeToEventJournal(i).get();
+                final EventJournalInitialSubscriberState state = reader.subscribeToEventJournal(i).toCompletableFuture().get();
                 final ReadResultSet<T> partitionEvents = reader.readFromEventJournal(
                         state.getOldestSequence(), 1,
                         (int) (state.getNewestSequence() - state.getOldestSequence() + 1), i,
-                        new TruePredicate<T>(), new IdentityFunction<T>()).get();
+                        new TruePredicate<T>(), new IdentityFunction<T>()).toCompletableFuture().get();
                 for (T event : partitionEvents) {
                     events.add(event);
                 }

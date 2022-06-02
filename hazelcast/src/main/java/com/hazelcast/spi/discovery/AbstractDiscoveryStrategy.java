@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,20 @@
 
 package com.hazelcast.spi.discovery;
 
+import com.hazelcast.cluster.Member;
 import com.hazelcast.config.properties.PropertyDefinition;
+import com.hazelcast.internal.util.StringUtil;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.spi.partitiongroup.PartitionGroupStrategy;
-import com.hazelcast.util.StringUtil;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
 
 import static java.util.Collections.unmodifiableMap;
 
 /**
- * An common abstract superclass for {@link DiscoveryStrategy} implementations,
+ * A common abstract superclass for {@link DiscoveryStrategy} implementations,
  * offering convenient access to configuration properties (which may be overridden
  * on the system's environment or JVM properties), as well as a {@link ILogger} instance.
  *
@@ -37,10 +39,16 @@ public abstract class AbstractDiscoveryStrategy implements DiscoveryStrategy {
 
     private final ILogger logger;
     private final Map<String, Comparable> properties;
+    private final EnvVariableProvider envVariableProvider;
 
     public AbstractDiscoveryStrategy(ILogger logger, Map<String, Comparable> properties) {
+        this(logger, properties, System::getenv);
+    }
+
+    AbstractDiscoveryStrategy(ILogger logger, Map<String, Comparable> properties, EnvVariableProvider envVariableProvider) {
         this.logger = logger;
         this.properties = unmodifiableMap(properties);
+        this.envVariableProvider = envVariableProvider;
     }
 
     @Override
@@ -57,7 +65,12 @@ public abstract class AbstractDiscoveryStrategy implements DiscoveryStrategy {
     }
 
     @Override
-    public Map<String, Object> discoverLocalMetadata() {
+    public PartitionGroupStrategy getPartitionGroupStrategy(Collection<? extends Member> allMembers) {
+        return null;
+    }
+
+    @Override
+    public Map<String, String> discoverLocalMetadata() {
         return Collections.emptyMap();
     }
 
@@ -82,11 +95,11 @@ public abstract class AbstractDiscoveryStrategy implements DiscoveryStrategy {
     /**
      * Returns the value of the requested {@link PropertyDefinition} if available in the
      * declarative or programmatic configuration (XML or Config API), otherwise it will
-     * return <tt>null</tt>.
-     * <p/>
+     * return <code>null</code>.
+     * <p>
      * <b>This method overload won't do environment or JVM property lookup.</b> A call to
      * this overload is equivalent to {@link #getOrNull(String, PropertyDefinition)}
-     * with <tt>null</tt> passed as the first parameter.
+     * with <code>null</code> passed as the first parameter.
      *
      * @param property the PropertyDefinition to lookup
      * @param <T>      the type of the property, must be compatible with the conversion
@@ -100,8 +113,8 @@ public abstract class AbstractDiscoveryStrategy implements DiscoveryStrategy {
     /**
      * Returns the value of the requested {@link PropertyDefinition} if available in the
      * declarative or programmatic configuration (XML or Config API), can be found in the
-     * system's environment, or passed as a JVM property. Otherwise it will return <tt>null</tt>.
-     * <p/>
+     * system's environment, or passed as a JVM property. Otherwise it will return <code>null</code>.
+     * <p>
      * This overload will resolve the requested property in the following order, whereas the
      * higher priority is from top to bottom:
      * <ul>
@@ -110,7 +123,7 @@ public abstract class AbstractDiscoveryStrategy implements DiscoveryStrategy {
      * <li>Configuration properties of this {@link DiscoveryStrategy}</li>
      * </ul>
      * To resolve JVM properties or the system environment the property's key is prefixed with
-     * given <tt>prefix</tt>, therefore a prefix of <i>com.hazelcast.discovery</i> and a property
+     * given <code>prefix</code>, therefore a prefix of <i>com.hazelcast.discovery</i> and a property
      * key of <i>hostname</i> will result in a property lookup of <i>com.hazelcast.discovery.hostname</i>
      * in the system environment and JVM properties.
      *
@@ -128,11 +141,11 @@ public abstract class AbstractDiscoveryStrategy implements DiscoveryStrategy {
     /**
      * Returns the value of the requested {@link PropertyDefinition} if available in the
      * declarative or programmatic configuration (XML or Config API), otherwise it will
-     * return the given <tt>defaultValue</tt>.
-     * <p/>
+     * return the given <code>defaultValue</code>.
+     * <p>
      * <b>This method overload won't do environment or JVM property lookup.</b> A call to
      * this overload is equivalent to {@link #getOrDefault(String, PropertyDefinition, Comparable)}
-     * with <tt>null</tt> passed as the first parameter.
+     * with <code>null</code> passed as the first parameter.
      *
      * @param property the PropertyDefinition to lookup
      * @param <T>      the type of the property, must be compatible with the conversion
@@ -148,8 +161,8 @@ public abstract class AbstractDiscoveryStrategy implements DiscoveryStrategy {
      * Returns the value of the requested {@link PropertyDefinition} if available in the
      * declarative or programmatic configuration (XML or Config API), can be found in the
      * system's environment, or passed as a JVM property. otherwise it will return the given
-     * <tt>defaultValue</tt>.
-     * <p/>
+     * <code>defaultValue</code>.
+     * <p>
      * This overload will resolve the requested property in the following order, whereas the
      * higher priority is from top to bottom:
      * <ul>
@@ -158,7 +171,7 @@ public abstract class AbstractDiscoveryStrategy implements DiscoveryStrategy {
      * <li>Configuration properties of this {@link DiscoveryStrategy}</li>
      * </ul>
      * To resolve JVM properties or the system environment the property's key is prefixed with
-     * given <tt>prefix</tt>, therefore a prefix of <i>com.hazelcast.discovery</i> and a property
+     * given <code>prefix</code>, therefore a prefix of <i>com.hazelcast.discovery</i> and a property
      * key of <i>hostname</i> will result in a property lookup of <i>com.hazelcast.discovery.hostname</i>
      * in the system environment and JVM properties.
      *
@@ -191,7 +204,7 @@ public abstract class AbstractDiscoveryStrategy implements DiscoveryStrategy {
             String p = getProperty(prefix, property);
             String v = System.getProperty(p);
             if (StringUtil.isNullOrEmpty(v)) {
-                v = System.getenv(p);
+                v = envVariableProvider.getVariable(p);
             }
 
             if (!StringUtil.isNullOrEmpty(v)) {
@@ -208,4 +221,10 @@ public abstract class AbstractDiscoveryStrategy implements DiscoveryStrategy {
         }
         return sb.append(property.key()).toString();
     }
+
+    @FunctionalInterface
+    interface EnvVariableProvider {
+        String getVariable(String name);
+    }
+
 }

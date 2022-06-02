@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,9 @@
 package com.hazelcast.internal.cluster.fd;
 
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.util.Clock;
+import com.hazelcast.internal.util.Clock;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -32,7 +32,7 @@ import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class PhiAccrualFailureDetectorTest {
 
     private final double phiThreshold = 1;
@@ -43,26 +43,26 @@ public class PhiAccrualFailureDetectorTest {
             acceptableHeartbeatPause, minStdDev);
 
     @Test
-    public void member_isAssumedAlive_beforeFirstHeartbeat() throws Exception {
+    public void member_isAssumedAlive_beforeFirstHeartbeat() {
         assertTrue(failureDetector.isAlive(Clock.currentTimeMillis()));
     }
 
     @Test
-    public void member_isAlive_whenHeartbeat() throws Exception {
+    public void member_isAlive_whenHeartbeat() {
         long timestamp = Clock.currentTimeMillis();
         failureDetector.heartbeat(timestamp);
         assertTrue(failureDetector.isAlive(timestamp));
     }
 
     @Test
-    public void member_isAlive_beforeHeartbeatTimeout() throws Exception {
+    public void member_isAlive_beforeHeartbeatTimeout() {
         long timestamp = Clock.currentTimeMillis();
         failureDetector.heartbeat(timestamp);
         assertTrue(failureDetector.isAlive(timestamp + acceptableHeartbeatPause / 2));
     }
 
     @Test
-    public void member_isNotAlive_afterHeartbeatTimeout() throws Exception {
+    public void member_isNotAlive_afterHeartbeatTimeout() {
         long timestamp = Clock.currentTimeMillis();
         failureDetector.heartbeat(timestamp);
 
@@ -71,13 +71,13 @@ public class PhiAccrualFailureDetectorTest {
     }
 
     @Test
-    public void lastHeartbeat_whenNoHeartbeat() throws Exception {
+    public void lastHeartbeat_whenNoHeartbeat() {
         long lastHeartbeat = failureDetector.lastHeartbeat();
         assertEquals(PhiAccrualFailureDetector.NO_HEARTBEAT_TIMESTAMP, lastHeartbeat);
     }
 
     @Test
-    public void lastHeartbeat() throws Exception {
+    public void lastHeartbeat() {
         long timestamp = Clock.currentTimeMillis();
         failureDetector.heartbeat(timestamp);
 
@@ -86,14 +86,14 @@ public class PhiAccrualFailureDetectorTest {
     }
 
     @Test
-    public void nonSuspected_beforeFirstHeartbeat() throws Exception {
+    public void nonSuspected_beforeFirstHeartbeat() {
         double suspicionLevel = failureDetector.suspicionLevel(Clock.currentTimeMillis());
 
         assertEquals(0, suspicionLevel, 0d);
     }
 
     @Test
-    public void suspicionLevel_whenHeartbeat() throws Exception {
+    public void suspicionLevel_whenHeartbeat() {
         long timestamp = Clock.currentTimeMillis();
         failureDetector.heartbeat(timestamp);
 
@@ -102,7 +102,7 @@ public class PhiAccrualFailureDetectorTest {
     }
 
     @Test
-    public void suspicionLevel_beforeHeartbeatTimeout() throws Exception {
+    public void suspicionLevel_beforeHeartbeatTimeout() {
         long timestamp = Clock.currentTimeMillis();
         failureDetector.heartbeat(timestamp);
 
@@ -112,7 +112,7 @@ public class PhiAccrualFailureDetectorTest {
     }
 
     @Test
-    public void suspicionLevel_afterHeartbeatTimeout() throws Exception {
+    public void suspicionLevel_afterHeartbeatTimeout() {
         long timestamp = Clock.currentTimeMillis();
         failureDetector.heartbeat(timestamp);
 

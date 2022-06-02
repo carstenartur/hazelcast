@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,12 +21,12 @@ import com.hazelcast.client.impl.protocol.codec.QueueIteratorCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractPartitionMessageTask;
 import com.hazelcast.collection.impl.queue.QueueService;
 import com.hazelcast.collection.impl.queue.operations.IteratorOperation;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.security.permission.ActionConstants;
 import com.hazelcast.security.permission.QueuePermission;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.operationservice.Operation;
 import com.hazelcast.spi.impl.SerializableList;
 
 import java.security.Permission;
@@ -37,7 +37,7 @@ import java.util.List;
  * {@link com.hazelcast.client.impl.protocol.codec.QueueMessageType#QUEUE_ITERATOR}
  */
 public class QueueIteratorMessageTask
-        extends AbstractPartitionMessageTask<QueueIteratorCodec.RequestParameters> {
+        extends AbstractPartitionMessageTask<String> {
 
     public QueueIteratorMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -45,17 +45,17 @@ public class QueueIteratorMessageTask
 
     @Override
     protected Operation prepareOperation() {
-        return new IteratorOperation(parameters.name);
+        return new IteratorOperation(parameters);
     }
 
     @Override
-    protected QueueIteratorCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+    protected String decodeClientMessage(ClientMessage clientMessage) {
         return QueueIteratorCodec.decodeRequest(clientMessage);
     }
 
     @Override
     public Permission getRequiredPermission() {
-        return new QueuePermission(parameters.name, ActionConstants.ACTION_READ);
+        return new QueuePermission(parameters, ActionConstants.ACTION_READ);
     }
 
     @Override
@@ -82,6 +82,6 @@ public class QueueIteratorMessageTask
 
     @Override
     public String getDistributedObjectName() {
-        return parameters.name;
+        return parameters;
     }
 }

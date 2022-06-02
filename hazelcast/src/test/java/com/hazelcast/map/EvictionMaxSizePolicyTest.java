@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,16 @@
 
 package com.hazelcast.map;
 
+import com.hazelcast.cluster.Address;
 import com.hazelcast.config.Config;
+import com.hazelcast.config.EvictionConfig;
 import com.hazelcast.config.EvictionPolicy;
 import com.hazelcast.config.MapConfig;
-import com.hazelcast.config.MaxSizeConfig;
+import com.hazelcast.config.MaxSizePolicy;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
-import com.hazelcast.map.eviction.MapEvictionPolicy;
+import com.hazelcast.internal.eviction.impl.comparator.LRUEvictionPolicyComparator;
+import com.hazelcast.internal.partition.IPartitionService;
+import com.hazelcast.internal.util.MemoryInfoAccessor;
 import com.hazelcast.map.impl.EntryCostEstimator;
 import com.hazelcast.map.impl.MapContainer;
 import com.hazelcast.map.impl.MapService;
@@ -34,42 +37,44 @@ import com.hazelcast.map.impl.eviction.EvictorImpl;
 import com.hazelcast.map.impl.proxy.MapProxyImpl;
 import com.hazelcast.map.impl.recordstore.DefaultRecordStore;
 import com.hazelcast.map.impl.recordstore.RecordStore;
-import com.hazelcast.monitor.LocalMapStats;
-import com.hazelcast.nio.Address;
-import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.spi.partition.IPartitionService;
-import com.hazelcast.spi.properties.GroupProperty;
+import com.hazelcast.map.listener.EntryEvictedListener;
+import com.hazelcast.spi.eviction.EvictionPolicyComparator;
+import com.hazelcast.spi.impl.NodeEngine;
+import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.util.MemoryInfoAccessor;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
-import static com.hazelcast.config.MaxSizeConfig.MaxSizePolicy.FREE_HEAP_PERCENTAGE;
-import static com.hazelcast.config.MaxSizeConfig.MaxSizePolicy.FREE_HEAP_SIZE;
-import static com.hazelcast.config.MaxSizeConfig.MaxSizePolicy.PER_NODE;
-import static com.hazelcast.config.MaxSizeConfig.MaxSizePolicy.PER_PARTITION;
-import static com.hazelcast.config.MaxSizeConfig.MaxSizePolicy.USED_HEAP_PERCENTAGE;
-import static com.hazelcast.config.MaxSizeConfig.MaxSizePolicy.USED_HEAP_SIZE;
+import static com.hazelcast.config.MaxSizePolicy.FREE_HEAP_PERCENTAGE;
+import static com.hazelcast.config.MaxSizePolicy.FREE_HEAP_SIZE;
+import static com.hazelcast.config.MaxSizePolicy.PER_NODE;
+import static com.hazelcast.config.MaxSizePolicy.PER_PARTITION;
+import static com.hazelcast.config.MaxSizePolicy.USED_HEAP_PERCENTAGE;
+import static com.hazelcast.config.MaxSizePolicy.USED_HEAP_SIZE;
 import static com.hazelcast.memory.MemoryUnit.MEGABYTES;
 import static java.lang.String.format;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class EvictionMaxSizePolicyTest extends HazelcastTestSupport {
 
     private static final int PARTITION_COUNT = 271;
+    private static final int PARTITION_MAX_PARALLEL_MIGRATIONS = 1;
 
     @Test
     public void testPerNodePolicy() {
@@ -85,8 +90,9 @@ public class EvictionMaxSizePolicyTest extends HazelcastTestSupport {
 
     @Test
     public void testPerNodePolicy_afterGracefulShutdown() {
-        int nodeCount = 2;
+        int nodeCount = 3;
         int perNodeMaxSize = 1000;
+        int numberOfPuts = 5000;
 
         // eviction takes place if a partitions size exceeds this number
         // see EvictionChecker#toPerPartitionMaxSize
@@ -94,29 +100,55 @@ public class EvictionMaxSizePolicyTest extends HazelcastTestSupport {
 
         String mapName = "testPerNodePolicy_afterGracefulShutdown";
         Config config = createConfig(PER_NODE, perNodeMaxSize, mapName);
-
+        Set<Object> evictedKeySet = Collections.newSetFromMap(new ConcurrentHashMap<>());
         // populate map from one of the nodes
-        Collection<HazelcastInstance> nodes = createNodes(nodeCount, config);
-        for (HazelcastInstance node : nodes) {
-            IMap map = node.getMap(mapName);
-            for (int i = 0; i < 5000; i++) {
-                map.put(i, i);
-            }
+        List<HazelcastInstance> nodes = createNodes(nodeCount, config);
+        assertClusterSize(3, nodes.toArray(new HazelcastInstance[0]));
 
-            node.shutdown();
-            break;
+        IMap map = nodes.get(0).getMap(mapName);
+        for (int i = 0; i < numberOfPuts; i++) {
+            map.put(i, i);
         }
 
-        for (HazelcastInstance node : nodes) {
-            if (node.getLifecycleService().isRunning()) {
-                int mapSize = node.getMap(mapName).size();
-                String message = format("map size is %d and it should be smaller "
-                                + "than maxPartitionSize * PARTITION_COUNT which is %.0f",
-                        mapSize, maxPartitionSize * PARTITION_COUNT);
+        int initialMapSize = map.size();
 
-                assertTrue(message, mapSize <= maxPartitionSize * PARTITION_COUNT);
+        nodes.get(1).getMap(mapName).addEntryListener((EntryEvictedListener) event -> {
+            evictedKeySet.add(event.getKey());
+        }, true);
+
+        nodes.get(0).shutdown();
+
+        assertTrueEventually(() -> {
+            for (HazelcastInstance node : nodes) {
+                if (node.getLifecycleService().isRunning()) {
+                    int currentMapSize = node.getMap(mapName).size();
+                    int evictedKeyCount = evictedKeySet.size();
+                    String message = format("initialMapSize=%d, evictedKeyCount=%d, map size is %d and it should be smaller "
+                                    + "than maxPartitionSize * PARTITION_COUNT which is %.0f",
+                            initialMapSize, evictedKeyCount, currentMapSize, maxPartitionSize * PARTITION_COUNT);
+
+                    assertEquals(message, initialMapSize, evictedKeyCount + currentMapSize);
+                    // current map size should approximately be around (nodeCount - 1) * perNodeMaxSize.
+                    assertTrue(message, ((nodeCount - 1) * perNodeMaxSize)
+                            + (PARTITION_COUNT / (nodeCount - 1)) >= currentMapSize);
+                }
             }
+
+            // check also backup entry count is around perNodeMaxSize.
+            IMap<Object, Object> map1 = nodes.get(1).getMap(mapName);
+            IMap<Object, Object> map2 = nodes.get(2).getMap(mapName);
+            long totalBackupEntryCount = getTotalBackupEntryCount(map1, map2);
+            assertTrue("totalBackupEntryCount=" + totalBackupEntryCount, ((nodeCount - 1) * perNodeMaxSize)
+                    + (PARTITION_COUNT / (nodeCount - 1)) >= totalBackupEntryCount);
+        });
+    }
+
+    private static long getTotalBackupEntryCount(IMap... maps) {
+        long total = 0;
+        for (IMap map : maps) {
+            total += map.getLocalMapStats().getBackupEntryCount();
         }
+        return total;
     }
 
     /**
@@ -159,8 +191,8 @@ public class EvictionMaxSizePolicyTest extends HazelcastTestSupport {
         LocalMapStats localMapStats1 = map1.getLocalMapStats();
         LocalMapStats localMapStats2 = map2.getLocalMapStats();
 
-        assertEquals(localMapStats1.getOwnedEntryCount(), localMapStats2.getBackupEntryCount());
-        assertEquals(localMapStats2.getOwnedEntryCount(), localMapStats1.getBackupEntryCount());
+        assertEqualsEventually(() -> localMapStats2.getBackupEntryCount(), localMapStats1.getOwnedEntryCount());
+        assertEqualsEventually(() -> localMapStats1.getBackupEntryCount(), localMapStats2.getOwnedEntryCount());
     }
 
     @Test
@@ -357,18 +389,18 @@ public class EvictionMaxSizePolicyTest extends HazelcastTestSupport {
         };
 
         MapContainer mapContainer = mapServiceContext.getMapContainer(map.getName());
-
-        MapEvictionPolicy mapEvictionPolicy = mapContainer.getMapEvictionPolicy();
         EvictionChecker evictionChecker = new EvictionChecker(memoryInfoAccessor, mapServiceContext);
         IPartitionService partitionService = mapServiceContext.getNodeEngine().getPartitionService();
-        Evictor evictor = new TestEvictor(mapEvictionPolicy, evictionChecker, partitionService);
+        Evictor evictor = new TestEvictor(LRUEvictionPolicyComparator.INSTANCE, evictionChecker, partitionService);
         mapContainer.setEvictor(evictor);
     }
 
     private static final class TestEvictor extends EvictorImpl {
 
-        TestEvictor(MapEvictionPolicy mapEvictionPolicy, EvictionChecker evictionChecker, IPartitionService partitionService) {
-            super(mapEvictionPolicy, evictionChecker, partitionService, 1);
+        TestEvictor(EvictionPolicyComparator evictionPolicyComparator,
+                    EvictionChecker evictionChecker,
+                    IPartitionService partitionService) {
+            super(evictionPolicyComparator, evictionChecker, 1, partitionService);
         }
 
         @Override
@@ -401,27 +433,26 @@ public class EvictionMaxSizePolicyTest extends HazelcastTestSupport {
         return maps;
     }
 
-    Config createConfig(MaxSizeConfig.MaxSizePolicy maxSizePolicy, int maxSize, String mapName) {
+    Config createConfig(MaxSizePolicy maxSizePolicy, int maxSize, String mapName) {
         Config config = getConfig();
-        config.setProperty(GroupProperty.PARTITION_COUNT.getName(), String.valueOf(PARTITION_COUNT));
-
-        MaxSizeConfig msc = new MaxSizeConfig();
-        msc.setMaxSizePolicy(maxSizePolicy);
-        msc.setSize(maxSize);
+        config.getMetricsConfig().setEnabled(false);
+        config.setProperty(ClusterProperty.PARTITION_COUNT.getName(), String.valueOf(PARTITION_COUNT));
+        config.setProperty(ClusterProperty.PARTITION_MAX_PARALLEL_MIGRATIONS.getName(), String.valueOf(PARTITION_MAX_PARALLEL_MIGRATIONS));
 
         MapConfig mapConfig = config.getMapConfig(mapName);
-        mapConfig.setEvictionPolicy(EvictionPolicy.LRU);
-        mapConfig.setEvictionPercentage(25);
-        mapConfig.setMaxSizeConfig(msc);
-        mapConfig.setMinEvictionCheckMillis(0L);
+        mapConfig.setBackupCount(1);
+        EvictionConfig evictionConfig = mapConfig.getEvictionConfig();
+        evictionConfig.setEvictionPolicy(EvictionPolicy.LRU);
+        evictionConfig.setMaxSizePolicy(maxSizePolicy);
+        evictionConfig.setSize(maxSize);
 
         return config;
     }
 
-    Collection<HazelcastInstance> createNodes(int nodeCount, Config config) {
+    List<HazelcastInstance> createNodes(int nodeCount, Config config) {
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(nodeCount);
         factory.newInstances(config);
-        return factory.getAllHazelcastInstances();
+        return new ArrayList<>(factory.getAllHazelcastInstances());
     }
 
     int getSize(Collection<IMap> maps) {

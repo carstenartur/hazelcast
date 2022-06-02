@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import com.hazelcast.logging.Logger;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.QuickTest;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -43,6 +44,11 @@ public class FileMetricSetTest extends HazelcastTestSupport {
         FileMetricSet.register(metricsRegistry);
     }
 
+    @After
+    public void tearDown() {
+        metricsRegistry.shutdown();
+    }
+
     @Test
     public void utilityConstructor() {
         assertUtilityConstructor(FileMetricSet.class);
@@ -52,7 +58,8 @@ public class FileMetricSetTest extends HazelcastTestSupport {
     public void freeSpace() {
         File file = new File(System.getProperty("user.home"));
 
-        LongGauge freeSpaceGauge = metricsRegistry.newLongGauge("file.partition[user.home].freeSpace");
+        LongGauge freeSpaceGauge =
+                metricsRegistry.newLongGauge("file.partition[user.home].freeSpace");
 
         assertAlmostEquals(file.getFreeSpace(), freeSpaceGauge.read());
     }
@@ -61,7 +68,8 @@ public class FileMetricSetTest extends HazelcastTestSupport {
     public void totalSpace() {
         File file = new File(System.getProperty("user.home"));
 
-        LongGauge totalSpaceGauge = metricsRegistry.newLongGauge("file.partition[user.home].totalSpace");
+        LongGauge totalSpaceGauge =
+                metricsRegistry.newLongGauge("file.partition[user.home].totalSpace");
 
         assertAlmostEquals(file.getTotalSpace(), totalSpaceGauge.read());
     }
@@ -70,7 +78,8 @@ public class FileMetricSetTest extends HazelcastTestSupport {
     public void usableSpace() {
         File file = new File(System.getProperty("user.home"));
 
-        LongGauge usableSpaceGauge = metricsRegistry.newLongGauge("file.partition[user.home].usableSpace");
+        LongGauge usableSpaceGauge =
+                metricsRegistry.newLongGauge("file.partition[user.home].usableSpace");
 
         assertAlmostEquals(file.getUsableSpace(), usableSpaceGauge.read());
     }

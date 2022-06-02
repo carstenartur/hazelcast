@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.cp.internal.raft.impl.handler;
 
-import com.hazelcast.core.Endpoint;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 import com.hazelcast.cp.internal.raft.impl.RaftNodeImpl;
 import com.hazelcast.cp.internal.raft.impl.dto.PreVoteResponse;
 import com.hazelcast.cp.internal.raft.impl.state.CandidateState;
@@ -70,12 +70,12 @@ public class PreVoteResponseHandlerTask extends AbstractResponseHandlerTask {
 
         if (preCandidateState.isMajorityGranted()) {
             logger.info("We have the majority during pre-vote phase. Let's start real election!");
-            new LeaderElectionTask(raftNode).run();
+            new LeaderElectionTask(raftNode, false).run();
         }
     }
 
     @Override
-    protected Endpoint sender() {
+    protected RaftEndpoint sender() {
         return resp.voter();
     }
 }

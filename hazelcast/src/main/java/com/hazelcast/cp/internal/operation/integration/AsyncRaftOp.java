@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,15 @@
 
 package com.hazelcast.cp.internal.operation.integration;
 
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 import com.hazelcast.cp.CPGroupId;
-import com.hazelcast.cp.CPMember;
 import com.hazelcast.cp.internal.RaftService;
 import com.hazelcast.cp.internal.RaftServiceDataSerializerHook;
 import com.hazelcast.cp.internal.RaftSystemOperation;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.operationservice.Operation;
 
 import java.io.IOException;
 
@@ -35,7 +35,7 @@ import java.io.IOException;
 public abstract class AsyncRaftOp extends Operation implements IdentifiedDataSerializable, RaftSystemOperation {
 
     protected CPGroupId groupId;
-    protected CPMember target;
+    protected RaftEndpoint target;
 
     AsyncRaftOp() {
     }
@@ -44,7 +44,7 @@ public abstract class AsyncRaftOp extends Operation implements IdentifiedDataSer
         this.groupId = groupId;
     }
 
-    public final Operation setTargetMember(CPMember target) {
+    public final Operation setTargetEndpoint(RaftEndpoint target) {
         this.target = target;
         return this;
     }

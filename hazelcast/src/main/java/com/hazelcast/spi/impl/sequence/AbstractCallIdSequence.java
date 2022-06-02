@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,14 @@
 
 package com.hazelcast.spi.impl.sequence;
 
+import com.hazelcast.internal.util.ConcurrencyDetection;
+
 import java.util.concurrent.atomic.AtomicLongArray;
 
-import static com.hazelcast.nio.Bits.CACHE_LINE_LENGTH;
-import static com.hazelcast.nio.Bits.LONG_SIZE_IN_BYTES;
-import static com.hazelcast.util.Preconditions.checkPositive;
+import static com.hazelcast.internal.nio.Bits.CACHE_LINE_LENGTH;
+import static com.hazelcast.internal.nio.Bits.LONG_SIZE_IN_BYTES;
+import static com.hazelcast.internal.util.Preconditions.checkPositive;
+import static com.hazelcast.internal.util.QuickMath.modPowerOfTwo;
 
 /**
  * A {@link CallIdSequence} that provides backpressure by taking
@@ -37,16 +40,19 @@ import static com.hazelcast.util.Preconditions.checkPositive;
 public abstract class AbstractCallIdSequence implements CallIdSequence {
     private static final int INDEX_HEAD = 7;
     private static final int INDEX_TAIL = 15;
+    private static final int MAX_CONCURRENT_CALLS = Integer.getInteger("hazelcast.concurrent.invocations.max", 10);
+    private static final int MOD = 8;
 
     // instead of using 2 AtomicLongs, we use an array if width of 3 cache lines to prevent any false sharing.
     private final AtomicLongArray longs = new AtomicLongArray(3 * CACHE_LINE_LENGTH / LONG_SIZE_IN_BYTES);
 
     private final int maxConcurrentInvocations;
+    private final ConcurrencyDetection concurrencyDetection;
 
-    public AbstractCallIdSequence(int maxConcurrentInvocations) {
-        checkPositive(maxConcurrentInvocations,
-                "maxConcurrentInvocations should be a positive number. maxConcurrentInvocations=" + maxConcurrentInvocations);
+    public AbstractCallIdSequence(int maxConcurrentInvocations, ConcurrencyDetection concurrencyDetection) {
+        checkPositive("maxConcurrentInvocations", maxConcurrentInvocations);
 
+        this.concurrencyDetection = concurrencyDetection;
         this.maxConcurrentInvocations = maxConcurrentInvocations;
     }
 
@@ -77,7 +83,13 @@ public abstract class AbstractCallIdSequence implements CallIdSequence {
     }
 
     public long forceNext() {
-        return longs.incrementAndGet(INDEX_HEAD);
+        long l = longs.incrementAndGet(INDEX_HEAD);
+        // we don't want to check for every call, so we'll check 1 in 8 calls. If there is sufficient concurrency
+        // one of the calls will trigger the onDetected.
+        if (modPowerOfTwo(l, MOD) == 0 && concurrentInvocations() > MAX_CONCURRENT_CALLS) {
+            concurrencyDetection.onDetected();
+        }
+        return l;
     }
 
     long getTail() {
@@ -88,7 +100,6 @@ public abstract class AbstractCallIdSequence implements CallIdSequence {
         return concurrentInvocations() < maxConcurrentInvocations;
     }
 
-    @Override
     public long concurrentInvocations() {
         return longs.get(INDEX_HEAD) - longs.get(INDEX_TAIL);
     }

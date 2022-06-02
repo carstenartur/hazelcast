@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,12 +19,13 @@ package com.hazelcast.spi.discovery.multicast;
 import com.hazelcast.config.properties.ValidationException;
 import com.hazelcast.config.properties.ValueValidator;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.nio.Address;
+import com.hazelcast.cluster.Address;
 import com.hazelcast.spi.discovery.AbstractDiscoveryStrategy;
 import com.hazelcast.spi.discovery.DiscoveryNode;
 import com.hazelcast.spi.discovery.SimpleDiscoveryNode;
 import com.hazelcast.spi.discovery.multicast.impl.MulticastDiscoveryReceiver;
 import com.hazelcast.spi.discovery.multicast.impl.MulticastDiscoverySender;
+import com.hazelcast.spi.discovery.multicast.impl.MulticastDiscoverySerializationHelper;
 import com.hazelcast.spi.discovery.multicast.impl.MulticastMemberInfo;
 import com.hazelcast.spi.partitiongroup.PartitionGroupStrategy;
 
@@ -33,10 +34,9 @@ import java.net.InetSocketAddress;
 import java.net.MulticastSocket;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Map;
 
-import static com.hazelcast.util.ExceptionUtil.rethrow;
+import static com.hazelcast.internal.util.ExceptionUtil.rethrow;
 
 /**
  * The multicast {@link com.hazelcast.spi.discovery.DiscoveryStrategy}.
@@ -48,6 +48,7 @@ public class MulticastDiscoveryStrategy extends AbstractDiscoveryStrategy {
     private static final int SOCKET_TIME_TO_LIVE = 255;
     private static final int SOCKET_TIMEOUT = 3000;
     private static final String DEFAULT_MULTICAST_GROUP = "224.2.2.3";
+    private static final Boolean DEFAULT_SAFE_SERIALIZATION = Boolean.FALSE;
 
     private DiscoveryNode discoveryNode;
     private MulticastSocket multicastSocket;
@@ -69,6 +70,16 @@ public class MulticastDiscoveryStrategy extends AbstractDiscoveryStrategy {
             PortValueValidator validator = new PortValueValidator();
             validator.validate(port);
             String group = getOrDefault(MulticastProperties.GROUP, DEFAULT_MULTICAST_GROUP);
+            boolean safeSerialization = getOrDefault(MulticastProperties.SAFE_SERIALIZATION, DEFAULT_SAFE_SERIALIZATION);
+            if (!safeSerialization) {
+                String prop = MulticastProperties.SAFE_SERIALIZATION.key();
+                logger.warning("The " + getClass().getSimpleName()
+                        + " Hazelcast member discovery strategy is configured without the " + prop + " parameter enabled."
+                        + " Set the " + prop + " property to 'true' in the strategy configuration to protect the cluster"
+                        + " against untrusted deserialization attacks.");
+            }
+            MulticastDiscoverySerializationHelper serializationHelper = new MulticastDiscoverySerializationHelper(
+                    safeSerialization);
             multicastSocket = new MulticastSocket(null);
             multicastSocket.bind(new InetSocketAddress(port));
             if (discoveryNode != null) {
@@ -84,8 +95,9 @@ public class MulticastDiscoveryStrategy extends AbstractDiscoveryStrategy {
             multicastSocket.setSendBufferSize(DATA_OUTPUT_BUFFER_SIZE);
             multicastSocket.setSoTimeout(SOCKET_TIMEOUT);
             multicastSocket.joinGroup(InetAddress.getByName(group));
-            multicastDiscoverySender = new MulticastDiscoverySender(discoveryNode, multicastSocket, logger, group, port);
-            multicastDiscoveryReceiver = new MulticastDiscoveryReceiver(multicastSocket, logger);
+            multicastDiscoverySender = new MulticastDiscoverySender(discoveryNode, multicastSocket, logger, group, port,
+                    serializationHelper);
+            multicastDiscoveryReceiver = new MulticastDiscoveryReceiver(multicastSocket, logger, serializationHelper);
             if (discoveryNode == null) {
                 isClient = true;
             }
@@ -133,11 +145,6 @@ public class MulticastDiscoveryStrategy extends AbstractDiscoveryStrategy {
     @Override
     public PartitionGroupStrategy getPartitionGroupStrategy() {
         return null;
-    }
-
-    @Override
-    public Map<String, Object> discoverLocalMetadata() {
-        return new HashMap<String, Object>();
     }
 
     /**

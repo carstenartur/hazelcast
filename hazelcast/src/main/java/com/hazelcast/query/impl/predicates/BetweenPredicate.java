@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,10 @@
 
 package com.hazelcast.query.impl.predicates;
 
+import com.hazelcast.internal.serialization.BinaryInterface;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.BinaryInterface;
 import com.hazelcast.query.Predicate;
-import com.hazelcast.query.VisitablePredicate;
 import com.hazelcast.query.impl.Comparables;
 import com.hazelcast.query.impl.Index;
 import com.hazelcast.query.impl.Indexes;
@@ -71,6 +70,9 @@ public class BetweenPredicate extends AbstractIndexAwarePredicate implements Vis
     @Override
     public Set<QueryableEntry> filter(QueryContext queryContext) {
         Index index = matchIndex(queryContext, QueryContext.IndexMatchHint.PREFER_ORDERED);
+        if (index == null) {
+            return null;
+        }
         return index.getRecords(from, true, to, true);
     }
 
@@ -94,7 +96,7 @@ public class BetweenPredicate extends AbstractIndexAwarePredicate implements Vis
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return PredicateDataSerializerHook.BETWEEN_PREDICATE;
     }
 

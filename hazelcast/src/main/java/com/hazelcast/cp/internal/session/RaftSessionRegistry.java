@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,12 +19,12 @@ package com.hazelcast.cp.internal.session;
 import com.hazelcast.cp.CPGroupId;
 import com.hazelcast.cp.session.CPSession;
 import com.hazelcast.cp.session.CPSession.CPSessionOwnerType;
-import com.hazelcast.cp.internal.util.Tuple2;
-import com.hazelcast.nio.Address;
+import com.hazelcast.internal.util.BiTuple;
+import com.hazelcast.cluster.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.util.Clock;
+import com.hazelcast.internal.util.Clock;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -41,7 +41,7 @@ import static com.hazelcast.cp.internal.session.CPSessionInfo.toExpirationTime;
 class RaftSessionRegistry implements IdentifiedDataSerializable {
 
     private CPGroupId groupId;
-    private final Map<Long, CPSessionInfo> sessions = new ConcurrentHashMap<Long, CPSessionInfo>();
+    private final Map<Long, CPSessionInfo> sessions = new ConcurrentHashMap<>();
     private long nextSessionId;
     private long generatedThreadId;
 
@@ -99,12 +99,12 @@ class RaftSessionRegistry implements IdentifiedDataSerializable {
     }
 
     // queried locally
-    Collection<Tuple2<Long, Long>> getSessionsToExpire() {
-        List<Tuple2<Long, Long>> expired = new ArrayList<Tuple2<Long, Long>>();
+    Collection<BiTuple<Long, Long>> getSessionsToExpire() {
+        List<BiTuple<Long, Long>> expired = new ArrayList<>();
         long now = Clock.currentTimeMillis();
         for (CPSessionInfo session : sessions.values()) {
             if (session.isExpired(now)) {
-                expired.add(Tuple2.of(session.id(), session.version()));
+                expired.add(BiTuple.of(session.id(), session.version()));
             }
         }
 
@@ -143,7 +143,7 @@ class RaftSessionRegistry implements IdentifiedDataSerializable {
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftSessionServiceDataSerializerHook.RAFT_SESSION_REGISTRY;
     }
 

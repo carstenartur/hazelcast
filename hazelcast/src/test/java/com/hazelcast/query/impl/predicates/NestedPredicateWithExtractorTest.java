@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,14 @@
 package com.hazelcast.query.impl.predicates;
 
 import com.hazelcast.config.Config;
-import com.hazelcast.config.MapAttributeConfig;
+import com.hazelcast.config.AttributeConfig;
 import com.hazelcast.config.MapConfig;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
-import com.hazelcast.map.EntryBackupProcessor;
+import com.hazelcast.map.IMap;
 import com.hazelcast.map.EntryProcessor;
-import com.hazelcast.query.EntryObject;
 import com.hazelcast.query.Predicate;
-import com.hazelcast.query.PredicateBuilder;
-import com.hazelcast.query.SqlPredicate;
+import com.hazelcast.query.PredicateBuilder.EntryObject;
+import com.hazelcast.query.Predicates;
 import com.hazelcast.query.extractor.ValueCollector;
 import com.hazelcast.query.extractor.ValueExtractor;
 import com.hazelcast.test.HazelcastSerialClassRunner;
@@ -60,19 +58,19 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
         Config config = new Config();
         MapConfig mapConfig = new MapConfig();
         mapConfig.setName("map");
-        mapConfig.addMapAttributeConfig(extractor("name",
+        mapConfig.addAttributeConfig(extractor("name",
                 "com.hazelcast.query.impl.predicates.NestedPredicateWithExtractorTest$BodyNameExtractor"));
-        mapConfig.addMapAttributeConfig(extractor("limbname",
+        mapConfig.addAttributeConfig(extractor("limbname",
                 "com.hazelcast.query.impl.predicates.NestedPredicateWithExtractorTest$LimbNameExtractor"));
         config.addMapConfig(mapConfig);
         HazelcastInstance instance = createHazelcastInstance(config);
         map = instance.getMap("map");
     }
 
-    private static MapAttributeConfig extractor(String name, String extractor) {
-        MapAttributeConfig extractorConfig = new MapAttributeConfig();
+    private static AttributeConfig extractor(String name, String extractor) {
+        AttributeConfig extractorConfig = new AttributeConfig();
         extractorConfig.setName(name);
-        extractorConfig.setExtractor(extractor);
+        extractorConfig.setExtractorClassName(extractor);
         return extractorConfig;
     }
 
@@ -88,7 +86,7 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
         map.put(2, new Body("body2", new Limb("leg")));
 
         // WHEN
-        EntryObject e = new PredicateBuilder().getEntryObject();
+        EntryObject e = Predicates.newPredicateBuilder().getEntryObject();
         Predicate predicate = e.get("name").equal("body1");
         Collection<Body> values = map.values(predicate);
 
@@ -106,7 +104,7 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
         map.put(2, new Body("body2", new Limb("leg")));
 
         // WHEN
-        Collection<Body> values = map.values(new SqlPredicate("name == 'body1'"));
+        Collection<Body> values = map.values(Predicates.sql("name == 'body1'"));
 
         // THEN
         assertEquals(1, values.size());
@@ -122,7 +120,7 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
         map.put(2, new Body("body2", new Limb("leg")));
 
         // WHEN
-        EntryObject e = new PredicateBuilder().getEntryObject();
+        EntryObject e = Predicates.newPredicateBuilder().getEntryObject();
         Predicate predicate = e.get("limbname").equal("leg");
         Collection<Body> values = map.values(predicate);
 
@@ -148,21 +146,21 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
         assertEquals("body1", resultBody.getName());
     }
 
-    private static final class ExtractProcessor implements EntryProcessor<Integer, Body> {
+    private static final class ExtractProcessor implements EntryProcessor<Integer, Body, Body> {
         @Override
         public Body process(Map.Entry<Integer, Body> entry) {
             return entry.getValue();
         }
 
         @Override
-        public EntryBackupProcessor<Integer, Body> getBackupProcessor() {
+        public EntryProcessor<Integer, Body, Body> getBackupProcessor() {
             return null;
         }
     }
 
     private static final class CustomPredicate extends AbstractPredicate {
 
-        public CustomPredicate() {
+        CustomPredicate() {
             super("limbname");
         }
 
@@ -172,7 +170,7 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
         }
 
         @Override
-        public int getId() {
+        public int getClassId() {
             return 0;
         }
     }
@@ -184,7 +182,7 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
         map.put(2, new Body("body2", new Limb("leg")));
 
         // WHEN
-        Collection<Body> values = map.values(new SqlPredicate("limbname == 'leg'"));
+        Collection<Body> values = map.values(Predicates.sql("limbname == 'leg'"));
 
         // THEN
         assertEquals(1, values.size());
@@ -193,7 +191,7 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
         assertEquals(2, limbExtractorExecutions);
     }
 
-    public static class BodyNameExtractor extends ValueExtractor<Body, Object> {
+    public static class BodyNameExtractor implements ValueExtractor<Body, Object> {
 
         @Override
         public void extract(Body target, Object arguments, ValueCollector collector) {
@@ -202,7 +200,7 @@ public class NestedPredicateWithExtractorTest extends HazelcastTestSupport {
         }
     }
 
-    public static class LimbNameExtractor extends ValueExtractor<Body, Object> {
+    public static class LimbNameExtractor implements ValueExtractor<Body, Object> {
 
         @Override
         public void extract(Body target, Object arguments, ValueCollector collector) {

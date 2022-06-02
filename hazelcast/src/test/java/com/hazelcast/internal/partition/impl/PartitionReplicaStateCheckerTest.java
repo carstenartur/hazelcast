@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,21 @@
 
 package com.hazelcast.internal.partition.impl;
 
+import com.hazelcast.cluster.Address;
 import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.config.Config;
+import com.hazelcast.config.ConfigAccessor;
 import com.hazelcast.config.ServiceConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.internal.partition.PartitionReplica;
 import com.hazelcast.internal.partition.service.TestMigrationAwareService;
 import com.hazelcast.internal.partition.service.TestPutOperation;
-import com.hazelcast.nio.Address;
-import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.spi.Operation;
-import com.hazelcast.test.AssertTask;
+import com.hazelcast.spi.impl.NodeEngine;
+import com.hazelcast.spi.impl.operationservice.Operation;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -38,15 +38,15 @@ import org.junit.runner.RunWith;
 
 import java.net.UnknownHostException;
 import java.util.Arrays;
-import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 
 import static com.hazelcast.internal.cluster.impl.AdvancedClusterStateTest.changeClusterStateEventually;
 import static com.hazelcast.internal.partition.AntiEntropyCorrectnessTest.setBackupPacketDropFilter;
+import static com.hazelcast.test.Accessors.getNode;
 import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class PartitionReplicaStateCheckerTest extends HazelcastTestSupport {
 
     @Test
@@ -81,7 +81,7 @@ public class PartitionReplicaStateCheckerTest extends HazelcastTestSupport {
 
         PartitionStateManager partitionStateManager = partitionService.getPartitionStateManager();
         InternalPartitionImpl partition = partitionStateManager.getPartitionImpl(0);
-        PartitionReplica[] members = partition.getReplicas();
+        PartitionReplica[] members = partition.replicas();
 
         partition.setReplicas(new PartitionReplica[members.length]);
 
@@ -102,7 +102,7 @@ public class PartitionReplicaStateCheckerTest extends HazelcastTestSupport {
 
         PartitionStateManager partitionStateManager = partitionService.getPartitionStateManager();
         InternalPartitionImpl partition = partitionStateManager.getPartitionImpl(0);
-        PartitionReplica[] members = partition.getReplicas();
+        PartitionReplica[] members = partition.replicas();
 
         PartitionReplica[] illegalMembers = Arrays.copyOf(members, members.length);
         Address address = members[0].address();
@@ -152,7 +152,7 @@ public class PartitionReplicaStateCheckerTest extends HazelcastTestSupport {
 
         PartitionStateManager partitionStateManager = partitionService.getPartitionStateManager();
         InternalPartitionImpl partition = partitionStateManager.getPartitionImpl(0);
-        PartitionReplica[] members = partition.getReplicas();
+        PartitionReplica[] members = partition.replicas();
 
         PartitionReplica[] illegalMembers = Arrays.copyOf(members, members.length);
         Address address = members[0].address();
@@ -175,35 +175,27 @@ public class PartitionReplicaStateCheckerTest extends HazelcastTestSupport {
 
         final CountDownLatch latch = new CountDownLatch(1);
         MigrationManager migrationManager = partitionService.getMigrationManager();
-        migrationManager.schedule(new MigrationRunnable() {
-            @Override
-            public void run() {
-                try {
-                    latch.await();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
+        migrationManager.schedule(() -> {
+            try {
+                latch.await();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
         });
 
-        final PartitionReplicaStateChecker replicaStateChecker = partitionService.getPartitionReplicaStateChecker();
+        PartitionReplicaStateChecker replicaStateChecker = partitionService.getPartitionReplicaStateChecker();
 
         assertEquals(PartitionServiceState.MIGRATION_LOCAL, replicaStateChecker.getPartitionServiceState());
 
         latch.countDown();
-        assertEqualsEventually(new Callable<PartitionServiceState>() {
-            @Override
-            public PartitionServiceState call() throws Exception {
-                return replicaStateChecker.getPartitionServiceState();
-            }
-        }, PartitionServiceState.SAFE);
+        assertEqualsEventually(replicaStateChecker::getPartitionServiceState, PartitionServiceState.SAFE);
     }
 
     @Test
     public void shouldNotBeSafe_whenReplicasAreNotSync() {
         Config config = new Config();
         ServiceConfig serviceConfig = TestMigrationAwareService.createServiceConfig(1);
-        config.getServicesConfig().addServiceConfig(serviceConfig);
+        ConfigAccessor.getServicesConfig(config).addServiceConfig(serviceConfig);
 
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
         HazelcastInstance hz = factory.newHazelcastInstance(config);
@@ -235,12 +227,9 @@ public class PartitionReplicaStateCheckerTest extends HazelcastTestSupport {
         addReplicaSyncPermits(partitionService1, maxPermits);
         addReplicaSyncPermits(partitionService2, maxPermits);
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() throws Exception {
-                assertEquals(PartitionServiceState.SAFE, replicaStateChecker1.getPartitionServiceState());
-                assertEquals(PartitionServiceState.SAFE, replicaStateChecker2.getPartitionServiceState());
-            }
+        assertTrueEventually(() -> {
+            assertEquals(PartitionServiceState.SAFE, replicaStateChecker1.getPartitionServiceState());
+            assertEquals(PartitionServiceState.SAFE, replicaStateChecker2.getPartitionServiceState());
         });
     }
 
@@ -256,7 +245,7 @@ public class PartitionReplicaStateCheckerTest extends HazelcastTestSupport {
 
     private static class TestPutOperationWithAsyncBackup extends TestPutOperation {
 
-        public TestPutOperationWithAsyncBackup() {
+        TestPutOperationWithAsyncBackup() {
         }
 
         TestPutOperationWithAsyncBackup(int i) {

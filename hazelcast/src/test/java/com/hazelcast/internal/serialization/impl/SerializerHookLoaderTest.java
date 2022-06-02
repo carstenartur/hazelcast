@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,9 @@ package com.hazelcast.internal.serialization.impl;
 import com.hazelcast.config.SerializationConfig;
 import com.hazelcast.config.SerializerConfig;
 import com.hazelcast.nio.serialization.HazelcastSerializationException;
-import com.hazelcast.nio.serialization.SampleIdentifiedDataSerializable;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -38,7 +37,7 @@ import static org.junit.Assert.assertNull;
  * SerializerHookLoader Tester.
  */
 @RunWith(HazelcastSerialClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class SerializerHookLoaderTest extends HazelcastTestSupport {
 
     private ClassLoader classLoader = getClass().getClassLoader();
@@ -47,7 +46,7 @@ public class SerializerHookLoaderTest extends HazelcastTestSupport {
     public void testLoad_withDefaultConstructor() {
         SerializerConfig serializerConfig = new SerializerConfig();
         serializerConfig.setClassName("com.hazelcast.internal.serialization.impl.TestSerializerHook$TestSerializer");
-        serializerConfig.setTypeClassName("com.hazelcast.nio.serialization.SampleIdentifiedDataSerializable");
+        serializerConfig.setTypeClassName("com.hazelcast.internal.serialization.impl.SampleIdentifiedDataSerializable");
 
         SerializationConfig serializationConfig = getConfig().getSerializationConfig();
         serializationConfig.addSerializerConfig(serializerConfig);
@@ -61,7 +60,7 @@ public class SerializerHookLoaderTest extends HazelcastTestSupport {
     public void testLoad_withParametrizedConstructor() {
         SerializerConfig serializerConfig = new SerializerConfig();
         serializerConfig.setClassName("com.hazelcast.internal.serialization.impl.TestSerializerHook$TestSerializerWithTypeConstructor");
-        serializerConfig.setTypeClassName("com.hazelcast.nio.serialization.SampleIdentifiedDataSerializable");
+        serializerConfig.setTypeClassName("com.hazelcast.internal.serialization.impl.SampleIdentifiedDataSerializable");
 
         SerializationConfig serializationConfig = getConfig().getSerializationConfig();
         serializationConfig.addSerializerConfig(serializerConfig);
@@ -82,7 +81,7 @@ public class SerializerHookLoaderTest extends HazelcastTestSupport {
             System.setProperty(propName, "true");
             SerializerConfig serializerConfig = new SerializerConfig();
             serializerConfig.setClassName("com.hazelcast.internal.serialization.impl.TestSerializerHook$TestSerializerWithTypeConstructor");
-            serializerConfig.setTypeClassName("com.hazelcast.nio.serialization.SampleIdentifiedDataSerializable");
+            serializerConfig.setTypeClassName("com.hazelcast.internal.serialization.impl.SampleIdentifiedDataSerializable");
 
             SerializationConfig serializationConfig = getConfig().getSerializationConfig();
             serializationConfig.addSerializerConfig(serializerConfig);
@@ -107,7 +106,7 @@ public class SerializerHookLoaderTest extends HazelcastTestSupport {
     public void testLoad_implException() {
         SerializerConfig serializerConfig = new SerializerConfig();
         serializerConfig.setClassName("NOT FOUND CLASS");
-        serializerConfig.setTypeClassName("com.hazelcast.nio.serialization.SampleIdentifiedDataSerializable");
+        serializerConfig.setTypeClassName("com.hazelcast.internal.serialization.impl.SampleIdentifiedDataSerializable");
 
         SerializationConfig serializationConfig = getConfig().getSerializationConfig();
         serializationConfig.addSerializerConfig(serializerConfig);

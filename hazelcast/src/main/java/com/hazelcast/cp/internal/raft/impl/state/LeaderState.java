@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,10 @@
 
 package com.hazelcast.cp.internal.raft.impl.state;
 
-import com.hazelcast.core.Endpoint;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
+import com.hazelcast.internal.util.Clock;
 
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
@@ -30,12 +32,15 @@ import java.util.Map;
  */
 public class LeaderState {
 
-    private final Map<Endpoint, FollowerState> followerStates = new HashMap<Endpoint, FollowerState>();
+    private final Map<RaftEndpoint, FollowerState> followerStates = new HashMap<>();
+    private final QueryState queryState = new QueryState();
+    private long flushedLogIndex;
 
-    LeaderState(Collection<Endpoint> remoteMembers, long lastLogIndex) {
-        for (Endpoint follower : remoteMembers) {
+    LeaderState(Collection<RaftEndpoint> remoteMembers, long lastLogIndex) {
+        for (RaftEndpoint follower : remoteMembers) {
             followerStates.put(follower, new FollowerState(0L, lastLogIndex + 1));
         }
+        flushedLogIndex = lastLogIndex;
     }
 
     /**
@@ -43,7 +48,7 @@ public class LeaderState {
      * Follower's {@code nextIndex} will be set to {@code lastLogIndex + 1}
      * and {@code matchIndex} to 0.
      */
-    public void add(Endpoint follower, long lastLogIndex) {
+    public void add(RaftEndpoint follower, long lastLogIndex) {
         assert !followerStates.containsKey(follower) : "Already known follower " + follower;
         followerStates.put(follower, new FollowerState(0L, lastLogIndex + 1));
     }
@@ -51,8 +56,9 @@ public class LeaderState {
     /**
      * Removes a follower from leader maintained state.
      */
-    public void remove(Endpoint follower) {
+    public void remove(RaftEndpoint follower) {
         FollowerState removed = followerStates.remove(follower);
+        queryState.removeAck(follower);
         assert removed != null : "Unknown follower " + follower;
     }
 
@@ -71,13 +77,47 @@ public class LeaderState {
         return indices;
     }
 
-    public FollowerState getFollowerState(Endpoint follower) {
+    public FollowerState getFollowerState(RaftEndpoint follower) {
         FollowerState followerState = followerStates.get(follower);
         assert followerState != null : "Unknown follower " + follower;
         return followerState;
     }
 
-    public Map<Endpoint, FollowerState> getFollowerStates() {
+    public Map<RaftEndpoint, FollowerState> getFollowerStates() {
         return followerStates;
     }
+
+    public QueryState queryState() {
+        return queryState;
+    }
+
+    public long queryRound() {
+        return queryState.queryRound();
+    }
+
+    public void flushedLogIndex(long flushedLogIndex) {
+        assert flushedLogIndex > this.flushedLogIndex;
+        this.flushedLogIndex = flushedLogIndex;
+    }
+
+    public long flushedLogIndex() {
+        return flushedLogIndex;
+    }
+
+    /**
+     * Returns the earliest append response ack timestamp of the majority nodes
+     */
+    public long majorityAppendRequestAckTimestamp(int majority) {
+        long[] ackTimes = new long[followerStates.size() + 1];
+        int i = 0;
+        ackTimes[i] = Clock.currentTimeMillis();
+        for (FollowerState followerState : followerStates.values()) {
+            ackTimes[++i] = followerState.appendRequestAckTimestamp();
+        }
+
+        Arrays.sort(ackTimes);
+
+        return ackTimes[ackTimes.length - majority];
+    }
+
 }

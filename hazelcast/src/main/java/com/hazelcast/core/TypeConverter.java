@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,19 +17,20 @@
 package com.hazelcast.core;
 
 /**
- * Implementations of this interface define a certain type conversation.
- * Conversation can happen from any kind of {@link java.lang.Comparable}
+ * Implementations of this interface define a certain type conversion.
+ * Conversion can happen from any kind of {@link java.lang.Comparable}
  * type to another.
- * <p/>
+ * <p>
  * Implementations of TypeConverter need to be fully thread-safe and
  * must have no internal state as they are expected to be used by
  * multiple threads and with shared instances.
  */
+@FunctionalInterface
 public interface TypeConverter {
 
     /**
-     * Compares a {@link java.lang.Comparable} typed value to another one.
-     * Since TypeConverters are not statically typed itself the developer
+     * Compares a {@link java.lang.Comparable}-typed value to another.
+     * Since TypeConverters are not statically typed themselves, the developer
      * needs to take care of correct usage of input and output types.
      *
      * @param value the value to be converted

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@
 
 package com.hazelcast.cp.internal.datastructures;
 
-import com.hazelcast.cp.internal.datastructures.countdownlatch.RaftCountDownLatchService;
+import com.hazelcast.cp.internal.datastructures.countdownlatch.CountDownLatchService;
 import com.hazelcast.cp.internal.session.ProxySessionManagerService;
-import com.hazelcast.cp.internal.datastructures.atomiclong.RaftAtomicLongService;
-import com.hazelcast.cp.internal.datastructures.atomicref.RaftAtomicRefService;
-import com.hazelcast.cp.internal.datastructures.lock.RaftLockService;
-import com.hazelcast.cp.internal.datastructures.semaphore.RaftSemaphoreService;
-import com.hazelcast.spi.NodeEngine;
+import com.hazelcast.cp.internal.datastructures.atomiclong.AtomicLongService;
+import com.hazelcast.cp.internal.datastructures.atomicref.AtomicRefService;
+import com.hazelcast.cp.internal.datastructures.lock.LockService;
+import com.hazelcast.cp.internal.datastructures.semaphore.SemaphoreService;
+import com.hazelcast.spi.impl.NodeEngine;
 import com.hazelcast.spi.impl.servicemanager.ServiceDescriptor;
 import com.hazelcast.spi.impl.servicemanager.ServiceDescriptorProvider;
 
@@ -34,24 +34,24 @@ public class RaftDataServiceDescriptorProvider implements ServiceDescriptorProvi
     @Override
     public ServiceDescriptor[] createServiceDescriptors() {
         return new ServiceDescriptor[] {
-            new RaftAtomicLongServiceDescriptor(),
-            new RaftLockServiceDescriptor(),
+            new AtomicLongServiceDescriptor(),
+            new LockServiceDescriptor(),
             new RaftSessionManagerServiceDescriptor(),
-            new RaftAtomicRefServiceDescriptor(),
-            new RaftSemaphoreServiceDescriptor(),
-            new RaftCountDownLatcherviceDescriptor(),
+            new AtomicRefServiceDescriptor(),
+            new SemaphoreServiceDescriptor(),
+            new CountDownLatchServiceDescriptor(),
         };
     }
 
-    private static class RaftAtomicLongServiceDescriptor implements ServiceDescriptor {
+    private static class AtomicLongServiceDescriptor implements ServiceDescriptor {
         @Override
         public String getServiceName() {
-            return RaftAtomicLongService.SERVICE_NAME;
+            return AtomicLongService.SERVICE_NAME;
         }
 
         @Override
         public Object getService(NodeEngine nodeEngine) {
-            return new RaftAtomicLongService(nodeEngine);
+            return new AtomicLongService(nodeEngine);
         }
     }
 
@@ -67,51 +67,51 @@ public class RaftDataServiceDescriptorProvider implements ServiceDescriptorProvi
         }
     }
 
-    private static class RaftLockServiceDescriptor implements ServiceDescriptor {
+    private static class LockServiceDescriptor implements ServiceDescriptor {
         @Override
         public String getServiceName() {
-            return RaftLockService.SERVICE_NAME;
+            return LockService.SERVICE_NAME;
         }
 
         @Override
         public Object getService(NodeEngine nodeEngine) {
-            return new RaftLockService(nodeEngine);
+            return new LockService(nodeEngine);
         }
     }
 
-    private static class RaftAtomicRefServiceDescriptor implements ServiceDescriptor {
+    private static class AtomicRefServiceDescriptor implements ServiceDescriptor {
         @Override
         public String getServiceName() {
-            return RaftAtomicRefService.SERVICE_NAME;
+            return AtomicRefService.SERVICE_NAME;
         }
 
         @Override
         public Object getService(NodeEngine nodeEngine) {
-            return new RaftAtomicRefService(nodeEngine);
+            return new AtomicRefService(nodeEngine);
         }
     }
 
-    private static class RaftSemaphoreServiceDescriptor implements ServiceDescriptor {
+    private static class SemaphoreServiceDescriptor implements ServiceDescriptor {
         @Override
         public String getServiceName() {
-                return RaftSemaphoreService.SERVICE_NAME;
+                return SemaphoreService.SERVICE_NAME;
         }
 
         @Override
         public Object getService(NodeEngine nodeEngine) {
-            return new RaftSemaphoreService(nodeEngine);
+            return new SemaphoreService(nodeEngine);
         }
     }
 
-    private static class RaftCountDownLatcherviceDescriptor implements ServiceDescriptor {
+    private static class CountDownLatchServiceDescriptor implements ServiceDescriptor {
         @Override
         public String getServiceName() {
-            return RaftCountDownLatchService.SERVICE_NAME;
+            return CountDownLatchService.SERVICE_NAME;
         }
 
         @Override
         public Object getService(NodeEngine nodeEngine) {
-            return new RaftCountDownLatchService(nodeEngine);
+            return new CountDownLatchService(nodeEngine);
         }
     }
 }

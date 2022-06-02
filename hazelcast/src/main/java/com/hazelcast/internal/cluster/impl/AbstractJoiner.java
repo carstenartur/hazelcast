@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,25 +17,25 @@
 package com.hazelcast.internal.cluster.impl;
 
 import com.hazelcast.cluster.ClusterState;
-import com.hazelcast.cluster.Joiner;
+import com.hazelcast.internal.cluster.Joiner;
 import com.hazelcast.config.Config;
-import com.hazelcast.core.Member;
+import com.hazelcast.cluster.Member;
 import com.hazelcast.core.MemberLeftException;
-import com.hazelcast.instance.Node;
-import com.hazelcast.instance.NodeExtension;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.instance.impl.NodeExtension;
 import com.hazelcast.internal.cluster.ClusterService;
 import com.hazelcast.internal.cluster.impl.SplitBrainJoinMessage.SplitBrainMergeCheckResult;
 import com.hazelcast.internal.cluster.impl.operations.MergeClustersOp;
 import com.hazelcast.internal.cluster.impl.operations.SplitBrainMergeValidationOp;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.nio.Address;
-import com.hazelcast.nio.Connection;
-import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.OperationService;
-import com.hazelcast.spi.properties.GroupProperty;
-import com.hazelcast.util.Clock;
-import com.hazelcast.util.FutureUtil;
+import com.hazelcast.cluster.Address;
+import com.hazelcast.internal.nio.Connection;
+import com.hazelcast.spi.impl.NodeEngine;
+import com.hazelcast.spi.impl.operationservice.Operation;
+import com.hazelcast.spi.impl.operationservice.OperationService;
+import com.hazelcast.spi.properties.ClusterProperty;
+import com.hazelcast.internal.util.Clock;
+import com.hazelcast.internal.util.FutureUtil;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -50,8 +50,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import static com.hazelcast.cluster.ClusterState.FROZEN;
 import static com.hazelcast.cluster.ClusterState.IN_TRANSITION;
 import static com.hazelcast.instance.EndpointQualifier.MEMBER;
-import static com.hazelcast.spi.impl.OperationResponseHandlerFactory.createEmptyResponseHandler;
-import static com.hazelcast.util.FutureUtil.waitWithDeadline;
+import static com.hazelcast.spi.impl.operationservice.OperationResponseHandlerFactory.createEmptyResponseHandler;
+import static com.hazelcast.internal.util.FutureUtil.waitWithDeadline;
 import static java.lang.Thread.currentThread;
 
 public abstract class AbstractJoiner
@@ -70,7 +70,7 @@ public abstract class AbstractJoiner
     protected final ILogger logger;
 
     // map blacklisted endpoints. Boolean value represents if blacklist is temporary or permanent
-    protected final ConcurrentMap<Address, Boolean> blacklistedAddresses = new ConcurrentHashMap<Address, Boolean>();
+    protected final ConcurrentMap<Address, Boolean> blacklistedAddresses = new ConcurrentHashMap<>();
     protected final ClusterJoinManager clusterJoinManager;
 
     private final AtomicLong joinStartTime = new AtomicLong(Clock.currentTimeMillis());
@@ -96,7 +96,7 @@ public abstract class AbstractJoiner
         this.config = node.config;
         this.clusterService = node.getClusterService();
         this.clusterJoinManager = clusterService.getClusterJoinManager();
-        this.mergeNextRunDelayMs = node.getProperties().getMillis(GroupProperty.MERGE_NEXT_RUN_DELAY_SECONDS);
+        this.mergeNextRunDelayMs = node.getProperties().getMillis(ClusterProperty.MERGE_NEXT_RUN_DELAY_SECONDS);
     }
 
     @Override
@@ -111,8 +111,10 @@ public abstract class AbstractJoiner
 
     @Override
     public void blacklist(Address address, boolean permanent) {
-        logger.info(address + " is added to the blacklist.");
-        blacklistedAddresses.putIfAbsent(address, permanent);
+        Boolean prev = blacklistedAddresses.putIfAbsent(address, permanent);
+        if (prev == null) {
+            logger.info(address + " is " + (permanent ? "permanently " : "") + "added to the blacklist.");
+        }
     }
 
     @Override
@@ -182,13 +184,14 @@ public abstract class AbstractJoiner
     private void ensureConnectionToAllMembers() {
         if (clusterService.isJoined()) {
             logger.fine("Waiting for all connections");
-            int connectAllWaitSeconds = node.getProperties().getSeconds(GroupProperty.CONNECT_ALL_WAIT_SECONDS);
+            int connectAllWaitSeconds = node.getProperties().getSeconds(ClusterProperty.CONNECT_ALL_WAIT_SECONDS);
             int checkCount = 0;
             while (checkCount++ < connectAllWaitSeconds) {
                 boolean allConnected = true;
                 Collection<Member> members = clusterService.getMembers();
                 for (Member member : members) {
-                    if (!member.localMember() && node.getEndpointManager(MEMBER).getOrConnect(member.getAddress()) == null) {
+                    if (!member.localMember() && node.getServer().getConnectionManager(MEMBER)
+                            .getOrConnect(member.getAddress()) == null) {
                         allConnected = false;
                         if (logger.isFineEnabled()) {
                             logger.fine("Not-connected to " + member.getAddress());
@@ -209,7 +212,7 @@ public abstract class AbstractJoiner
     }
 
     protected final long getMaxJoinMillis() {
-        return node.getProperties().getMillis(GroupProperty.MAX_JOIN_SECONDS);
+        return node.getProperties().getMillis(ClusterProperty.MAX_JOIN_SECONDS);
     }
 
     protected final long getMaxJoinTimeToMasterNode() {
@@ -217,7 +220,7 @@ public abstract class AbstractJoiner
         // this should be significantly greater than MAX_WAIT_SECONDS_BEFORE_JOIN property
         // hence we add 10 seconds more
         return TimeUnit.SECONDS.toMillis(MIN_WAIT_BEFORE_JOIN_SECONDS)
-                + node.getProperties().getMillis(GroupProperty.MAX_WAIT_SECONDS_BEFORE_JOIN);
+                + node.getProperties().getMillis(ClusterProperty.MAX_WAIT_SECONDS_BEFORE_JOIN);
     }
 
     /**
@@ -238,7 +241,7 @@ public abstract class AbstractJoiner
             logger.fine("Sending SplitBrainJoinMessage to " + target);
         }
 
-        Connection conn = node.getEndpointManager(MEMBER).getOrConnect(target, true);
+        Connection conn = node.getServer().getConnectionManager(MEMBER).getOrConnect(target, true);
         long timeout = SPLIT_BRAIN_CONN_TIMEOUT_MILLIS;
         while (conn == null) {
             timeout -= SPLIT_BRAIN_SLEEP_TIME_MILLIS;
@@ -253,7 +256,7 @@ public abstract class AbstractJoiner
                 currentThread().interrupt();
                 return null;
             }
-            conn = node.getEndpointManager(MEMBER).getConnection(target);
+            conn = node.getServer().getConnectionManager(MEMBER).get(target);
         }
 
         NodeEngine nodeEngine = node.nodeEngine;
@@ -285,7 +288,7 @@ public abstract class AbstractJoiner
 
         OperationService operationService = node.nodeEngine.getOperationService();
         Collection<Member> memberList = clusterService.getMembers();
-        Collection<Future> futures = new ArrayList<Future>(memberList.size());
+        Collection<Future> futures = new ArrayList<>(memberList.size());
         for (Member member : memberList) {
             if (!member.localMember()) {
                 Operation op = new MergeClustersOp(targetAddress);
@@ -305,7 +308,7 @@ public abstract class AbstractJoiner
     /**
      * Prepares the cluster state for cluster merge by changing it to {@link ClusterState#FROZEN}. It expects the current
      * cluster state to be {@link ClusterState#ACTIVE} or {@link ClusterState#NO_MIGRATION}.
-     * The method will keep trying to change the cluster state until {@link GroupProperty#MERGE_NEXT_RUN_DELAY_SECONDS} elapses
+     * The method will keep trying to change the cluster state until {@link ClusterProperty#MERGE_NEXT_RUN_DELAY_SECONDS} elapses
      * or until the sleep period between two attempts has been interrupted.
      *
      * @param clusterService the cluster service used for state change

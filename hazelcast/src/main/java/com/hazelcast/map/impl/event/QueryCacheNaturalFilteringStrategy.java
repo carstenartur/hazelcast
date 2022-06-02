@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,11 +24,11 @@ import com.hazelcast.map.impl.MapPartitionLostEventFilter;
 import com.hazelcast.map.impl.MapServiceContext;
 import com.hazelcast.map.impl.nearcache.invalidation.UuidFilter;
 import com.hazelcast.map.impl.query.QueryEventFilter;
-import com.hazelcast.nio.Address;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.EventFilter;
+import com.hazelcast.cluster.Address;
+import com.hazelcast.internal.serialization.Data;
+import com.hazelcast.spi.impl.eventservice.EventFilter;
 import com.hazelcast.spi.impl.eventservice.impl.TrueEventFilter;
-import com.hazelcast.util.collection.Int2ObjectHashMap;
+import com.hazelcast.internal.util.collection.Int2ObjectHashMap;
 
 import java.util.Collection;
 
@@ -38,7 +38,7 @@ import static com.hazelcast.core.EntryEventType.EXPIRED;
 import static com.hazelcast.core.EntryEventType.INVALIDATION;
 import static com.hazelcast.core.EntryEventType.REMOVED;
 import static com.hazelcast.core.EntryEventType.UPDATED;
-import static com.hazelcast.util.MapUtil.createInt2ObjectHashMap;
+import static com.hazelcast.internal.util.MapUtil.createInt2ObjectHashMap;
 
 /**
  * A filtering strategy that preserves the default behavior in most cases, but processes entry events for listeners with
@@ -49,7 +49,7 @@ import static com.hazelcast.util.MapUtil.createInt2ObjectHashMap;
  * This filtering strategy is used when Hazelcast property {@code hazelcast.map.entry.filtering.natural.event.types} is set
  * to {@code true}. The complete decision matrix for event types published with this filtering strategy.
  * <p>
- * <table>
+ * <table summary="">
  *     <tr>
  *         <td>Old value</td>
  *         <td>New value</td>
@@ -117,8 +117,8 @@ public class QueryCacheNaturalFilteringStrategy extends AbstractFilteringStrateg
             }
         }
 
-        if (originalFilterEventTypeMatches && filter instanceof TrueEventFilter) {
-            return eventType.getType();
+        if (filter instanceof TrueEventFilter) {
+            return originalFilterEventTypeMatches ? eventType.getType() : FILTER_DOES_NOT_MATCH;
         }
 
         if (filter instanceof QueryEventFilter) {

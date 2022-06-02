@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,19 @@
 
 package com.hazelcast.core.standalone;
 
+import com.hazelcast.collection.IQueue;
+import com.hazelcast.config.IndexType;
 import com.hazelcast.core.EntryAdapter;
 import com.hazelcast.core.EntryEvent;
 import com.hazelcast.core.EntryListener;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
-import com.hazelcast.core.IQueue;
-import com.hazelcast.core.ITopic;
-import com.hazelcast.core.Message;
-import com.hazelcast.core.MessageListener;
-import com.hazelcast.query.SqlPredicate;
+import com.hazelcast.map.IMap;
+import com.hazelcast.map.impl.proxy.MapProxyImpl;
+import com.hazelcast.query.Predicates;
+import com.hazelcast.topic.ITopic;
+import com.hazelcast.topic.Message;
+import com.hazelcast.topic.MessageListener;
 import org.junit.Ignore;
 
 import java.io.Serializable;
@@ -37,6 +39,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -302,7 +305,7 @@ public class AllTest {
             public void run() {
                 IMap map = hazelcast.getMap("myMap");
                 try {
-                    map.getAsync(random.nextInt(SIZE)).get();
+                    map.getAsync(random.nextInt(SIZE)).toCompletableFuture().get();
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
                 } catch (ExecutionException e) {
@@ -424,8 +427,8 @@ public class AllTest {
             public void run() {
                 IMap map = hazelcast.getMap("myMap");
                 try {
-                    map.putAsync(random.nextInt(SIZE), new Customer(random.nextInt(100), String.valueOf(random.nextInt(10000)))
-                    ).get();
+                    map.putAsync(random.nextInt(SIZE), new Customer(random.nextInt(100), String.valueOf(random.nextInt(10000))))
+                       .toCompletableFuture().get();
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
                 } catch (ExecutionException e) {
@@ -452,6 +455,15 @@ public class AllTest {
                 IMap map = hazelcast.getMap("myMap");
                 map.putIfAbsent(random.nextInt(SIZE), new Customer(random.nextInt(100), String.valueOf(random.nextInt(10000))));
             }
+        }, 5);
+        addOperation(operations, () -> {
+            MapProxyImpl<Object, Object> map = (MapProxyImpl<Object, Object>) hazelcast.getMap("myMap");
+            map.putIfAbsentAsync(random.nextInt(SIZE), new Customer(random.nextInt(100), String.valueOf(random.nextInt(10000))),
+                    10, TimeUnit.MILLISECONDS);
+        }, 5);
+        addOperation(operations, () -> {
+            MapProxyImpl<Object, Object> map = (MapProxyImpl<Object, Object>) hazelcast.getMap("myMap");
+            map.putIfAbsentAsync(random.nextInt(SIZE), new Customer(random.nextInt(100), String.valueOf(random.nextInt(10000))));
         }, 5);
         addOperation(operations, new Runnable() {
             public void run() {
@@ -515,7 +527,7 @@ public class AllTest {
         addOperation(operations, new Runnable() {
             public void run() {
                 IMap map = hazelcast.getMap("myMap");
-                Iterator it = map.entrySet(new SqlPredicate("year=" + random.nextInt(100))).iterator();
+                Iterator it = map.entrySet(Predicates.sql("year=" + random.nextInt(100))).iterator();
                 while (it.hasNext()) {
                     it.next();
                 }
@@ -524,7 +536,7 @@ public class AllTest {
         addOperation(operations, new Runnable() {
             public void run() {
                 IMap map = hazelcast.getMap("myMap");
-                Iterator it = map.entrySet(new SqlPredicate("name=" + random.nextInt(10000))).iterator();
+                Iterator it = map.entrySet(Predicates.sql("name=" + random.nextInt(10000))).iterator();
                 while (it.hasNext()) {
                     it.next();
                 }
@@ -533,7 +545,7 @@ public class AllTest {
         addOperation(operations, new Runnable() {
             public void run() {
                 IMap map = hazelcast.getMap("myMap");
-                Iterator it = map.keySet(new SqlPredicate("name=" + random.nextInt(10000))).iterator();
+                Iterator it = map.keySet(Predicates.sql("name=" + random.nextInt(10000))).iterator();
                 while (it.hasNext()) {
                     it.next();
                 }
@@ -551,7 +563,7 @@ public class AllTest {
         addOperation(operations, new Runnable() {
             public void run() {
                 IMap map = hazelcast.getMap("myMap");
-                Iterator it = map.localKeySet(new SqlPredicate("name=" + random.nextInt(10000))).iterator();
+                Iterator it = map.localKeySet(Predicates.sql("name=" + random.nextInt(10000))).iterator();
                 while (it.hasNext()) {
                     it.next();
                 }
@@ -567,7 +579,7 @@ public class AllTest {
                         latch.countDown();
                     }
                 };
-                String id = map.addEntryListener(listener, true);
+                UUID id = map.addEntryListener(listener, true);
                 try {
                     latch.await();
                 } catch (InterruptedException e) {
@@ -579,7 +591,7 @@ public class AllTest {
         addOperation(operations, new Runnable() {
             public void run() {
                 IMap map = hazelcast.getMap("myMap");
-                map.addIndex("year", true);
+                map.addIndex(IndexType.SORTED, "year");
             }
         }, 1);
         addOperation(operations, new Runnable() {
@@ -592,7 +604,7 @@ public class AllTest {
                         latch.countDown();
                     }
                 };
-                String id = map.addLocalEntryListener(listener);
+                UUID id = map.addLocalEntryListener(listener);
                 try {
                     latch.await();
                 } catch (InterruptedException e) {

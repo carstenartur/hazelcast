@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.hazelcast.cp.internal.raft.impl.dataservice;
 import com.hazelcast.cp.CPGroupId;
 import com.hazelcast.cp.internal.raft.SnapshotAwareService;
 
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -30,7 +31,7 @@ public class RaftDataService implements SnapshotAwareService<Map<Long, Object>> 
 
     public static final String SERVICE_NAME = "RaftTestService";
 
-    private final Map<Long, Object> values = new ConcurrentHashMap<Long, Object>();
+    private final Map<Long, Object> values = new ConcurrentHashMap<>();
 
     public RaftDataService() {
     }
@@ -52,12 +53,19 @@ public class RaftDataService implements SnapshotAwareService<Map<Long, Object>> 
     }
 
     public Set<Object> values() {
-        return new HashSet<Object>(values.values());
+        return new HashSet<>(values.values());
+    }
+
+    public Object[] valuesArray() {
+        return values.entrySet().stream()
+                .sorted(Comparator.comparingLong(Entry::getKey))
+                .map(Entry::getValue)
+                .toArray();
     }
 
     @Override
     public Map<Long, Object> takeSnapshot(CPGroupId groupId, long commitIndex) {
-        Map<Long, Object> snapshot = new HashMap<Long, Object>();
+        Map<Long, Object> snapshot = new HashMap<>();
         for (Entry<Long, Object> e : values.entrySet()) {
             assert e.getKey() <= commitIndex : "Key: " + e.getKey() + ", commit-index: " + commitIndex;
             snapshot.put(e.getKey(), e.getValue());

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,9 @@ package com.hazelcast.internal.eviction;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.EntryEvent;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
 import com.hazelcast.core.LifecycleEvent;
-import com.hazelcast.instance.LifecycleServiceImpl;
+import com.hazelcast.instance.impl.LifecycleServiceImpl;
+import com.hazelcast.map.IMap;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.PartitionContainer;
 import com.hazelcast.map.impl.eviction.MapClearExpiredRecordsTask;
@@ -29,7 +29,7 @@ import com.hazelcast.map.listener.EntryExpiredListener;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -43,6 +43,7 @@ import static com.hazelcast.core.LifecycleEvent.LifecycleState.MERGING;
 import static com.hazelcast.core.LifecycleEvent.LifecycleState.SHUTTING_DOWN;
 import static com.hazelcast.map.impl.MapService.SERVICE_NAME;
 import static com.hazelcast.map.impl.eviction.MapClearExpiredRecordsTask.PROP_PRIMARY_DRIVES_BACKUP;
+import static com.hazelcast.test.Accessors.getNodeEngineImpl;
 import static java.lang.String.format;
 import static java.lang.System.getProperty;
 import static java.lang.System.setProperty;
@@ -52,8 +53,13 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class MapExpirationManagerTest extends AbstractExpirationManagerTest {
+
+    @Override
+    protected Config getConfig() {
+        return smallInstanceConfig();
+    }
 
     @Test
     public void restarts_running_backgroundClearTask_when_lifecycleState_turns_to_MERGED() {
@@ -64,12 +70,7 @@ public class MapExpirationManagerTest extends AbstractExpirationManagerTest {
         final AtomicInteger expirationCounter = new AtomicInteger();
 
         IMap<Integer, Integer> map = node.getMap("test");
-        map.addEntryListener(new EntryExpiredListener() {
-            @Override
-            public void entryExpired(EntryEvent event) {
-                expirationCounter.incrementAndGet();
-            }
-        }, true);
+        map.addEntryListener((EntryExpiredListener) event -> expirationCounter.incrementAndGet(), true);
 
         map.put(1, 1, 3, TimeUnit.SECONDS);
 
@@ -94,13 +95,21 @@ public class MapExpirationManagerTest extends AbstractExpirationManagerTest {
         IMap<Integer, Integer> map = node.getMap("test");
         map.put(1, 1);
 
-        assertTrueAllTheTime(new AssertTask() {
-            @Override
-            public void run() {
-                assertFalse("There should be zero ClearExpiredRecordsTask",
-                        hasClearExpiredRecordsTaskStarted(node));
-            }
-        }, 3);
+        assertTrueAllTheTime(() -> assertFalse("There should be zero ClearExpiredRecordsTask",
+                hasClearExpiredRecordsTaskStarted(node)), 3);
+    }
+
+    @Test
+    public void clearExpiredRecordsTask_should_not_be_started_when_disabled() {
+        Config config = getConfig();
+        config.setProperty(cleanupTaskEnabledPropName(), "false");
+        final HazelcastInstance node = createHazelcastInstance(config);
+
+        IMap<Integer, Integer> map = node.getMap("test");
+        map.put(1, 1, 1, SECONDS);
+
+        assertTrueAllTheTime(() -> assertFalse("There should be zero ClearExpiredRecordsTask",
+                hasClearExpiredRecordsTaskStarted(node)), 3);
     }
 
     @Test
@@ -190,7 +199,7 @@ public class MapExpirationManagerTest extends AbstractExpirationManagerTest {
 
     private PartitionContainer[] getPartitionContainers(HazelcastInstance instance) {
         return ((MapService) getNodeEngineImpl(instance)
-                .getService(SERVICE_NAME))
+                                      .getService(SERVICE_NAME))
                 .getMapServiceContext()
                 .getPartitionContainers();
     }
@@ -208,6 +217,11 @@ public class MapExpirationManagerTest extends AbstractExpirationManagerTest {
     @Override
     protected String cleanupPercentagePropName() {
         return MapClearExpiredRecordsTask.PROP_CLEANUP_PERCENTAGE;
+    }
+
+    @Override
+    protected String cleanupTaskEnabledPropName() {
+        return MapClearExpiredRecordsTask.PROP_CLEANUP_ENABLED;
     }
 
     @Override

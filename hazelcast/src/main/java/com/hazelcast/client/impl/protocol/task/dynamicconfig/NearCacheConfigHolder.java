@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ package com.hazelcast.client.impl.protocol.task.dynamicconfig;
 import com.hazelcast.config.NearCacheConfig;
 import com.hazelcast.config.NearCacheConfig.LocalUpdatePolicy;
 import com.hazelcast.config.NearCachePreloaderConfig;
-import com.hazelcast.spi.serialization.SerializationService;
+import com.hazelcast.internal.serialization.SerializationService;
 
 public class NearCacheConfigHolder {
 
@@ -98,7 +98,7 @@ public class NearCacheConfigHolder {
         config.setInvalidateOnChange(invalidateOnChange);
         config.setTimeToLiveSeconds(timeToLiveSeconds);
         config.setMaxIdleSeconds(maxIdleSeconds);
-        config.setEvictionConfig(evictionConfigHolder.asEvictionConfg(serializationService));
+        config.setEvictionConfig(evictionConfigHolder.asEvictionConfig(serializationService));
         config.setCacheLocalEntries(cacheLocalEntries);
         config.setLocalUpdatePolicy(LocalUpdatePolicy.valueOf(localUpdatePolicy));
         config.setPreloaderConfig(preloaderConfig);

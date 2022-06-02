@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,19 +19,39 @@ package com.hazelcast.cp.internal.raft.impl.dataservice;
 import com.hazelcast.cp.CPGroupId;
 import com.hazelcast.cp.internal.raft.SnapshotAwareService;
 import com.hazelcast.cp.internal.raft.impl.testing.RaftRunnable;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.nio.serialization.DataSerializable;
 
-import static com.hazelcast.util.Preconditions.checkTrue;
+import java.io.IOException;
 
-public class RestoreSnapshotRaftRunnable implements RaftRunnable {
+import static com.hazelcast.internal.util.Preconditions.checkTrue;
+
+public class RestoreSnapshotRaftRunnable implements RaftRunnable, DataSerializable {
 
     private CPGroupId groupId;
     private long commitIndex;
     private Object snapshot;
 
+    public RestoreSnapshotRaftRunnable() {
+    }
+
     public RestoreSnapshotRaftRunnable(CPGroupId groupId, long commitIndex, Object snapshot) {
         this.groupId = groupId;
         this.commitIndex = commitIndex;
         this.snapshot = snapshot;
+    }
+
+    public CPGroupId getGroupId() {
+        return groupId;
+    }
+
+    public long getCommitIndex() {
+        return commitIndex;
+    }
+
+    public Object getSnapshot() {
+        return snapshot;
     }
 
     @Override
@@ -40,6 +60,20 @@ public class RestoreSnapshotRaftRunnable implements RaftRunnable {
                 + commitIndex + " expected: " + this.commitIndex);
         ((SnapshotAwareService<Object>) service).restoreSnapshot(groupId, commitIndex, snapshot);
         return null;
+    }
+
+    @Override
+    public void writeData(ObjectDataOutput out) throws IOException {
+        out.writeObject(groupId);
+        out.writeLong(commitIndex);
+        out.writeObject(snapshot);
+    }
+
+    @Override
+    public void readData(ObjectDataInput in) throws IOException {
+        groupId = in.readObject();
+        commitIndex = in.readLong();
+        snapshot = in.readObject();
     }
 
 }

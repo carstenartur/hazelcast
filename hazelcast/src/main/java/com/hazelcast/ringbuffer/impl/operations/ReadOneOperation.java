@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,11 @@ package com.hazelcast.ringbuffer.impl.operations;
 
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.ringbuffer.impl.RingbufferContainer;
-import com.hazelcast.spi.BlockingOperation;
-import com.hazelcast.spi.ReadonlyOperation;
-import com.hazelcast.spi.WaitNotifyKey;
+import com.hazelcast.spi.impl.operationservice.BlockingOperation;
+import com.hazelcast.spi.impl.operationservice.ReadonlyOperation;
+import com.hazelcast.spi.impl.operationservice.WaitNotifyKey;
 
 import java.io.IOException;
 
@@ -43,13 +43,18 @@ public class ReadOneOperation extends AbstractRingBufferOperation implements Blo
 
     @Override
     public void beforeRun() throws Exception {
-        RingbufferContainer ringbuffer = getRingBufferContainer();
-        ringbuffer.checkBlockableReadSequence(sequence);
+        RingbufferContainer ringbuffer = getRingBufferContainerOrNull();
+        if (ringbuffer != null) {
+            ringbuffer.checkBlockableReadSequence(sequence);
+        }
     }
 
     @Override
     public boolean shouldWait() {
-        RingbufferContainer ringbuffer = getRingBufferContainer();
+        RingbufferContainer ringbuffer = getRingBufferContainerOrNull();
+        if (ringbuffer == null) {
+            return true;
+        }
         if (ringbuffer.isTooLargeSequence(sequence) || ringbuffer.isStaleSequence(sequence)) {
             //no need to wait, let the operation continue and fail in beforeRun
             return false;
@@ -66,8 +71,12 @@ public class ReadOneOperation extends AbstractRingBufferOperation implements Blo
 
     @Override
     public WaitNotifyKey getWaitKey() {
-        RingbufferContainer ringbuffer = getRingBufferContainer();
-        return ringbuffer.getRingEmptyWaitNotifyKey();
+        return getRingbufferWaitNotifyKey();
+    }
+
+    @Override
+    public void afterRun() throws Exception {
+        reportReliableTopicReceived(1);
     }
 
     @Override
@@ -81,7 +90,7 @@ public class ReadOneOperation extends AbstractRingBufferOperation implements Blo
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return READ_ONE_OPERATION;
     }
 

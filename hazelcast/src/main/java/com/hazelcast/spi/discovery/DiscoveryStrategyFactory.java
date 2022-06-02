@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,13 +23,15 @@ import com.hazelcast.logging.ILogger;
 import java.util.Collection;
 import java.util.Map;
 
+import static com.hazelcast.spi.discovery.DiscoveryStrategyFactory.DiscoveryStrategyLevel.UNKNOWN;
+
 /**
- * The <tt>DiscoveryStrategyFactory</tt> is the entry point for strategy vendors. Every
+ * The <code>DiscoveryStrategyFactory</code> is the entry point for strategy vendors. Every
  * {@link DiscoveryStrategy} should have its own factory building it. In rare cases (like
  * multiple version support or similar) one factory might return different provider
- * implementations based on certain criteria. It is also up to the <tt>DiscoveryStrategyFactory</tt>
+ * implementations based on certain criteria. It is also up to the <code>DiscoveryStrategyFactory</code>
  * to cache instances and return them in some kind of a Singleton-like fashion.
- * <p/>
+ * <p>
  * The defined set of configuration properties describes the existing properties inside
  * of the Hazelcast configuration. It will be used for automatic conversion,
  * type-checking and validation before handing them to the {@link DiscoveryStrategy}.
@@ -56,9 +58,9 @@ public interface DiscoveryStrategyFactory {
      * properties. The provided {@link HazelcastInstance} can be used to register instances in
      * a service registry whenever the discovery strategy is started.
      *
-     * @param discoveryNode the current local <tt>DiscoveryNode</tt>, representing the local
+     * @param discoveryNode the current local <code>DiscoveryNode</code>, representing the local
      *                      connection information if running on a Hazelcast member, otherwise on
-     *                      Hazelcast clients always <tt>null</tt>
+     *                      Hazelcast clients always <code>null</code>
      * @param logger        the logger instance
      * @param properties    the properties parsed from the configuration
      * @return a new instance of the discovery strategy
@@ -73,4 +75,69 @@ public interface DiscoveryStrategyFactory {
      * @return a set of expected configuration properties
      */
     Collection<PropertyDefinition> getConfigurationProperties();
+
+    /**
+     * Checks whether the given discovery strategy may be applied with no additional config to the environment in which Hazelcast
+     * is currently running.
+     * <p>
+     * Used by the auto detection mechanism to decide which strategy should be used.
+     */
+    default boolean isAutoDetectionApplicable() {
+        return false;
+    }
+
+    /**
+     * Level of the discovery strategy.
+     */
+    default DiscoveryStrategyLevel discoveryStrategyLevel() {
+        return UNKNOWN;
+    }
+
+    /**
+     * Level of the discovery strategy.
+     * <p>
+     * Discovery strategies can have different levels. They can be at the level of Cloud Virtual Machines, for example, AWS EC2
+     * Instance or GCP Virtual Machine. They can also be at the level of some specific platform or framework, like Kubernetes.
+     * <p>
+     * It decides on the priority in the auto detection mechanism. As an example, let's take Kubernetes environment installed
+     * on AWS EC2 instances. In this case two plugins are auto-detected: hazelcast-aws and hazelcast-kubernetes.
+     * This level decides which one to pick:
+     * <ul>
+     *     <li>hazelcast-aws implements level {@code CLOUD_VM}</li>
+     *     <li>hazelcast-kubernetes implements level {@code PLATFORM}</li>
+     * </ul>
+     * {@code PLATFORM} has higher priority than {@code CLOUD_VM}, so hazelcast-kubernetes plugin is selected.
+     */
+    enum DiscoveryStrategyLevel {
+
+        /**
+         * Level unknown, lowest priority.
+         */
+        UNKNOWN(0),
+
+        /**
+         * VM Machine level, for example, hazelcast-aws or hazelcast-azure.
+         */
+        CLOUD_VM(10),
+
+        /**
+         * Platform level, for example, hazelcast-kubernetes.
+         */
+        PLATFORM(20),
+
+        /**
+         * Custom strategy level, highest priority.
+         */
+        CUSTOM(50);
+
+        private int priority;
+
+        DiscoveryStrategyLevel(int priority) {
+            this.priority = priority;
+        }
+
+        public int getPriority() {
+            return priority;
+        }
+    }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,13 @@ package com.hazelcast.internal.management.events;
 
 import com.hazelcast.internal.management.events.EventMetadata.EventType;
 
+import java.util.UUID;
+
 import static com.hazelcast.internal.management.events.EventMetadata.EventType.WAN_SYNC_STARTED;
 
-public class WanSyncStartedEvent extends AbstractWanEventBase {
-    public WanSyncStartedEvent(String wanReplicationName, String targetGroupName, String mapName) {
-        super(wanReplicationName, targetGroupName, mapName);
+public class WanSyncStartedEvent extends AbstractWanAntiEntropyEventBase {
+    public WanSyncStartedEvent(UUID uuid, String wanReplicationName, String wanPublisherId, String mapName) {
+        super(uuid, wanReplicationName, wanPublisherId, mapName);
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,15 @@
 
 package com.hazelcast.query.impl;
 
+import com.hazelcast.config.IndexConfig;
 import com.hazelcast.core.TypeConverter;
-import com.hazelcast.monitor.impl.PerIndexStats;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.monitor.impl.PerIndexStats;
+import com.hazelcast.query.Predicate;
+import com.hazelcast.query.impl.GlobalIndexPartitionTracker.PartitionStamp;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Set;
 
 /**
@@ -30,13 +33,13 @@ import java.util.Set;
  */
 public class GlobalQueryContextWithStats extends QueryContext {
 
-    private final HashMap<String, QueryTrackingIndex> knownIndexes = new HashMap<String, QueryTrackingIndex>();
+    private final HashMap<String, QueryTrackingIndex> knownIndexes = new HashMap<>();
 
-    private final HashSet<QueryTrackingIndex> trackedIndexes = new HashSet<QueryTrackingIndex>(8);
+    private final HashSet<QueryTrackingIndex> trackedIndexes = new HashSet<>(8);
 
     @Override
-    void attachTo(Indexes indexes) {
-        super.attachTo(indexes);
+    void attachTo(Indexes indexes, int ownedPartitionCount) {
+        super.attachTo(indexes, ownedPartitionCount);
         for (QueryTrackingIndex trackedIndex : trackedIndexes) {
             trackedIndex.resetPerQueryStats();
         }
@@ -52,7 +55,7 @@ public class GlobalQueryContextWithStats extends QueryContext {
 
     @Override
     public Index matchIndex(String pattern, IndexMatchHint matchHint) {
-        InternalIndex delegate = indexes.matchIndex(pattern, matchHint);
+        InternalIndex delegate = indexes.matchIndex(pattern, matchHint, ownedPartitionCount);
         if (delegate == null) {
             return null;
         }
@@ -69,6 +72,7 @@ public class GlobalQueryContextWithStats extends QueryContext {
         return trackingIndex;
     }
 
+    @SuppressWarnings({"rawtypes", "checkstyle:MethodCount"})
     private static class QueryTrackingIndex implements InternalIndex {
 
         private InternalIndex delegate;
@@ -100,6 +104,11 @@ public class GlobalQueryContextWithStats extends QueryContext {
         }
 
         @Override
+        public IndexConfig getConfig() {
+            return delegate.getConfig();
+        }
+
+        @Override
         public boolean isOrdered() {
             return delegate.isOrdered();
         }
@@ -110,13 +119,100 @@ public class GlobalQueryContextWithStats extends QueryContext {
         }
 
         @Override
-        public void putEntry(QueryableEntry entry, Object oldValue, OperationSource operationSource) {
-            delegate.putEntry(entry, oldValue, operationSource);
+        public void putEntry(CachedQueryEntry newEntry, CachedQueryEntry oldEntry, QueryableEntry entryToStore,
+                             OperationSource operationSource) {
+            delegate.putEntry(newEntry, oldEntry, entryToStore, operationSource);
         }
 
         @Override
-        public void removeEntry(Data key, Object value, OperationSource operationSource) {
-            delegate.removeEntry(key, value, operationSource);
+        public void removeEntry(CachedQueryEntry entry, OperationSource operationSource) {
+            delegate.removeEntry(entry, operationSource);
+        }
+
+        @Override
+        public boolean isEvaluateOnly() {
+            return delegate.isEvaluateOnly();
+        }
+
+        @Override
+        public boolean canEvaluate(Class<? extends Predicate> predicateClass) {
+            return delegate.canEvaluate(predicateClass);
+        }
+
+        @Override
+        public Set<QueryableEntry> evaluate(Predicate predicate) {
+            Set<QueryableEntry> result = delegate.evaluate(predicate);
+            hasQueries = true;
+            return result;
+        }
+
+        @Override
+        public Iterator<QueryableEntry> getSqlRecordIterator(boolean descending) {
+            Iterator<QueryableEntry> result = delegate.getSqlRecordIterator(descending);
+            hasQueries = true;
+            return result;
+        }
+
+        @Override
+        public Iterator<QueryableEntry> getSqlRecordIterator(Comparable value) {
+            Iterator<QueryableEntry> result = delegate.getSqlRecordIterator(value);
+            hasQueries = true;
+            return result;
+        }
+
+        @Override
+        public Iterator<QueryableEntry> getSqlRecordIterator(Comparison comparison, Comparable value, boolean descending) {
+            Iterator<QueryableEntry> result = delegate.getSqlRecordIterator(comparison, value, descending);
+            hasQueries = true;
+            return result;
+        }
+
+        @Override
+        public Iterator<QueryableEntry> getSqlRecordIterator(
+            Comparable from,
+            boolean fromInclusive,
+            Comparable to,
+            boolean toInclusive,
+            boolean descending
+        ) {
+            Iterator<QueryableEntry> result = delegate.getSqlRecordIterator(from, fromInclusive, to, toInclusive, descending);
+            hasQueries = true;
+            return result;
+        }
+
+        @Override
+        public Iterator<IndexKeyEntries> getSqlRecordIteratorBatch(Comparable value) {
+            Iterator<IndexKeyEntries> result = delegate.getSqlRecordIteratorBatch(value);
+            hasQueries = true;
+            return result;
+        }
+
+        @Override
+        public Iterator<IndexKeyEntries> getSqlRecordIteratorBatch(boolean descending) {
+            Iterator<IndexKeyEntries> result = delegate.getSqlRecordIteratorBatch(descending);
+            hasQueries = true;
+            return result;
+        }
+
+        @Override
+        public Iterator<IndexKeyEntries> getSqlRecordIteratorBatch(Comparison comparison, Comparable value, boolean descending) {
+            Iterator<IndexKeyEntries> result = delegate.getSqlRecordIteratorBatch(comparison, value, descending);
+            hasQueries = true;
+            return result;
+        }
+
+        @Override
+        public Iterator<IndexKeyEntries> getSqlRecordIteratorBatch(
+                Comparable from,
+                boolean fromInclusive,
+                Comparable to,
+                boolean toInclusive,
+                boolean descending
+        ) {
+            Iterator<IndexKeyEntries> result = delegate.getSqlRecordIteratorBatch(
+                    from, fromInclusive, to, toInclusive, descending);
+            hasQueries = true;
+            return result;
         }
 
         @Override
@@ -168,6 +264,16 @@ public class GlobalQueryContextWithStats extends QueryContext {
         }
 
         @Override
+        public boolean allPartitionsIndexed(int ownedPartitionCount) {
+            return delegate.allPartitionsIndexed(ownedPartitionCount);
+        }
+
+        @Override
+        public void beginPartitionUpdate() {
+            delegate.beginPartitionUpdate();
+        }
+
+        @Override
         public void markPartitionAsIndexed(int partitionId) {
             delegate.markPartitionAsIndexed(partitionId);
         }
@@ -182,6 +288,15 @@ public class GlobalQueryContextWithStats extends QueryContext {
             return delegate.getPerIndexStats();
         }
 
+        @Override
+        public PartitionStamp getPartitionStamp() {
+            return delegate.getPartitionStamp();
+        }
+
+        @Override
+        public boolean validatePartitionStamp(long stamp) {
+            return delegate.validatePartitionStamp(stamp);
+        }
     }
 
 }

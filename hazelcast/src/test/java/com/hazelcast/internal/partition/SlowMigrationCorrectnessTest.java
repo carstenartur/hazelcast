@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,19 @@
 
 package com.hazelcast.internal.partition;
 
+import com.hazelcast.cluster.Address;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.instance.TestUtil;
-import com.hazelcast.nio.Address;
-import com.hazelcast.spi.properties.GroupProperty;
-import com.hazelcast.test.HazelcastParametersRunnerFactory;
+import com.hazelcast.instance.impl.TestUtil;
+import com.hazelcast.internal.util.RandomPicker;
+import com.hazelcast.spi.properties.ClusterProperty;
+import com.hazelcast.test.HazelcastParametrizedRunner;
+import com.hazelcast.test.HazelcastSerialParametersRunnerFactory;
 import com.hazelcast.test.annotation.SlowTest;
-import com.hazelcast.util.RandomPicker;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
 import org.junit.runners.Parameterized.UseParametersRunnerFactory;
 
@@ -37,14 +37,15 @@ import java.util.Collection;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import static com.hazelcast.test.Accessors.getAddress;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
  * https://github.com/hazelcast/hazelcast/issues/5444
  */
-@RunWith(Parameterized.class)
-@UseParametersRunnerFactory(HazelcastParametersRunnerFactory.class)
+@RunWith(HazelcastParametrizedRunner.class)
+@UseParametersRunnerFactory(HazelcastSerialParametersRunnerFactory.class)
 @Category({SlowTest.class})
 @Ignore(value = "https://github.com/hazelcast/hazelcast/issues/9828")
 public class SlowMigrationCorrectnessTest extends AbstractMigrationCorrectnessTest {
@@ -68,7 +69,7 @@ public class SlowMigrationCorrectnessTest extends AbstractMigrationCorrectnessTe
         partitionCount = 14;
 
         Config config = getConfig(true, false);
-        config.setProperty(GroupProperty.PARTITION_MIGRATION_INTERVAL.getName(), "1");
+        config.setProperty(ClusterProperty.PARTITION_MIGRATION_INTERVAL.getName(), "1");
 
         HazelcastInstance[] instances = factory.newInstances(config, nodeCount);
         warmUpPartitions(instances);

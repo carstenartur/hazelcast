@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,22 +16,25 @@
 
 package com.hazelcast.client.impl;
 
-import com.hazelcast.client.impl.protocol.ClientExceptions;
+import com.hazelcast.client.Client;
+import com.hazelcast.client.impl.protocol.ClientExceptionFactory;
 import com.hazelcast.client.impl.protocol.ClientMessage;
-import com.hazelcast.core.Client;
-import com.hazelcast.core.ClientType;
+import com.hazelcast.client.impl.statistics.ClientStatistics;
+import com.hazelcast.cluster.Address;
+import com.hazelcast.internal.cluster.AddressChecker;
 import com.hazelcast.internal.cluster.ClusterService;
+import com.hazelcast.internal.partition.IPartitionService;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.nio.Address;
 import com.hazelcast.security.SecurityContext;
-import com.hazelcast.spi.EventService;
-import com.hazelcast.spi.ProxyService;
-import com.hazelcast.spi.exception.TargetNotMemberException;
-import com.hazelcast.spi.partition.IPartitionService;
+import com.hazelcast.spi.impl.eventservice.EventService;
+import com.hazelcast.spi.impl.proxyservice.ProxyService;
 import com.hazelcast.transaction.TransactionManagerService;
 
+import javax.annotation.Nonnull;
 import java.util.Collection;
 import java.util.Map;
+import java.util.UUID;
+import java.util.function.Consumer;
 
 import static java.util.Collections.emptyList;
 import static java.util.Collections.emptyMap;
@@ -43,6 +46,7 @@ public class NoOpClientEngine implements ClientEngine {
         return true;
     }
 
+    @Nonnull
     @Override
     public Collection<Client> getClients() {
         return emptyList();
@@ -84,17 +88,12 @@ public class NoOpClientEngine implements ClientEngine {
     }
 
     @Override
-    public String getThisUuid() {
-        return null;
-    }
-
-    @Override
     public ClientEndpointManager getEndpointManager() {
         return null;
     }
 
     @Override
-    public ClientExceptions getClientExceptions() {
+    public ClientExceptionFactory getExceptionFactory() {
         return null;
     }
 
@@ -109,23 +108,33 @@ public class NoOpClientEngine implements ClientEngine {
     }
 
     @Override
-    public ClientPartitionListenerService getPartitionListenerService() {
+    public ClusterViewListenerService getClusterListenerService() {
         return null;
     }
 
     @Override
-    public Map<ClientType, Integer> getConnectedClientStats() {
+    public Map<String, Long> getActiveClientsInCluster() {
         return emptyMap();
     }
 
     @Override
-    public Map<String, String> getClientStatistics() {
+    public Map<String, ClientEndpointStatisticsSnapshot> getEndpointStatisticsSnapshots() {
         return emptyMap();
     }
 
     @Override
-    public String getOwnerUuid(String clientUuid) {
-        return null;
+    public void onEndpointAuthenticated(ClientEndpoint endpoint) {
+
+    }
+
+    @Override
+    public void onEndpointDestroyed(ClientEndpoint endpoint) {
+
+    }
+
+    @Override
+    public Map<UUID, ClientStatistics> getClientStatistics() {
+        return emptyMap();
     }
 
     @Override
@@ -144,14 +153,27 @@ public class NoOpClientEngine implements ClientEngine {
     }
 
     @Override
-    public Address memberAddressOf(Address clientAddress) {
-        throw new TargetNotMemberException("NoOpClientEngine does not supply translation from client to "
-                + "member address");
+    public void onClientAcquiredResource(UUID uuid) {
+
     }
 
     @Override
-    public Address clientAddressOf(Address clientAddress) {
-        throw new TargetNotMemberException("NoOpClientEngine does not supply translation from member to "
-                + "client address");
+    public void addBackupListener(UUID clientUUID, Consumer<Long> backupListener) {
+
+    }
+
+    @Override
+    public void dispatchBackupEvent(UUID clientUUID, long clientCorrelationId) {
+
+    }
+
+    @Override
+    public boolean deregisterBackupListener(UUID clientUUID, Consumer<Long> backupListener) {
+        return false;
+    }
+
+    @Override
+    public AddressChecker getManagementTasksChecker() {
+        return null;
     }
 }

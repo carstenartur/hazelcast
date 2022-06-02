@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.map.impl.record;
 
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.Data;
 
 /**
  * Factory for creating records. Created for every partition.
@@ -26,6 +26,4 @@ import com.hazelcast.nio.serialization.Data;
 public interface RecordFactory<T> {
 
     Record<T> newRecord(Data key, Object value);
-
-    void setValue(Record<T> record, Object value);
 }

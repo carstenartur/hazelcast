@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,11 @@
 
 package com.hazelcast.config;
 
+import java.util.Objects;
+
 /**
  * Configures the replication mechanism for all
- * {@link com.hazelcast.crdt.CRDT} implementations.
+ * {@link com.hazelcast.internal.crdt.CRDT} implementations.
  * The CRDT states are replicated in rounds (the period is configurable)
  * and in each round the state is replicated up to the configured number
  * of members.
@@ -60,7 +62,7 @@ public class CRDTReplicationConfig {
      */
     public CRDTReplicationConfig setReplicationPeriodMillis(int replicationPeriodMillis) {
         if (replicationPeriodMillis <= 0) {
-            throw new ConfigurationException("The value of replicationPeriodMillis must be a non-null positive integer");
+            throw new InvalidConfigurationException("The value of replicationPeriodMillis must be a non-null positive integer");
         }
         this.replicationPeriodMillis = replicationPeriodMillis;
         return this;
@@ -87,9 +89,28 @@ public class CRDTReplicationConfig {
      */
     public CRDTReplicationConfig setMaxConcurrentReplicationTargets(int maxConcurrentReplicationTargets) {
         if (maxConcurrentReplicationTargets <= 0) {
-            throw new ConfigurationException("The value of maxConcurrentReplicationTargets must be a non-null positive integer");
+            throw new InvalidConfigurationException("The value of maxConcurrentReplicationTargets must be a non-null"
+                    + " positive integer");
         }
         this.maxConcurrentReplicationTargets = maxConcurrentReplicationTargets;
         return this;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        CRDTReplicationConfig that = (CRDTReplicationConfig) o;
+        return replicationPeriodMillis == that.replicationPeriodMillis
+                && maxConcurrentReplicationTargets == that.maxConcurrentReplicationTargets;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(replicationPeriodMillis, maxConcurrentReplicationTargets);
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.test.starter.answer;
 
+import com.hazelcast.spi.impl.NodeEngine;
 import com.hazelcast.test.starter.HazelcastAPIDelegatingClassloader;
 import com.hazelcast.test.starter.ReflectionUtils;
 import org.mockito.invocation.InvocationOnMock;
@@ -34,10 +35,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import static com.hazelcast.test.starter.HazelcastProxyFactory.proxyArgumentsIfNeeded;
 import static com.hazelcast.test.starter.HazelcastProxyFactory.proxyObjectForStarter;
 import static com.hazelcast.test.starter.ReflectionUtils.getMethod;
-import static com.hazelcast.util.Preconditions.checkInstanceOf;
-import static com.hazelcast.util.Preconditions.checkNotInstanceOf;
-import static com.hazelcast.util.Preconditions.checkNotNull;
-import static com.hazelcast.util.RootCauseMatcher.getRootCause;
+import static com.hazelcast.internal.util.Preconditions.checkInstanceOf;
+import static com.hazelcast.internal.util.Preconditions.checkNotInstanceOf;
+import static com.hazelcast.internal.util.Preconditions.checkNotNull;
+import static com.hazelcast.internal.util.RootCauseMatcher.getRootCause;
 import static java.lang.reflect.Modifier.isFinal;
 import static java.lang.reflect.Modifier.isPrivate;
 import static java.lang.reflect.Modifier.isProtected;
@@ -197,7 +198,7 @@ abstract class AbstractAnswer implements Answer {
      * @return the (proxied) result from the invocation
      * @throws Exception if the invocation fails
      */
-    private Object invoke(boolean proxyResult, InvocationOnMock invocation, Object... arguments) throws Exception {
+    Object invoke(boolean proxyResult, InvocationOnMock invocation, Object... arguments) throws Exception {
         Method originalMethod = invocation.getMethod();
         Object[] originalArguments = invocation.getArguments();
         // if an argument was proxied, we need to replace the parameterType for a correct method lookup
@@ -216,7 +217,7 @@ abstract class AbstractAnswer implements Answer {
                     || !argumentClass.getName().startsWith("com.hazelcast")) {
                 continue;
             }
-            parameterTypes[i] = argumentClass;
+            parameterTypes[i] = argumentClass.getClassLoader().loadClass(parameterTypes[i].getName());
         }
         Method delegateMethod = getDelegateMethod(originalMethod.getName(), parameterTypes);
         return invoke(proxyResult, delegateMethod, arguments);
@@ -233,7 +234,7 @@ abstract class AbstractAnswer implements Answer {
      * @return the (proxied) result from the invocation
      * @throws Exception if the invocation fails
      */
-    private Object invoke(boolean proxyResult, Method delegateMethod, Object... arguments) throws Exception {
+    Object invoke(boolean proxyResult, Method delegateMethod, Object... arguments) throws Exception {
         Object result = invokeDelegateMethod(delegateMethod, arguments);
         if (result == null) {
             return null;
@@ -263,7 +264,8 @@ abstract class AbstractAnswer implements Answer {
                 return createMockForTargetClass(result, new DataStructureElementAnswer(result));
             }
         }
-        return proxyResult ? proxyObjectForStarter(targetClassloader, result) : result;
+        return (proxyResult && !resultClass.isPrimitive())
+                ? proxyObjectForStarter(targetClassloader, result) : result;
     }
 
     /**
@@ -335,7 +337,7 @@ abstract class AbstractAnswer implements Answer {
      * <p>
      * Can be used if the target class is not constant, but depends on the
      * given delegate instance (e.g. to create the correct mock for
-     * {@link com.hazelcast.spi.NodeEngine#getService(String)}).
+     * {@link NodeEngine#getService(String)}).
      *
      * @param delegate the delegate to retrieve the class from
      * @param answer   the default {@link Answer} to create the mock with

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,10 @@
 
 package com.hazelcast.query.impl;
 
-import com.hazelcast.internal.json.NonTerminalJsonValue;
-import com.hazelcast.monitor.impl.IndexOperationStats;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.query.impl.getters.MultiResult;
+import com.hazelcast.internal.serialization.Data;
+import com.hazelcast.internal.util.MapUtil;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -36,20 +33,21 @@ public abstract class BaseIndexStore implements IndexStore {
 
     static final float LOAD_FACTOR = 0.75F;
 
-    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
-    private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
-    private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
+    private final ReentrantReadWriteLock lock;
+    private final ReentrantReadWriteLock.ReadLock readLock;
+    private final ReentrantReadWriteLock.WriteLock writeLock;
 
     private final CopyFunctor<Data, QueryableEntry> resultCopyFunctor;
 
-    private boolean multiResultHasToDetectDuplicates;
-
-    BaseIndexStore(IndexCopyBehavior copyOn) {
+    BaseIndexStore(IndexCopyBehavior copyOn, boolean enableGlobalLock) {
         if (copyOn == IndexCopyBehavior.COPY_ON_WRITE || copyOn == IndexCopyBehavior.NEVER) {
             resultCopyFunctor = new PassThroughFunctor();
         } else {
             resultCopyFunctor = new CopyInputFunctor();
         }
+        lock = enableGlobalLock ? new ReentrantReadWriteLock() : null;
+        readLock = enableGlobalLock ? lock.readLock() : null;
+        writeLock = enableGlobalLock ? lock.writeLock() : null;
     }
 
     /**
@@ -69,51 +67,28 @@ public abstract class BaseIndexStore implements IndexStore {
      */
     abstract Comparable canonicalizeScalarForStorage(Comparable value);
 
-    /**
-     * Associates the given value in this index store with the given record.
-     * <p>
-     * Despite the name the given value acts as a key into this index store. In
-     * other words, it's a value of an attribute this index store is built for.
-     *
-     * @param value  the value of an attribute this index store is built for.
-     * @param record the record to associate with the given value.
-     * @return the record that was associated with the given value before the
-     * operation, if there was any, {@code null} otherwise.
-     */
-    abstract Object insertInternal(Comparable value, QueryableEntry record);
-
-    /**
-     * Removes the association between the given value and a record identified
-     * by the given record key.
-     * <p>
-     * Despite the name the given value acts as a key into this index store. In
-     * other words, it's a value of an attribute this index store is built for.
-     *
-     * @param value     the value of an attribute this index store is built for.
-     * @param recordKey the key of a record to dissociate from the given value.
-     * @return the record that was associated with the given value before the
-     * operation, if there was any, {@code null} otherwise.
-     */
-    abstract Object removeInternal(Comparable value, Data recordKey);
-
     void takeWriteLock() {
-        writeLock.lock();
+        if (lock != null) {
+            writeLock.lock();
+        }
     }
 
     void releaseWriteLock() {
-        writeLock.unlock();
+        if (lock != null) {
+            writeLock.unlock();
+        }
     }
 
     void takeReadLock() {
-        readLock.lock();
+        if (lock != null) {
+            readLock.lock();
+        }
     }
 
     void releaseReadLock() {
-        readLock.unlock();
-    }
-
-    final MultiResultSet createMultiResultSet() {
-        return multiResultHasToDetectDuplicates ? new DuplicateDetectingMultiResult() : new FastMultiResultSet();
+        if (lock != null) {
+            readLock.unlock();
+        }
     }
 
     final void copyToMultiResultSet(MultiResultSet resultSet, Map<Data, QueryableEntry> records) {
@@ -125,82 +100,11 @@ public abstract class BaseIndexStore implements IndexStore {
     }
 
     @Override
-    public final void insert(Object value, QueryableEntry record, IndexOperationStats operationStats) {
-        takeWriteLock();
-        try {
-            unwrapAndInsertToIndex(value, record, operationStats);
-        } finally {
-            releaseWriteLock();
-        }
-    }
-
-    @Override
-    public final void update(Object oldValue, Object newValue, QueryableEntry entry, IndexOperationStats operationStats) {
-        takeWriteLock();
-        try {
-            Data indexKey = entry.getKeyData();
-            unwrapAndRemoveFromIndex(oldValue, indexKey, operationStats);
-            unwrapAndInsertToIndex(newValue, entry, operationStats);
-        } finally {
-            releaseWriteLock();
-        }
-    }
-
-    @Override
-    public final void remove(Object value, Data indexKey, IndexOperationStats operationStats) {
-        takeWriteLock();
-        try {
-            unwrapAndRemoveFromIndex(value, indexKey, operationStats);
-        } finally {
-            releaseWriteLock();
-        }
-    }
-
-    @Override
     public void destroy() {
         // nothing to destroy
     }
 
-    @SuppressWarnings("unchecked")
-    private void unwrapAndInsertToIndex(Object newValue, QueryableEntry record, IndexOperationStats operationStats) {
-        if (newValue == NonTerminalJsonValue.INSTANCE) {
-            return;
-        }
-        if (newValue instanceof MultiResult) {
-            multiResultHasToDetectDuplicates = true;
-            List<Object> results = ((MultiResult) newValue).getResults();
-            for (Object o : results) {
-                Comparable sanitizedValue = sanitizeValue(o);
-                Object oldValue = insertInternal(sanitizedValue, record);
-                operationStats.onEntryAdded(oldValue, newValue);
-            }
-        } else {
-            Comparable sanitizedValue = sanitizeValue(newValue);
-            Object oldValue = insertInternal(sanitizedValue, record);
-            operationStats.onEntryAdded(oldValue, newValue);
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private void unwrapAndRemoveFromIndex(Object oldValue, Data indexKey, IndexOperationStats operationStats) {
-        if (oldValue == NonTerminalJsonValue.INSTANCE) {
-            return;
-        }
-        if (oldValue instanceof MultiResult) {
-            List<Object> results = ((MultiResult) oldValue).getResults();
-            for (Object o : results) {
-                Comparable sanitizedValue = sanitizeValue(o);
-                Object removedValue = removeInternal(sanitizedValue, indexKey);
-                operationStats.onEntryRemoved(removedValue);
-            }
-        } else {
-            Comparable sanitizedValue = sanitizeValue(oldValue);
-            Object removedValue = removeInternal(sanitizedValue, indexKey);
-            operationStats.onEntryRemoved(removedValue);
-        }
-    }
-
-    private Comparable sanitizeValue(Object input) {
+    Comparable sanitizeValue(Object input) {
         if (input instanceof CompositeValue) {
             CompositeValue compositeValue = (CompositeValue) input;
             Comparable[] components = compositeValue.getComponents();
@@ -228,15 +132,11 @@ public abstract class BaseIndexStore implements IndexStore {
     }
 
     interface CopyFunctor<A, B> {
-
         Map<A, B> invoke(Map<A, B> map);
-
     }
 
     interface IndexFunctor<A, B> {
-
         Object invoke(A param1, B param2);
-
     }
 
     private static class PassThroughFunctor implements CopyFunctor<Data, QueryableEntry> {
@@ -245,19 +145,13 @@ public abstract class BaseIndexStore implements IndexStore {
         public Map<Data, QueryableEntry> invoke(Map<Data, QueryableEntry> map) {
             return map;
         }
-
     }
 
     private static class CopyInputFunctor implements CopyFunctor<Data, QueryableEntry> {
 
         @Override
         public Map<Data, QueryableEntry> invoke(Map<Data, QueryableEntry> map) {
-            if (map != null && !map.isEmpty()) {
-                return new HashMap<Data, QueryableEntry>(map);
-            }
-            return map;
+            return MapUtil.isNullOrEmpty(map) ? map : new HashMap<>(map);
         }
-
     }
-
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,31 +20,34 @@ import com.hazelcast.config.Config;
 import com.hazelcast.config.MetadataPolicy;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastJsonValue;
-import com.hazelcast.core.IMap;
 import com.hazelcast.internal.json.Json;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.internal.serialization.InternalSerializationService;
+import com.hazelcast.map.IMap;
 import com.hazelcast.map.impl.MapService;
-import com.hazelcast.map.impl.record.Record;
 import com.hazelcast.map.impl.recordstore.RecordStore;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.query.Metadata;
+import com.hazelcast.query.impl.JsonMetadata;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
+import static com.hazelcast.test.Accessors.getBackupInstance;
+import static com.hazelcast.test.Accessors.getNodeEngineImpl;
+import static com.hazelcast.test.Accessors.getPartitionService;
+import static com.hazelcast.test.Accessors.getSerializationService;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({ParallelTest.class, QuickTest.class})
+@Category({ParallelJVMTest.class, QuickTest.class})
 public class JsonMetadataCreationMigrationTest extends HazelcastTestSupport {
 
     protected static final int ENTRY_COUNT = 1000;
@@ -94,7 +97,7 @@ public class JsonMetadataCreationMigrationTest extends HazelcastTestSupport {
         }
     }
 
-    protected void assertMetadata(Metadata metadata) {
+    protected void assertMetadata(JsonMetadata metadata) {
         assertNotNull(metadata);
         JsonSchemaNode keyNode = (JsonSchemaNode) metadata.getKeyMetadata();
         assertNotNull(keyNode);
@@ -109,7 +112,7 @@ public class JsonMetadataCreationMigrationTest extends HazelcastTestSupport {
         assertTrue(valueChildNode.isTerminal());
     }
 
-    protected Metadata getMetadata(String mapName, Object key, int replicaIndex) {
+    protected JsonMetadata getMetadata(String mapName, Object key, int replicaIndex) {
         HazelcastInstance[] instances = factory.getAllHazelcastInstances().toArray(new HazelcastInstance[] { null });
         HazelcastInstance instance = factory.getAllHazelcastInstances().iterator().next();
         InternalSerializationService serializationService = getSerializationService(instance);
@@ -118,8 +121,7 @@ public class JsonMetadataCreationMigrationTest extends HazelcastTestSupport {
         NodeEngineImpl nodeEngine = getNodeEngineImpl(getBackupInstance(instances, partitionId, replicaIndex));
         MapService mapService = nodeEngine.getService(MapService.SERVICE_NAME);
         RecordStore recordStore = mapService.getMapServiceContext().getPartitionContainer(partitionId).getRecordStore(mapName);
-        Record record = recordStore.getRecordOrNull(keyData);
-        return record.getMetadata();
+        return recordStore.getOrCreateMetadataStore().get(keyData);
     }
 
     protected Config getConfig() {

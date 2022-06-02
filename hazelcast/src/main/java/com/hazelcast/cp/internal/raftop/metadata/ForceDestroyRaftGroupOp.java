@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,13 +29,13 @@ import java.io.IOException;
 
 /**
  * If a Raft node loses its majority completely, its remaining members cannot
- * leave the CP subsystem gracefully. It is because we need to make a commit to
+ * leave CP Subsystem gracefully. It is because we need to make a commit to
  * a halted Raft group, and the system block since we won't be able to do it.
  * To recover from this failure case, we forcefully destroy a Raft group.
  * Status of the Raft group will be directly changed to
  * {@link CPGroupStatus#DESTROYED} without gracefully destroying
  * {@link RaftNode} instances first.
- * <p/>
+ * <p>
  * This operation is committed to the Metadata group.
  */
 public class ForceDestroyRaftGroupOp extends MetadataRaftGroupOp implements IndeterminateOperationStateAware,
@@ -67,18 +67,18 @@ public class ForceDestroyRaftGroupOp extends MetadataRaftGroupOp implements Inde
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftServiceDataSerializerHook.FORCE_DESTROY_RAFT_GROUP_OP;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(groupName);
+        out.writeString(groupName);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        groupName = in.readUTF();
+        groupName = in.readString();
     }
 
     @Override

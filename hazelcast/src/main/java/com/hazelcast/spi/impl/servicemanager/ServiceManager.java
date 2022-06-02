@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package com.hazelcast.spi.impl.servicemanager;
 
-import com.hazelcast.spi.SharedService;
-
+import javax.annotation.Nonnull;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * Responsible for managing services.
@@ -31,7 +31,7 @@ public interface ServiceManager {
      * @param serviceName the name of the service.
      * @return the found ServiceInfo or null if nothing is found.
      */
-    ServiceInfo getServiceInfo(String serviceName);
+    ServiceInfo getServiceInfo(@Nonnull String serviceName);
 
     /**
      * Gets all the service info's for services that implement a given class/interface.
@@ -48,7 +48,7 @@ public interface ServiceManager {
      * @param <T>
      * @return the found service or null if nothing is found.
      */
-    <T> T getService(String serviceName);
+    <T> T getService(@Nonnull String serviceName);
 
     /**
      * Gets all services implementing a certain class/interface.
@@ -62,12 +62,8 @@ public interface ServiceManager {
     <S> List<S> getServices(Class<S> serviceClass);
 
     /**
-     * Gets a SharedService by serviceName.
-     *
-     * @param serviceName the name of the SharedService.
-     * @param <T>
-     * @return the found SharedService or null if not found.
-     * @throws IllegalArgumentException if a service with the name is found, but isn't a SharedService.
+     * @param serviceClass the class/interface the service should implement.
+     * @param consumer     to consume {@link ServiceInfo}
      */
-    <T extends SharedService> T getSharedService(String serviceName);
+    void forEachMatchingService(Class serviceClass, Consumer<ServiceInfo> consumer);
 }

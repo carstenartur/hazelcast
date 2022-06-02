@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,13 @@
 package com.hazelcast.cp.internal.datastructures.atomicref.client;
 
 import com.hazelcast.client.impl.protocol.ClientMessage;
-import com.hazelcast.client.impl.protocol.codec.CPAtomicRefCompareAndSetCodec;
-import com.hazelcast.client.impl.protocol.task.AbstractMessageTask;
-import com.hazelcast.core.ExecutionCallback;
+import com.hazelcast.client.impl.protocol.codec.AtomicRefCompareAndSetCodec;
 import com.hazelcast.cp.internal.RaftOp;
-import com.hazelcast.cp.internal.RaftService;
-import com.hazelcast.cp.internal.datastructures.atomicref.RaftAtomicRefService;
+import com.hazelcast.cp.internal.client.AbstractCPMessageTask;
+import com.hazelcast.cp.internal.datastructures.atomicref.AtomicRefService;
 import com.hazelcast.cp.internal.datastructures.atomicref.operation.CompareAndSetOp;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
 import com.hazelcast.security.permission.ActionConstants;
 import com.hazelcast.security.permission.AtomicReferencePermission;
 
@@ -34,8 +32,7 @@ import java.security.Permission;
 /**
  * Client message task for {@link CompareAndSetOp}
  */
-public class CompareAndSetMessageTask extends AbstractMessageTask<CPAtomicRefCompareAndSetCodec.RequestParameters>
-        implements ExecutionCallback<Boolean> {
+public class CompareAndSetMessageTask extends AbstractCPMessageTask<AtomicRefCompareAndSetCodec.RequestParameters> {
 
     public CompareAndSetMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -43,24 +40,23 @@ public class CompareAndSetMessageTask extends AbstractMessageTask<CPAtomicRefCom
 
     @Override
     protected void processMessage() {
-        RaftService service = nodeEngine.getService(RaftService.SERVICE_NAME);
         RaftOp op = new CompareAndSetOp(parameters.name, parameters.oldValue, parameters.newValue);
-        service.getInvocationManager().<Boolean>invoke(parameters.groupId, op).andThen(this);
+        invoke(parameters.groupId, op);
     }
 
     @Override
-    protected CPAtomicRefCompareAndSetCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
-        return CPAtomicRefCompareAndSetCodec.decodeRequest(clientMessage);
+    protected AtomicRefCompareAndSetCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+        return AtomicRefCompareAndSetCodec.decodeRequest(clientMessage);
     }
 
     @Override
     protected ClientMessage encodeResponse(Object response) {
-        return CPAtomicRefCompareAndSetCodec.encodeResponse((Boolean) response);
+        return AtomicRefCompareAndSetCodec.encodeResponse((Boolean) response);
     }
 
     @Override
     public String getServiceName() {
-        return RaftAtomicRefService.SERVICE_NAME;
+        return AtomicRefService.SERVICE_NAME;
     }
 
     @Override
@@ -81,15 +77,5 @@ public class CompareAndSetMessageTask extends AbstractMessageTask<CPAtomicRefCom
     @Override
     public Object[] getParameters() {
         return new Object[]{parameters.oldValue, parameters.newValue};
-    }
-
-    @Override
-    public void onResponse(Boolean response) {
-        sendResponse(response);
-    }
-
-    @Override
-    public void onFailure(Throwable t) {
-        handleProcessingFailure(t);
     }
 }

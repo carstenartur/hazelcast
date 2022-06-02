@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 package com.hazelcast.cp.internal.raft.exception;
 
-import com.hazelcast.core.Endpoint;
 import com.hazelcast.cp.exception.CPSubsystemException;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 
 /**
  * A {@code CPSubsystemException} which is thrown when a member, which is
@@ -29,7 +29,16 @@ public class MemberDoesNotExistException extends CPSubsystemException {
 
     private static final long serialVersionUID = -6536728347770526039L;
 
-    public MemberDoesNotExistException(Endpoint member) {
+    public MemberDoesNotExistException(RaftEndpoint member) {
         super("Member does not exist: " + member, null);
+    }
+
+    private MemberDoesNotExistException(String message, Throwable cause) {
+        super(message, cause, null);
+    }
+
+    @Override
+    public MemberDoesNotExistException wrap() {
+        return new MemberDoesNotExistException(getMessage(), this);
     }
 }

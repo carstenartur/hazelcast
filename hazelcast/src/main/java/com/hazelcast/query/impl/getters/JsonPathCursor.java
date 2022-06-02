@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.hazelcast.query.impl.getters;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -29,7 +29,6 @@ import java.util.List;
  */
 public class JsonPathCursor {
 
-    private static final Charset UTF8_CHARSET = Charset.forName("UTF8");
     private static final int DEFAULT_PATH_ELEMENT_COUNT = 5;
 
     private List<Triple> triples;
@@ -49,6 +48,7 @@ public class JsonPathCursor {
 
     /**
      * Creates a shallow copy of this object
+     *
      * @param other
      */
     JsonPathCursor(JsonPathCursor other) {
@@ -58,6 +58,7 @@ public class JsonPathCursor {
 
     /**
      * Creates a new cursor from given attribute path.
+     *
      * @param attributePath
      */
     public static JsonPathCursor createCursor(String attributePath) {
@@ -86,7 +87,7 @@ public class JsonPathCursor {
             }
             String part = attributePath.substring(start, end);
 
-            Triple triple = new Triple(part, part.getBytes(UTF8_CHARSET), isArray);
+            Triple triple = new Triple(part, part.getBytes(StandardCharsets.UTF_8), isArray);
             triples.add(triple);
             start = end + 1;
         }
@@ -130,6 +131,7 @@ public class JsonPathCursor {
      * efficient to call repeteadly.
      *
      * The returned byte array must not be modified!
+     *
      * @return
      */
     @SuppressFBWarnings(value = "EI_EXPOSE_REP", justification = "Making a copy reverses the benefit of this method")
@@ -138,7 +140,6 @@ public class JsonPathCursor {
     }
 
     /**
-     *
      * @return true if the current item is an array
      */
     public boolean isArray() {
@@ -146,7 +147,6 @@ public class JsonPathCursor {
     }
 
     /**
-     *
      * @return true if the current item is "any"
      */
     public boolean isAny() {
@@ -155,6 +155,7 @@ public class JsonPathCursor {
 
     /**
      * Returns array index if the current item is array and not "any".
+     *
      * @return -1 if the current item is "any" or non-array.
      */
     public int getArrayIndex() {
@@ -167,6 +168,10 @@ public class JsonPathCursor {
         isArray = false;
         isAny = false;
         cursor = 0;
+    }
+
+    public boolean hasNext() {
+        return cursor < triples.size();
     }
 
     private void next() {

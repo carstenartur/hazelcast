@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,28 +22,27 @@ import com.hazelcast.core.OperationTimeoutException;
 import com.hazelcast.cp.CPGroupId;
 import com.hazelcast.cp.internal.HazelcastRaftTestSupport;
 import com.hazelcast.cp.lock.FencedLock;
-import com.hazelcast.spi.properties.GroupProperty;
-import com.hazelcast.test.AssertTask;
-import com.hazelcast.test.HazelcastSerialClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.HazelcastParallelClassRunner;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import static com.hazelcast.spi.properties.ClusterProperty.OPERATION_CALL_TIMEOUT_MILLIS;
+import static com.hazelcast.test.Accessors.getNodeEngineImpl;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-@RunWith(HazelcastSerialClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@RunWith(HazelcastParallelClassRunner.class)
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class FencedLockLongAwaitTest extends HazelcastRaftTestSupport {
 
     private HazelcastInstance[] instances;
@@ -72,20 +71,10 @@ public class FencedLockLongAwaitTest extends HazelcastRaftTestSupport {
     @Test(timeout = 300000)
     public void when_longWaitOperationIsNotCommitted_then_itFailsWithOperationTimeoutException() {
         HazelcastInstance apInstance = factory.newHazelcastInstance(createConfig(groupSize, groupSize));
-        final FencedLock lock = apInstance.getCPSubsystem().getLock(proxyName);
-        spawn(new Runnable() {
-            @Override
-            public void run() {
-                lock.lock();
-            }
-        });
+        FencedLock lock = apInstance.getCPSubsystem().getLock(proxyName);
+        spawn(lock::lock);
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() {
-                assertTrue(lock.isLocked());
-            }
-        });
+        assertTrueEventually(() -> assertTrue(lock.isLocked()));
 
         HazelcastInstance leader = getLeaderInstance(instances, groupId);
         for (int i = 0; i < groupSize; i++) {
@@ -102,47 +91,35 @@ public class FencedLockLongAwaitTest extends HazelcastRaftTestSupport {
         }
     }
 
-    private void testLongAwait(final HazelcastInstance instance) throws ExecutionException, InterruptedException {
-        final FencedLock lock = instance.getCPSubsystem().getLock(proxyName);
+    private void testLongAwait(HazelcastInstance instance) throws ExecutionException, InterruptedException {
+        FencedLock lock = instance.getCPSubsystem().getLock(proxyName);
         lock.lock();
 
-        Future<Object> f1 = spawn(new Callable<Object>() {
-            @Override
-            public Object call() {
-                if (!lock.tryLock(5, TimeUnit.MINUTES)) {
-                    throw new IllegalStateException();
-                }
-
-                lock.unlock();
-
-                return null;
+        Future<Object> f1 = spawn(() -> {
+            if (!lock.tryLock(5, TimeUnit.MINUTES)) {
+                throw new IllegalStateException();
             }
+
+            lock.unlock();
+
+            return null;
         });
 
-        Future<Object> f2 = spawn(new Callable<Object>() {
-            @Override
-            public Object call() {
-                lock.lock();
-                lock.unlock();
+        Future<Object> f2 = spawn(() -> {
+            lock.lock();
+            lock.unlock();
 
-                return null;
-            }
+            return null;
         });
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() {
-                RaftLockService service = getNodeEngineImpl(instance).getService(RaftLockService.SERVICE_NAME);
-                assertEquals(2, service.getLiveOperations(lock.getGroupId()).size());
-            }
-        });
+        assertTrueEventually(() -> {
+            LockService service = getNodeEngineImpl(instance).getService(LockService.SERVICE_NAME);
+            assertEquals(2, service.getLiveOperations(groupId).size());
+        }, 30);
 
-        assertTrueAllTheTime(new AssertTask() {
-            @Override
-            public void run() {
-                RaftLockService service = getNodeEngineImpl(instance).getService(RaftLockService.SERVICE_NAME);
-                assertEquals(2, service.getLiveOperations(lock.getGroupId()).size());
-            }
+        assertTrueAllTheTime(() -> {
+            LockService service = getNodeEngineImpl(instance).getService(LockService.SERVICE_NAME);
+            assertEquals(2, service.getLiveOperations(groupId).size());
         }, callTimeoutSeconds + 5);
 
         lock.unlock();
@@ -154,11 +131,42 @@ public class FencedLockLongAwaitTest extends HazelcastRaftTestSupport {
         f2.get();
     }
 
+    @Test(timeout = 300000)
+    public void when_tryLockTimeoutPassesDuringLostMajority_then_operationTimeoutIsReceived() throws Exception {
+        HazelcastInstance apInstance = factory.newHazelcastInstance(createConfig(groupSize, groupSize));
+        FencedLock lock = apInstance.getCPSubsystem().getLock(proxyName);
+
+        lock.lock();
+
+        Future<Object> future = spawn(() -> lock.tryLock(callTimeoutSeconds + 5, SECONDS));
+
+        HazelcastInstance leader = getLeaderInstance(instances, groupId);
+
+        assertTrueEventually(() -> {
+            LockService service = getNodeEngineImpl(leader).getService(LockService.SERVICE_NAME);
+            assertEquals(1, service.getLiveOperations(groupId).size());
+        });
+
+        for (HazelcastInstance instance : instances) {
+            if (instance != leader) {
+                instance.getLifecycleService().terminate();
+            }
+        }
+
+        try {
+            future.get();
+            fail();
+        } catch (ExecutionException e) {
+            assertTrue(e.getCause() instanceof OperationTimeoutException);
+        }
+    }
+
     @Override
     protected Config createConfig(int cpNodeCount, int groupSize) {
         String callTimeoutStr = String.valueOf(SECONDS.toMillis(callTimeoutSeconds));
-        return super.createConfig(cpNodeCount, groupSize)
-                    .setProperty(GroupProperty.OPERATION_CALL_TIMEOUT_MILLIS.getName(), callTimeoutStr);
+        Config config = super.createConfig(cpNodeCount, groupSize);
+        config.getCPSubsystemConfig().getRaftAlgorithmConfig().setMaxMissedLeaderHeartbeatCount(10);
+        return config.setProperty(OPERATION_CALL_TIMEOUT_MILLIS.getName(), callTimeoutStr);
     }
 
 }

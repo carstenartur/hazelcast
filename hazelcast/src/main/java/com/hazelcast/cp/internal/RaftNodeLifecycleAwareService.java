@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,9 +25,9 @@ public interface RaftNodeLifecycleAwareService {
 
     /**
      * Called on the thread of the Raft group when the given Raft node is
-     * destroyed, either gracefully or forcefully.
+     * terminated, either gracefully via Raft group destroy or forcefully.
      */
-    void onRaftGroupDestroyed(CPGroupId groupId);
+    void onRaftNodeTerminated(CPGroupId groupId);
 
     /**
      * Called on the thread of the Raft group when the given Raft node is

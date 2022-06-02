@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,11 @@
 
 package com.hazelcast.cp.internal.datastructures.countdownlatch.operation;
 
-import com.hazelcast.core.ICountDownLatch;
+import com.hazelcast.cp.ICountDownLatch;
 import com.hazelcast.cp.CPGroupId;
 import com.hazelcast.cp.internal.IndeterminateOperationStateAware;
-import com.hazelcast.cp.internal.datastructures.countdownlatch.RaftCountDownLatchDataSerializerHook;
-import com.hazelcast.cp.internal.datastructures.countdownlatch.RaftCountDownLatchService;
+import com.hazelcast.cp.internal.datastructures.countdownlatch.CountDownLatchDataSerializerHook;
+import com.hazelcast.cp.internal.datastructures.countdownlatch.CountDownLatchService;
 
 /**
  * Operation for {@link ICountDownLatch#getCount()}
@@ -36,7 +36,7 @@ public class GetCountOp extends AbstractCountDownLatchOp implements Indeterminat
 
     @Override
     public Object run(CPGroupId groupId, long commitIndex) {
-        RaftCountDownLatchService service = getService();
+        CountDownLatchService service = getService();
         return service.getRemainingCount(groupId, name);
     }
 
@@ -46,7 +46,7 @@ public class GetCountOp extends AbstractCountDownLatchOp implements Indeterminat
     }
 
     @Override
-    public int getId() {
-        return RaftCountDownLatchDataSerializerHook.GET_COUNT_OP;
+    public int getClassId() {
+        return CountDownLatchDataSerializerHook.GET_COUNT_OP;
     }
 }

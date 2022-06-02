@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,11 @@
 
 package com.hazelcast.internal.jmx;
 
-import com.hazelcast.core.IMap;
+import com.hazelcast.map.IMap;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.After;
 import org.junit.Before;
@@ -28,11 +28,13 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
+import java.util.concurrent.TimeUnit;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class MapMBeanTest extends HazelcastTestSupport {
 
     private static final String TYPE_NAME = "IMap";
@@ -41,13 +43,11 @@ public class MapMBeanTest extends HazelcastTestSupport {
     private TestHazelcastInstanceFactory hazelcastInstanceFactory = createHazelcastInstanceFactory(1);
     private MBeanDataHolder holder = new MBeanDataHolder(hazelcastInstanceFactory);
 
-    private long started;
     private IMap<String, String> map;
     private String objectName;
 
     @Before
     public void setUp() {
-        started = System.currentTimeMillis();
         map = holder.getHz().getMap("distributedMap");
         objectName = map.getName();
 
@@ -75,14 +75,14 @@ public class MapMBeanTest extends HazelcastTestSupport {
 
     @Test
     public void testAttributesAndOperations() throws Exception {
+        long started = System.currentTimeMillis();
         map.put("firstKey", "firstValue");
         map.put("secondKey", "secondValue");
         map.remove("secondKey");
         map.set("thirdKey", "thirdValue");
         map.remove("thirdKey");
+        map.size();
         String value = map.get("firstKey");
-        String values = invokeMethod("values", EMPTY_STRING_PARAMETER);
-        String entries = invokeMethod("entrySet", EMPTY_STRING_PARAMETER);
 
         long localEntryCount = getLongAttribute("localOwnedEntryCount");
         long localBackupEntryCount = getLongAttribute("localBackupEntryCount");
@@ -118,8 +118,6 @@ public class MapMBeanTest extends HazelcastTestSupport {
         int size = getIntegerAttribute("size");
 
         assertEquals("firstValue", value);
-        assertEquals("[firstValue,]", values);
-        assertEquals("[{key:firstKey, value:firstValue},]", entries);
 
         assertEquals(1, localEntryCount);
         assertEquals(0, localBackupEntryCount);
@@ -127,9 +125,17 @@ public class MapMBeanTest extends HazelcastTestSupport {
         assertTrue(localOwnedEntryMemoryCost > 0);
         assertEquals(0, localBackupEntryMemoryCost);
 
-        assertTrue(localCreationTime >= started);
-        assertTrue(localLastAccessTime >= started);
-        assertTrue(localLastUpdateTime >= started);
+        long lowerBound = started - TimeUnit.SECONDS.toMillis(10);
+        long upperBound = started + TimeUnit.SECONDS.toMillis(10);
+        assertTrue(
+                "localCreationTime <" + localCreationTime + "> has to be between [" + lowerBound + " and " + upperBound + "]",
+                lowerBound < localCreationTime && localCreationTime < upperBound);
+        assertTrue(
+                "localLastAccessTime <" + localLastAccessTime + "> has to be between [" + lowerBound + " and " + upperBound + "]",
+                lowerBound < localLastAccessTime && localLastAccessTime < upperBound);
+        assertTrue(
+                "localLastUpdateTime <" + localLastUpdateTime + "> has to be between [" + lowerBound + " and " + upperBound + "]",
+                lowerBound < localLastUpdateTime && localLastUpdateTime < upperBound);
         assertEquals(1, localHits);
         assertEquals(0, localLockedEntryCount);
         assertEquals(0, localDirtyEntryCount);
@@ -155,12 +161,8 @@ public class MapMBeanTest extends HazelcastTestSupport {
         assertEquals(1, size);
 
         holder.invokeMBeanOperation(TYPE_NAME, objectName, "clear", null, null);
-        values = invokeMethod("values", EMPTY_STRING_PARAMETER);
-        entries = invokeMethod("entrySet", EMPTY_STRING_PARAMETER);
         size = getIntegerAttribute("size");
 
-        assertEquals("Empty", values);
-        assertEquals("Empty", entries);
         assertEquals(0, size);
     }
 

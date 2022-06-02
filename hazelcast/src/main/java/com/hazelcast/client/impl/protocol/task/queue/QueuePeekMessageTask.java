@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,12 +21,12 @@ import com.hazelcast.client.impl.protocol.codec.QueuePeekCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractPartitionMessageTask;
 import com.hazelcast.collection.impl.queue.QueueService;
 import com.hazelcast.collection.impl.queue.operations.PeekOperation;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.security.permission.ActionConstants;
 import com.hazelcast.security.permission.QueuePermission;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.operationservice.Operation;
 
 import java.security.Permission;
 
@@ -35,7 +35,7 @@ import java.security.Permission;
  * {@link com.hazelcast.client.impl.protocol.codec.QueueMessageType#QUEUE_PEEK}
  */
 public class QueuePeekMessageTask
-        extends AbstractPartitionMessageTask<QueuePeekCodec.RequestParameters> {
+        extends AbstractPartitionMessageTask<String> {
 
     public QueuePeekMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -43,11 +43,11 @@ public class QueuePeekMessageTask
 
     @Override
     protected Operation prepareOperation() {
-        return new PeekOperation(parameters.name);
+        return new PeekOperation(parameters);
     }
 
     @Override
-    protected QueuePeekCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+    protected String decodeClientMessage(ClientMessage clientMessage) {
         return QueuePeekCodec.decodeRequest(clientMessage);
     }
 
@@ -58,7 +58,7 @@ public class QueuePeekMessageTask
 
     @Override
     public Permission getRequiredPermission() {
-        return new QueuePermission(parameters.name, ActionConstants.ACTION_READ);
+        return new QueuePermission(parameters, ActionConstants.ACTION_READ);
     }
 
     @Override
@@ -78,6 +78,6 @@ public class QueuePeekMessageTask
 
     @Override
     public String getDistributedObjectName() {
-        return parameters.name;
+        return parameters;
     }
 }

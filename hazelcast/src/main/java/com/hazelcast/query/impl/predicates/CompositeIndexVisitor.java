@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import com.hazelcast.query.Predicate;
 import com.hazelcast.query.impl.CompositeValue;
 import com.hazelcast.query.impl.Indexes;
 import com.hazelcast.query.impl.InternalIndex;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -28,8 +29,6 @@ import java.util.Map;
 import static com.hazelcast.query.impl.AbstractIndex.NULL;
 import static com.hazelcast.query.impl.CompositeValue.NEGATIVE_INFINITY;
 import static com.hazelcast.query.impl.CompositeValue.POSITIVE_INFINITY;
-import static com.hazelcast.query.impl.predicates.PredicateUtils.isEqualPredicate;
-import static com.hazelcast.query.impl.predicates.PredicateUtils.isRangePredicate;
 
 /**
  * Optimizes single-attribute predicates into composite index predicates.
@@ -64,7 +63,7 @@ public class CompositeIndexVisitor extends AbstractVisitor {
         Map<String, RangePredicate> comparisons = null;
         Output output = null;
         for (Predicate predicate : andPredicate.predicates) {
-            if (isEqualPredicate(predicate)) {
+            if (predicate instanceof EqualPredicate) {
                 EqualPredicate equalPredicate = (EqualPredicate) predicate;
                 prefixes = obtainHashMap(prefixes, originalSize);
 
@@ -85,7 +84,7 @@ public class CompositeIndexVisitor extends AbstractVisitor {
                 continue;
             }
 
-            if (isRangePredicate(predicate)) {
+            if (predicate instanceof RangePredicate) {
                 RangePredicate rangePredicate = (RangePredicate) predicate;
                 comparisons = obtainHashMap(comparisons, originalSize);
 
@@ -162,8 +161,9 @@ public class CompositeIndexVisitor extends AbstractVisitor {
                 }
 
                 if (index.isOrdered()) {
-                    RangePredicate comparison =
-                            prefix < components.length && comparisons != null ? comparisons.get(components[prefix]) : null;
+                    RangePredicate comparison = prefix < components.length && comparisons != null
+                        ? comparisons.get(components[prefix]) : null;
+
                     if (comparison != null) {
                         ++prefix;
                     }
@@ -324,7 +324,9 @@ public class CompositeIndexVisitor extends AbstractVisitor {
         String[] components = index.getComponents();
         Comparable[] values = new Comparable[components.length];
         for (int i = 0; i < components.length; ++i) {
-            values[i] = fast ? prefixes.get(components[i]).value : prefixes.remove(components[i]).value;
+            String attribute = components[i];
+
+            values[i] = fast ? prefixes.get(attribute).value : prefixes.remove(attribute).value;
         }
         return new CompositeEqualPredicate(index, new CompositeValue(values));
     }
@@ -338,7 +340,9 @@ public class CompositeIndexVisitor extends AbstractVisitor {
         Comparable[] from = new Comparable[components.length];
         Comparable[] to = new Comparable[components.length];
         for (int i = 0; i < prefixLength; ++i) {
-            Comparable value = fast ? prefixes.get(components[i]).value : prefixes.remove(components[i]).value;
+            String attribute = components[i];
+
+            Comparable value = fast ? prefixes.get(attribute).value : prefixes.remove(attribute).value;
             from[i] = value;
             to[i] = value;
         }
@@ -368,7 +372,9 @@ public class CompositeIndexVisitor extends AbstractVisitor {
         Comparable[] from = new Comparable[components.length];
         Comparable[] to = new Comparable[components.length];
         for (int i = 0; i < prefixLength; ++i) {
-            Comparable value = fast ? prefixes.get(components[i]).value : prefixes.remove(components[i]).value;
+            String attribute = components[i];
+
+            Comparable value = fast ? prefixes.get(attribute).value : prefixes.remove(attribute).value;
             from[i] = value;
             to[i] = value;
         }
@@ -385,18 +391,19 @@ public class CompositeIndexVisitor extends AbstractVisitor {
     }
 
     private static <K, V> Map<K, V> obtainHashMap(Map<K, V> map, int capacity) {
-        return map == null ? new HashMap<K, V>(capacity) : map;
+        return map == null ? new HashMap<>(capacity) : map;
     }
 
     private static Output obtainOutput(Output output, int capacity) {
         return output == null ? new Output(capacity) : output;
     }
 
+    @SuppressFBWarnings(value = "EQ_DOESNT_OVERRIDE_EQUALS")
     private static class Output extends ArrayList<Predicate> {
 
         private boolean requiresGeneration;
 
-        public Output(int capacity) {
+        Output(int capacity) {
             super(capacity);
         }
 
@@ -437,7 +444,5 @@ public class CompositeIndexVisitor extends AbstractVisitor {
             assert index == newSize;
             return new AndPredicate(predicates);
         }
-
     }
-
 }

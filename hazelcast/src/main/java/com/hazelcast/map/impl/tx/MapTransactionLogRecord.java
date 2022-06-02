@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,21 @@
 
 package com.hazelcast.map.impl.tx;
 
+import com.hazelcast.internal.nearcache.impl.RemoteCallHook;
+import com.hazelcast.internal.nio.IOUtil;
+import com.hazelcast.internal.serialization.Data;
+import com.hazelcast.internal.util.ThreadUtil;
+import com.hazelcast.internal.util.UUIDSerializationUtil;
 import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.map.impl.MapRecordKey;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.operationservice.Operation;
 import com.hazelcast.transaction.impl.TransactionLogRecord;
-import com.hazelcast.util.ThreadUtil;
 
+import javax.annotation.Nonnull;
 import java.io.IOException;
+import java.util.UUID;
 
 /**
  * Represents an operation on the map in the transaction log.
@@ -33,16 +38,21 @@ import java.io.IOException;
 public class MapTransactionLogRecord implements TransactionLogRecord {
 
     private int partitionId;
+    private long threadId = ThreadUtil.getThreadId();
     private String name;
     private Data key;
-    private long threadId = ThreadUtil.getThreadId();
-    private String ownerUuid;
+    private UUID transactionId;
+    private UUID ownerUuid;
     private Operation op;
+
+    private transient RemoteCallHook remoteCallHook = RemoteCallHook.EMPTY_HOOK;
 
     public MapTransactionLogRecord() {
     }
 
-    public MapTransactionLogRecord(String name, Data key, int partitionId, Operation op, long version, String ownerUuid) {
+    public MapTransactionLogRecord(String name, Data key, int partitionId,
+                                   Operation op, UUID ownerUuid, UUID transactionId,
+                                   @Nonnull RemoteCallHook remoteCallHook) {
         this.name = name;
         this.key = key;
         if (!(op instanceof MapTxnOperation)) {
@@ -51,11 +61,14 @@ public class MapTransactionLogRecord implements TransactionLogRecord {
         this.op = op;
         this.ownerUuid = ownerUuid;
         this.partitionId = partitionId;
+        this.transactionId = transactionId;
+        this.remoteCallHook = remoteCallHook;
     }
 
     @Override
     public Operation newPrepareOperation() {
-        TxnPrepareOperation operation = new TxnPrepareOperation(partitionId, name, key, ownerUuid);
+        TxnPrepareOperation operation = new TxnPrepareOperation(partitionId,
+                name, key, ownerUuid, transactionId);
         operation.setThreadId(threadId);
         return operation;
     }
@@ -65,47 +78,71 @@ public class MapTransactionLogRecord implements TransactionLogRecord {
         MapTxnOperation operation = (MapTxnOperation) op;
         operation.setThreadId(threadId);
         operation.setOwnerUuid(ownerUuid);
+        operation.setTransactionId(transactionId);
         op.setPartitionId(partitionId);
         return op;
     }
 
     @Override
+    public void onCommitSuccess() {
+        remoteCallHook.onRemoteCallSuccess(op);
+    }
+
+    @Override
+    public void onCommitFailure() {
+        remoteCallHook.onRemoteCallFailure();
+    }
+
+    @Override
     public Operation newRollbackOperation() {
-        TxnRollbackOperation operation = new TxnRollbackOperation(partitionId, name, key, ownerUuid);
+        TxnRollbackOperation operation = new TxnRollbackOperation(partitionId,
+                name, key, ownerUuid, transactionId);
         operation.setThreadId(threadId);
         return operation;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(name);
+        out.writeString(name);
         out.writeInt(partitionId);
         boolean isNullKey = key == null;
         out.writeBoolean(isNullKey);
         if (!isNullKey) {
-            out.writeData(key);
+            IOUtil.writeData(out, key);
         }
         out.writeLong(threadId);
-        out.writeUTF(ownerUuid);
+        UUIDSerializationUtil.writeUUID(out, ownerUuid);
+        UUIDSerializationUtil.writeUUID(out, transactionId);
         out.writeObject(op);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        name = in.readUTF();
+        name = in.readString();
         partitionId = in.readInt();
         boolean isNullKey = in.readBoolean();
         if (!isNullKey) {
-            key = in.readData();
+            key = IOUtil.readData(in);
         }
         threadId = in.readLong();
-        ownerUuid = in.readUTF();
+        ownerUuid = UUIDSerializationUtil.readUUID(in);
+        transactionId = UUIDSerializationUtil.readUUID(in);
         op = in.readObject();
     }
 
     @Override
     public Object getKey() {
         return new MapRecordKey(name, key);
+    }
+
+    @Override
+    public int getFactoryId() {
+        return MapDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public int getClassId() {
+        return MapDataSerializerHook.MAP_TRANSACTION_LOG_RECORD;
     }
 
     @Override
@@ -116,16 +153,7 @@ public class MapTransactionLogRecord implements TransactionLogRecord {
                 + ", threadId=" + threadId
                 + ", ownerUuid='" + ownerUuid + '\''
                 + ", op=" + op
+                + ", transactionId=" + transactionId
                 + '}';
-    }
-
-    @Override
-    public int getFactoryId() {
-        return MapDataSerializerHook.F_ID;
-    }
-
-    @Override
-    public int getId() {
-        return MapDataSerializerHook.MAP_TRANSACTION_LOG_RECORD;
     }
 }

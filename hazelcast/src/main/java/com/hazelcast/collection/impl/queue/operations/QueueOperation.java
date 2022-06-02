@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,22 +16,23 @@
 
 package com.hazelcast.collection.impl.queue.operations;
 
+import com.hazelcast.cluster.Address;
 import com.hazelcast.collection.impl.queue.QueueContainer;
 import com.hazelcast.collection.impl.queue.QueueDataSerializerHook;
 import com.hazelcast.collection.impl.queue.QueueEvent;
 import com.hazelcast.collection.impl.queue.QueueEventFilter;
 import com.hazelcast.collection.impl.queue.QueueService;
 import com.hazelcast.core.ItemEventType;
-import com.hazelcast.nio.Address;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.spi.BackupOperation;
-import com.hazelcast.spi.EventRegistration;
-import com.hazelcast.spi.EventService;
-import com.hazelcast.spi.NamedOperation;
-import com.hazelcast.spi.PartitionAwareOperation;
 import com.hazelcast.spi.exception.RetryableHazelcastException;
-import com.hazelcast.spi.impl.AbstractNamedOperation;
+import com.hazelcast.spi.impl.eventservice.EventRegistration;
+import com.hazelcast.spi.impl.eventservice.EventService;
+import com.hazelcast.spi.impl.operationservice.AbstractNamedOperation;
+import com.hazelcast.spi.impl.operationservice.BackupOperation;
+import com.hazelcast.spi.impl.operationservice.NamedOperation;
+import com.hazelcast.spi.impl.operationservice.PartitionAwareOperation;
+import com.hazelcast.spi.tenantcontrol.TenantControl;
 
 import java.util.Collection;
 
@@ -114,5 +115,16 @@ public abstract class QueueOperation extends AbstractNamedOperation
     @Override
     public int getFactoryId() {
         return QueueDataSerializerHook.F_ID;
+    }
+
+    @Override
+    public TenantControl getTenantControl() {
+        return getNodeEngine().getTenantControlService()
+                              .getTenantControl(QueueService.SERVICE_NAME, name);
+    }
+
+    @Override
+    public boolean requiresTenantContext() {
+        return true;
     }
 }

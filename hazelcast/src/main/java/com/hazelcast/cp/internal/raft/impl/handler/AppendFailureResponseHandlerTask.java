@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,11 @@
 
 package com.hazelcast.cp.internal.raft.impl.handler;
 
-import com.hazelcast.core.Endpoint;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 import com.hazelcast.cp.internal.raft.impl.RaftNodeImpl;
 import com.hazelcast.cp.internal.raft.impl.dto.AppendFailureResponse;
+import com.hazelcast.cp.internal.raft.impl.dto.AppendRequest;
+import com.hazelcast.cp.internal.raft.impl.dto.AppendSuccessResponse;
 import com.hazelcast.cp.internal.raft.impl.state.FollowerState;
 import com.hazelcast.cp.internal.raft.impl.state.LeaderState;
 import com.hazelcast.cp.internal.raft.impl.state.RaftState;
@@ -36,9 +38,9 @@ import static com.hazelcast.cp.internal.raft.impl.RaftRole.LEADER;
  * <i>In Search of an Understandable Consensus Algorithm</i>
  * paper by <i>Diego Ongaro</i> and <i>John Ousterhout</i>.
  *
- * @see com.hazelcast.cp.internal.raft.impl.dto.AppendRequest
- * @see com.hazelcast.cp.internal.raft.impl.dto.AppendSuccessResponse
- * @see com.hazelcast.cp.internal.raft.impl.dto.AppendFailureResponse
+ * @see AppendRequest
+ * @see AppendSuccessResponse
+ * @see AppendFailureResponse
  */
 public class AppendFailureResponseHandlerTask extends AbstractResponseHandlerTask {
 
@@ -61,8 +63,7 @@ public class AppendFailureResponseHandlerTask extends AbstractResponseHandlerTas
         if (resp.term() > state.term()) {
             // If RPC request or response contains term T > currentTerm: set currentTerm = T, convert to follower (§5.1)
             logger.info("Demoting to FOLLOWER after " + resp + " from current term: " + state.term());
-            state.toFollower(resp.term());
-            raftNode.printMemberState();
+            raftNode.toFollower(resp.term());
             return;
         }
 
@@ -79,13 +80,12 @@ public class AppendFailureResponseHandlerTask extends AbstractResponseHandlerTas
         LeaderState leaderState = state.leaderState();
         FollowerState followerState = leaderState.getFollowerState(resp.follower());
 
-
         long nextIndex = followerState.nextIndex();
         long matchIndex = followerState.matchIndex();
 
         if (resp.expectedNextIndex() == nextIndex) {
             // Received a response for the last append request. Resetting the flag...
-            followerState.resetAppendRequestBackoff();
+            followerState.appendRequestAckReceived();
 
             // this is the response of the request I have sent for this nextIndex
             nextIndex--;
@@ -106,7 +106,7 @@ public class AppendFailureResponseHandlerTask extends AbstractResponseHandlerTas
     }
 
     @Override
-    protected Endpoint sender() {
+    protected RaftEndpoint sender() {
         return resp.follower();
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,9 @@ import com.hazelcast.config.ItemListenerConfig;
 import com.hazelcast.config.MergePolicyConfig;
 import com.hazelcast.config.QueueConfig;
 import com.hazelcast.config.QueueStoreConfig;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.dynamicconfig.DynamicConfigurationAwareConfig;
+import com.hazelcast.internal.nio.Connection;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 
 import java.util.List;
@@ -52,7 +53,7 @@ public class AddQueueConfigMessageTask
         config.setBackupCount(parameters.backupCount);
         config.setEmptyQueueTtl(parameters.emptyQueueTtl);
         config.setMaxSize(parameters.maxSize);
-        config.setQuorumName(parameters.quorumName);
+        config.setSplitBrainProtectionName(parameters.splitBrainProtectionName);
         config.setStatisticsEnabled(parameters.statisticsEnabled);
         if (parameters.queueStoreConfig != null) {
             QueueStoreConfig storeConfig = parameters.queueStoreConfig.asQueueStoreConfig(serializationService);
@@ -63,14 +64,24 @@ public class AddQueueConfigMessageTask
                     (List<ItemListenerConfig>) adaptListenerConfigs(parameters.listenerConfigs);
             config.setItemListenerConfigs(itemListenerConfigs);
         }
-        MergePolicyConfig mergePolicyConfig = mergePolicyConfig(parameters.mergePolicyExist, parameters.mergePolicy,
-                parameters.mergeBatchSize);
+        MergePolicyConfig mergePolicyConfig = mergePolicyConfig(parameters.mergePolicy, parameters.mergeBatchSize);
         config.setMergePolicyConfig(mergePolicyConfig);
+        if (parameters.isPriorityComparatorClassNameExists) {
+            config.setPriorityComparatorClassName(parameters.priorityComparatorClassName);
+        }
         return config;
     }
 
     @Override
     public String getMethodName() {
         return "addQueueConfig";
+    }
+
+    @Override
+    protected boolean checkStaticConfigDoesNotExist(IdentifiedDataSerializable config) {
+        DynamicConfigurationAwareConfig nodeConfig = (DynamicConfigurationAwareConfig) nodeEngine.getConfig();
+        QueueConfig queueConfig = (QueueConfig) config;
+        return nodeConfig.checkStaticConfigDoesNotExist(nodeConfig.getStaticConfig().getQueueConfigs(),
+                queueConfig.getName(), queueConfig);
     }
 }

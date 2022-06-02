@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,14 +21,16 @@ import com.hazelcast.cache.impl.CacheService;
 import com.hazelcast.cache.impl.operation.CacheSizeOperationFactory;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.CacheSizeCodec;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
 import com.hazelcast.security.permission.ActionConstants;
 import com.hazelcast.security.permission.CachePermission;
-import com.hazelcast.spi.OperationFactory;
+import com.hazelcast.spi.impl.operationservice.OperationFactory;
 
 import java.security.Permission;
 import java.util.Map;
+
+import static com.hazelcast.internal.util.MapUtil.toIntSize;
 
 /**
  * This client request specifically calls {@link CacheSizeOperationFactory} on the server side.
@@ -36,7 +38,7 @@ import java.util.Map;
  * @see CacheSizeOperationFactory
  */
 public class CacheSizeMessageTask
-        extends AbstractCacheAllPartitionsTask<CacheSizeCodec.RequestParameters> {
+        extends AbstractCacheAllPartitionsTask<String> {
 
     public CacheSizeMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -44,23 +46,23 @@ public class CacheSizeMessageTask
 
     @Override
     protected OperationFactory createOperationFactory() {
-        CacheOperationProvider operationProvider = getOperationProvider(parameters.name);
+        CacheOperationProvider operationProvider = getOperationProvider(parameters);
         return operationProvider.createSizeOperationFactory();
     }
 
     @Override
     protected Object reduce(Map<Integer, Object> map) {
-        int total = 0;
+        long total = 0;
         CacheService service = getService(getServiceName());
         for (Object result : map.values()) {
             Integer size = (Integer) service.toObject(result);
             total += size;
         }
-        return total;
+        return toIntSize(total);
     }
 
     @Override
-    protected CacheSizeCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+    protected String decodeClientMessage(ClientMessage clientMessage) {
         return CacheSizeCodec.decodeRequest(clientMessage);
     }
 
@@ -71,11 +73,11 @@ public class CacheSizeMessageTask
 
     @Override
     public Permission getRequiredPermission() {
-        return new CachePermission(parameters.name, ActionConstants.ACTION_READ);
+        return new CachePermission(parameters, ActionConstants.ACTION_READ);
     }
 
     @Override
     public String getDistributedObjectName() {
-        return parameters.name;
+        return parameters;
     }
 }

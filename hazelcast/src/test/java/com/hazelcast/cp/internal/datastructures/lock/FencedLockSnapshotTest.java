@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,16 +21,16 @@ import com.hazelcast.cp.internal.RaftOp;
 import com.hazelcast.cp.internal.datastructures.AbstractAtomicRegisterSnapshotTest;
 import com.hazelcast.cp.internal.datastructures.lock.operation.GetLockOwnershipStateOp;
 import com.hazelcast.cp.lock.FencedLock;
-import com.hazelcast.spi.InternalCompletableFuture;
-import com.hazelcast.test.HazelcastSerialClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.spi.impl.InternalCompletableFuture;
+import com.hazelcast.test.annotation.ParallelJVMTest;
+import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-@RunWith(HazelcastSerialClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@RunWith(HazelcastParallelClassRunner.class)
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class FencedLockSnapshotTest extends AbstractAtomicRegisterSnapshotTest<Long> {
 
     private FencedLock lock;
@@ -63,7 +63,7 @@ public class FencedLockSnapshotTest extends AbstractAtomicRegisterSnapshotTest<L
 
     @Override
     protected Long getValue(InternalCompletableFuture<Object> future) {
-        RaftLockOwnershipState state = (RaftLockOwnershipState) future.join();
+        LockOwnershipState state = (LockOwnershipState) future.joinInternal();
         return state.getFence();
     }
 }

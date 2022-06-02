@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,25 +16,25 @@
 
 package com.hazelcast.spi.impl.operationservice.impl;
 
+import com.hazelcast.cluster.Address;
+import com.hazelcast.cluster.impl.MemberImpl;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.cp.CPSubsystemConfig;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.IndeterminateOperationStateException;
 import com.hazelcast.core.MemberLeftException;
-import com.hazelcast.instance.MemberImpl;
-import com.hazelcast.nio.Address;
-import com.hazelcast.nio.ObjectDataInput;
-import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.cp.CPGroupId;
 import com.hazelcast.cp.exception.StaleAppendRequestException;
+import com.hazelcast.cp.internal.HazelcastRaftTestSupport;
 import com.hazelcast.cp.internal.IndeterminateOperationStateAware;
 import com.hazelcast.cp.internal.RaftOp;
-import com.hazelcast.cp.internal.HazelcastRaftTestSupport;
 import com.hazelcast.cp.internal.RaftService;
 import com.hazelcast.cp.internal.operation.DefaultRaftReplicateOp;
+import com.hazelcast.nio.ObjectDataInput;
+import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.spi.exception.CallerNotMemberException;
 import com.hazelcast.test.HazelcastSerialClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -46,12 +46,13 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.hazelcast.test.Accessors.getOperationService;
 import static com.hazelcast.version.MemberVersion.UNKNOWN;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 @RunWith(HazelcastSerialClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class RaftInvocationFailureTest extends HazelcastRaftTestSupport {
 
     private static final AtomicInteger COMMIT_COUNT = new AtomicInteger();
@@ -70,9 +71,10 @@ public class RaftInvocationFailureTest extends HazelcastRaftTestSupport {
     public void test_invocationFailsOnMemberLeftException() throws ExecutionException, InterruptedException {
         CPGroupId groupId = getRaftInvocationManager(instances[0]).createRaftGroup(groupName).get();
 
+        waitAllForLeaderElection(instances, groupId);
         HazelcastInstance leader = getLeaderInstance(instances, groupId);
 
-        Future f = new RaftInvocation(getOperationServiceImpl(leader).invocationContext,
+        Future f = new RaftInvocation(getOperationService(leader).invocationContext,
                 getRaftInvocationManager(leader).getRaftInvocationContext(), groupId,
                 new DefaultRaftReplicateOp(groupId, new CustomResponseOp()), 10, 50, 60000).invoke();
 
@@ -90,9 +92,10 @@ public class RaftInvocationFailureTest extends HazelcastRaftTestSupport {
     public void test_invocationFailsWithMemberLeftException_when_thereAreRetryableExceptionsAfterwards() throws ExecutionException, InterruptedException {
         CPGroupId groupId = getRaftInvocationManager(instances[0]).createRaftGroup(groupName).get();
 
+        waitAllForLeaderElection(instances, groupId);
         HazelcastInstance leader = getLeaderInstance(instances, groupId);
 
-        Future f = new RaftInvocation(getOperationServiceImpl(leader).invocationContext,
+        Future f = new RaftInvocation(getOperationService(leader).invocationContext,
                 getRaftInvocationManager(leader).getRaftInvocationContext(), groupId,
                 new DefaultRaftReplicateOp(groupId, new CustomResponseOp2()), 10, 50, 60000).invoke();
 
@@ -110,9 +113,10 @@ public class RaftInvocationFailureTest extends HazelcastRaftTestSupport {
     public void test_invocationFailsWithStaleAppendRequestException_when_thereAreRetryableExceptionsAfterwards() throws ExecutionException, InterruptedException {
         CPGroupId groupId = getRaftInvocationManager(instances[0]).createRaftGroup(groupName).get();
 
+        waitAllForLeaderElection(instances, groupId);
         HazelcastInstance leader = getLeaderInstance(instances, groupId);
 
-        Future f = new RaftInvocation(getOperationServiceImpl(leader).invocationContext,
+        Future f = new RaftInvocation(getOperationService(leader).invocationContext,
                 getRaftInvocationManager(leader).getRaftInvocationContext(), groupId,
                 new DefaultRaftReplicateOp(groupId, new CustomResponseOp3()), 100, 500, 60000).invoke();
 
@@ -130,9 +134,10 @@ public class RaftInvocationFailureTest extends HazelcastRaftTestSupport {
     public void test_invocationFailsWithFirstMemberLeftException_when_thereAreIndeterminateOperationStateExceptionsAfterwards() throws ExecutionException, InterruptedException {
         CPGroupId groupId = getRaftInvocationManager(instances[0]).createRaftGroup(groupName).get();
 
+        waitAllForLeaderElection(instances, groupId);
         HazelcastInstance leader = getLeaderInstance(instances, groupId);
 
-        Future f = new RaftInvocation(getOperationServiceImpl(leader).invocationContext,
+        Future f = new RaftInvocation(getOperationService(leader).invocationContext,
                 getRaftInvocationManager(leader).getRaftInvocationContext(), groupId,
                 new DefaultRaftReplicateOp(groupId, new CustomResponseOp4()), 10, 50, 60000).invoke();
 
@@ -150,9 +155,10 @@ public class RaftInvocationFailureTest extends HazelcastRaftTestSupport {
     public void test_invocationFailsWitNonRetryableException_when_thereAreRetryableExceptionsAfterIndeterminateOperationState() throws ExecutionException, InterruptedException {
         CPGroupId groupId = getRaftInvocationManager(instances[0]).createRaftGroup(groupName).get();
 
+        waitAllForLeaderElection(instances, groupId);
         HazelcastInstance leader = getLeaderInstance(instances, groupId);
 
-        Future f = new RaftInvocation(getOperationServiceImpl(leader).invocationContext,
+        Future f = new RaftInvocation(getOperationService(leader).invocationContext,
                 getRaftInvocationManager(leader).getRaftInvocationContext(), groupId,
                 new DefaultRaftReplicateOp(groupId, new CustomResponseOp5()), 10, 50, 60000).invoke();
 

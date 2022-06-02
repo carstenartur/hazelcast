@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,20 +18,18 @@ package com.hazelcast.cp.internal.datastructures.spi.client;
 
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.CPGroupCreateCPGroupCodec;
-import com.hazelcast.client.impl.protocol.task.AbstractMessageTask;
-import com.hazelcast.core.ExecutionCallback;
 import com.hazelcast.cp.internal.RaftGroupId;
 import com.hazelcast.cp.internal.RaftService;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.cp.internal.client.AbstractCPMessageTask;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
 
 import java.security.Permission;
 
 /**
  * Client message task for Raft group creation
  */
-public class CreateRaftGroupMessageTask extends AbstractMessageTask<CPGroupCreateCPGroupCodec.RequestParameters>
-        implements ExecutionCallback {
+public class CreateRaftGroupMessageTask extends AbstractCPMessageTask<String> {
 
     public CreateRaftGroupMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -40,21 +38,11 @@ public class CreateRaftGroupMessageTask extends AbstractMessageTask<CPGroupCreat
     @Override
     protected void processMessage() {
         RaftService service = nodeEngine.getService(RaftService.SERVICE_NAME);
-        service.createRaftGroupForProxyAsync(parameters.proxyName).andThen(this);
+        service.createRaftGroupForProxyAsync(parameters).whenCompleteAsync(this);
     }
 
     @Override
-    public void onResponse(Object response) {
-        sendResponse(response);
-    }
-
-    @Override
-    public void onFailure(Throwable t) {
-        handleProcessingFailure(t);
-    }
-
-    @Override
-    protected CPGroupCreateCPGroupCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+    protected String decodeClientMessage(ClientMessage clientMessage) {
         return CPGroupCreateCPGroupCodec.decodeRequest(clientMessage);
     }
 
@@ -70,7 +58,7 @@ public class CreateRaftGroupMessageTask extends AbstractMessageTask<CPGroupCreat
 
     @Override
     public String getDistributedObjectName() {
-        return parameters.proxyName;
+        return parameters;
     }
 
     @Override
@@ -85,6 +73,6 @@ public class CreateRaftGroupMessageTask extends AbstractMessageTask<CPGroupCreat
 
     @Override
     public Object[] getParameters() {
-        return new Object[]{parameters.proxyName};
+        return new Object[]{parameters};
     }
 }

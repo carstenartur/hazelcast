@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.internal.config.ServicesConfig;
 import com.hazelcast.spi.annotation.PrivateApi;
 
 /**
@@ -37,4 +38,11 @@ public final class ConfigAccessor {
         return config.getNetworkConfig();
     }
 
+    public static ServicesConfig getServicesConfig(Config config) {
+        return config.getServicesConfig();
+    }
+
+    public static boolean isInstanceTrackingEnabledSet(Config config) {
+        return config.getInstanceTrackingConfig().isEnabledSet;
+    }
 }

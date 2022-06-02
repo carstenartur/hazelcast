@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,23 +16,27 @@
 
 package com.hazelcast.internal.usercodedeployment;
 
+import com.hazelcast.cluster.Member;
 import com.hazelcast.config.UserCodeDeploymentConfig;
-import com.hazelcast.core.Member;
+import com.hazelcast.internal.services.ManagedService;
 import com.hazelcast.internal.usercodedeployment.impl.ClassData;
 import com.hazelcast.internal.usercodedeployment.impl.ClassDataProvider;
 import com.hazelcast.internal.usercodedeployment.impl.ClassLocator;
 import com.hazelcast.internal.usercodedeployment.impl.ClassSource;
 import com.hazelcast.internal.util.filter.Filter;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.spi.ManagedService;
-import com.hazelcast.spi.NodeEngine;
+import com.hazelcast.spi.impl.NodeEngine;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import static com.hazelcast.internal.usercodedeployment.impl.filter.ClassNameFilterParser.parseClassNameFilters;
 import static com.hazelcast.internal.usercodedeployment.impl.filter.MemberProviderFilterParser.parseMemberFilter;
+import static com.hazelcast.jet.impl.util.Util.CONFIG_CHANGE_TEMPLATE;
+import static java.lang.String.format;
 
 public final class UserCodeDeploymentService implements ManagedService {
 
@@ -65,11 +69,17 @@ public final class UserCodeDeploymentService implements ManagedService {
         enabled = config.isEnabled();
     }
 
-    public void defineClass(String name, byte[] classDefinition) {
+    public void defineClasses(List<Map.Entry<String, byte[]>> classDefinitions) {
         if (!enabled) {
-            throw new IllegalStateException("User Code Deployment is not enabled.");
+            throw new IllegalStateException("User Code Deployment is not enabled. "
+                    + "To enable User Code Deployment, do one of the following:\n"
+                    + format(CONFIG_CHANGE_TEMPLATE,
+                        "config.getUserCodeDeploymentConfig().setEnabled(true);",
+                        "hazelcast.user-code-deployment.enabled to true",
+                        "-Dhz.user-code-deployment.enabled=true",
+                        "HZ_USERCODEDEPLOYMENT_ENABLED=true"));
         }
-        locator.defineClassFromClient(name, classDefinition);
+        locator.defineClassesFromClient(classDefinitions);
     }
 
     // called by operations sent by other members

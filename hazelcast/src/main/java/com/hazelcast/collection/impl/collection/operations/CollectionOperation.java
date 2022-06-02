@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,10 @@
 
 package com.hazelcast.collection.impl.collection.operations;
 
+import java.io.IOException;
+import java.util.Collection;
+
+import com.hazelcast.cluster.Address;
 import com.hazelcast.collection.impl.collection.CollectionContainer;
 import com.hazelcast.collection.impl.collection.CollectionDataSerializerHook;
 import com.hazelcast.collection.impl.collection.CollectionEvent;
@@ -24,21 +28,22 @@ import com.hazelcast.collection.impl.collection.CollectionService;
 import com.hazelcast.collection.impl.list.ListContainer;
 import com.hazelcast.collection.impl.list.ListService;
 import com.hazelcast.core.ItemEventType;
-import com.hazelcast.nio.Address;
+import com.hazelcast.internal.monitor.impl.AbstractLocalCollectionStats;
+import com.hazelcast.internal.serialization.Data;
+import com.hazelcast.internal.util.Clock;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.spi.BackupOperation;
-import com.hazelcast.spi.EventRegistration;
-import com.hazelcast.spi.EventService;
-import com.hazelcast.spi.NamedOperation;
-import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.PartitionAwareOperation;
 import com.hazelcast.spi.exception.RetryableHazelcastException;
-
-import java.io.IOException;
-import java.util.Collection;
+import com.hazelcast.spi.impl.eventservice.EventRegistration;
+import com.hazelcast.spi.impl.eventservice.EventService;
+import com.hazelcast.spi.impl.operationservice.BackupOperation;
+import com.hazelcast.spi.impl.operationservice.MutatingOperation;
+import com.hazelcast.spi.impl.operationservice.NamedOperation;
+import com.hazelcast.spi.impl.operationservice.Operation;
+import com.hazelcast.spi.impl.operationservice.PartitionAwareOperation;
+import com.hazelcast.spi.impl.operationservice.ReadonlyOperation;
+import com.hazelcast.spi.tenantcontrol.TenantControl;
 
 public abstract class CollectionOperation extends Operation
         implements NamedOperation, PartitionAwareOperation, IdentifiedDataSerializable {
@@ -112,12 +117,12 @@ public abstract class CollectionOperation extends Operation
 
     @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
-        out.writeUTF(name);
+        out.writeString(name);
     }
 
     @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
-        name = in.readUTF();
+        name = in.readString();
     }
 
     @Override
@@ -125,5 +130,42 @@ public abstract class CollectionOperation extends Operation
         super.toString(sb);
 
         sb.append(", name=").append(name);
+    }
+
+    @Override
+    public void afterRun() throws Exception {
+        if (this instanceof ReadonlyOperation) {
+            updateStatsForReadOnlyOperation();
+        } else if (this instanceof MutatingOperation) {
+            updateStatsForMutableOperation();
+        }
+        super.afterRun();
+    }
+
+    protected void updateStatsForReadOnlyOperation() {
+        getLocalCollectionStats().setLastAccessTime(Clock.currentTimeMillis());
+    }
+
+    protected void updateStatsForMutableOperation() {
+        long now = Clock.currentTimeMillis();
+        getLocalCollectionStats().setLastAccessTime(now);
+        getLocalCollectionStats().setLastUpdateTime(now);
+    }
+
+    private AbstractLocalCollectionStats getLocalCollectionStats() {
+        CollectionService collectionService = getService();
+        return collectionService.getLocalCollectionStats(name);
+    }
+
+    @Override
+    public TenantControl getTenantControl() {
+        CollectionService collectionService = getService();
+        return getNodeEngine().getTenantControlService()
+                .getTenantControl(collectionService.getServiceName(), name);
+    }
+
+    @Override
+    public boolean requiresTenantContext() {
+        return true;
     }
 }

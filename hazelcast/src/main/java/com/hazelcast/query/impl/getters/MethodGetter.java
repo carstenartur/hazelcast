@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,20 @@
 
 package com.hazelcast.query.impl.getters;
 
-
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
-final class MethodGetter extends AbstractMultiValueGetter {
+public final class MethodGetter extends AbstractMultiValueGetter {
+
     private final Method method;
 
-    MethodGetter(Getter parent, Method method, String modifierSuffix, Class resultType) {
-        super(parent, modifierSuffix, method.getReturnType(), resultType);
+    // for testing purposes only
+    public MethodGetter(Getter parent, Method method, String modifier, Class elementType) {
+        this(parent, method, modifier, method.getReturnType(), elementType);
+    }
+
+    public MethodGetter(Getter parent, Method method, String modifier, Class type, Class elementType) {
+        super(parent, modifier, type, elementType);
         this.method = method;
     }
 
@@ -46,4 +51,5 @@ final class MethodGetter extends AbstractMultiValueGetter {
     public String toString() {
         return "MethodGetter [parent=" + parent + ", method=" + method.getName() + ", modifier = " + getModifier() + "]";
     }
+
 }

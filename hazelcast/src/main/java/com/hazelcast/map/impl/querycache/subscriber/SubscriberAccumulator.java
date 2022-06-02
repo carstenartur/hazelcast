@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,7 +45,7 @@ public class SubscriberAccumulator extends BasicAccumulator<QueryCacheEventData>
 
     private final SubscriberSequencerProvider sequenceProvider;
     /** When a partition's sequence order is broken, it will be registered here.*/
-    private final ConcurrentMap<Integer, Long> brokenSequences = new ConcurrentHashMap<Integer, Long>();
+    private final ConcurrentMap<Integer, Long> brokenSequences = new ConcurrentHashMap<>();
 
     protected SubscriberAccumulator(QueryCacheContext context, AccumulatorInfo info) {
         super(context, info);

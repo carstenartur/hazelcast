@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,11 @@
 package com.hazelcast.map.impl;
 
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
-import com.hazelcast.monitor.LocalMapStats;
+import com.hazelcast.map.IMap;
+import com.hazelcast.map.LocalMapStats;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -29,7 +29,9 @@ import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
 import java.util.Map;
+import java.util.stream.Collectors;
 
+import static com.hazelcast.test.Accessors.getNodeEngineImpl;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
@@ -37,7 +39,7 @@ import static org.junit.Assert.assertNotNull;
  * Test for {@link MapStatisticsAwareService}
  */
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class MapStatisticsAwareServiceTest extends HazelcastTestSupport {
 
     HazelcastInstance hz;
@@ -47,7 +49,9 @@ public class MapStatisticsAwareServiceTest extends HazelcastTestSupport {
     public void setUp() throws Exception {
         hz = createHazelcastInstance();
         warmUpPartitions(hz);
+        sleepSeconds(15);
         map = hz.getMap("map");
+        sleepSeconds(5);
     }
 
     @Test
@@ -66,7 +70,12 @@ public class MapStatisticsAwareServiceTest extends HazelcastTestSupport {
         Map<String, LocalMapStats> mapStats = mapService.getStats();
 
         // then we obtain 1 local map stats instance
-        assertEquals(1, mapStats.size());
+        int size = mapStats.size();
+        if (size != 1) {
+            String names = mapStats.keySet()
+                    .stream().filter(name -> !name.equals("map")).collect(Collectors.joining(" "));
+            assertEquals("Unexpected map statistics found: " + names, 1, size);
+        }
         assertNotNull(mapStats.get("map"));
 
         hz.shutdown();

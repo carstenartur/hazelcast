@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,21 +17,22 @@
 package com.hazelcast.map.impl.query;
 
 import com.hazelcast.config.Config;
+import com.hazelcast.config.IndexType;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
+import com.hazelcast.map.IMap;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.Predicates;
 import com.hazelcast.query.SampleTestObjects;
 import com.hazelcast.query.SampleTestObjects.Employee;
 import com.hazelcast.query.impl.IndexCopyBehavior;
-import com.hazelcast.spi.properties.GroupProperty;
-import com.hazelcast.test.HazelcastParametersRunnerFactory;
+import com.hazelcast.spi.properties.ClusterProperty;
+import com.hazelcast.test.HazelcastParametrizedRunner;
+import com.hazelcast.test.HazelcastSerialParametersRunnerFactory;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameter;
 import org.junit.runners.Parameterized.Parameters;
 import org.junit.runners.Parameterized.UseParametersRunnerFactory;
@@ -44,8 +45,8 @@ import java.util.List;
 import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
 
-@RunWith(Parameterized.class)
-@UseParametersRunnerFactory(HazelcastParametersRunnerFactory.class)
+@RunWith(HazelcastParametrizedRunner.class)
+@UseParametersRunnerFactory(HazelcastSerialParametersRunnerFactory.class)
 @Category(QuickTest.class)
 public class QueryNullIndexingTest extends HazelcastTestSupport {
 
@@ -131,13 +132,15 @@ public class QueryNullIndexingTest extends HazelcastTestSupport {
         assertContainsAll(dates, asList(4000000L, 6000000L, 8000000L, 10000000L, null));
     }
 
-    private List<Long> queryIndexedDateFieldAsNullValue(boolean ordered, Predicate pred) {
+    private List<Long> queryIndexedDateFieldAsNullValue(boolean ordered,
+                                                        Predicate<Integer, SampleTestObjects.Employee> pred) {
         Config config = getConfig();
-        config.setProperty(GroupProperty.INDEX_COPY_BEHAVIOR.getName(), copyBehavior.name());
+        config.setProperty(ClusterProperty.INDEX_COPY_BEHAVIOR.getName(), copyBehavior.name());
+        config.setProperty(QueryEngineImpl.DISABLE_MIGRATION_FALLBACK.getName(), "true");
         HazelcastInstance instance = createHazelcastInstance(config);
         IMap<Integer, SampleTestObjects.Employee> map = instance.getMap("default");
 
-        map.addIndex("date", ordered);
+        map.addIndex(ordered ? IndexType.SORTED : IndexType.HASH, "date");
         for (int i = 10; i >= 1; i--) {
             Employee employee = new Employee(i, "name-" + i, i, true, i * 100);
             if (i % 2 == 0) {

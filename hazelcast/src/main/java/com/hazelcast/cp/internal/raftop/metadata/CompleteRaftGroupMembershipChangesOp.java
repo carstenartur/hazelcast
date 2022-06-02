@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import com.hazelcast.cp.CPGroupId;
 import com.hazelcast.cp.internal.IndeterminateOperationStateAware;
 import com.hazelcast.cp.internal.MetadataRaftGroupManager;
 import com.hazelcast.cp.internal.RaftServiceDataSerializerHook;
-import com.hazelcast.cp.internal.util.Tuple2;
+import com.hazelcast.internal.util.BiTuple;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
@@ -38,12 +38,12 @@ import java.util.Map.Entry;
 public class CompleteRaftGroupMembershipChangesOp extends MetadataRaftGroupOp implements IndeterminateOperationStateAware,
                                                                                          IdentifiedDataSerializable {
 
-    private Map<CPGroupId, Tuple2<Long, Long>> changedGroups;
+    private Map<CPGroupId, BiTuple<Long, Long>> changedGroups;
 
     public CompleteRaftGroupMembershipChangesOp() {
     }
 
-    public CompleteRaftGroupMembershipChangesOp(Map<CPGroupId, Tuple2<Long, Long>> changedGroups) {
+    public CompleteRaftGroupMembershipChangesOp(Map<CPGroupId, BiTuple<Long, Long>> changedGroups) {
         this.changedGroups = changedGroups;
     }
 
@@ -63,16 +63,16 @@ public class CompleteRaftGroupMembershipChangesOp extends MetadataRaftGroupOp im
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftServiceDataSerializerHook.COMPLETE_RAFT_GROUP_MEMBERSHIP_CHANGES_OP;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
         out.writeInt(changedGroups.size());
-        for (Entry<CPGroupId, Tuple2<Long, Long>> e : changedGroups.entrySet()) {
+        for (Entry<CPGroupId, BiTuple<Long, Long>> e : changedGroups.entrySet()) {
             out.writeObject(e.getKey());
-            Tuple2<Long, Long> value = e.getValue();
+            BiTuple<Long, Long> value = e.getValue();
             out.writeLong(value.element1);
             out.writeLong(value.element2);
         }
@@ -81,12 +81,12 @@ public class CompleteRaftGroupMembershipChangesOp extends MetadataRaftGroupOp im
     @Override
     public void readData(ObjectDataInput in) throws IOException {
         int count = in.readInt();
-        changedGroups = new HashMap<CPGroupId, Tuple2<Long, Long>>(count);
+        changedGroups = new HashMap<>(count);
         for (int i = 0; i < count; i++) {
             CPGroupId groupId = in.readObject();
             long currMembersCommitIndex = in.readLong();
             long newMembersCommitIndex = in.readLong();
-            changedGroups.put(groupId, Tuple2.of(currMembersCommitIndex, newMembersCommitIndex));
+            changedGroups.put(groupId, BiTuple.of(currMembersCommitIndex, newMembersCommitIndex));
         }
     }
 

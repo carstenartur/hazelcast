@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,7 @@ import com.hazelcast.cp.internal.HazelcastRaftTestSupport;
 import com.hazelcast.cp.internal.RaftInvocationManager;
 import com.hazelcast.cp.internal.RaftOp;
 import com.hazelcast.cp.internal.raft.QueryPolicy;
-import com.hazelcast.spi.InternalCompletableFuture;
-import com.hazelcast.test.AssertTask;
+import com.hazelcast.spi.impl.InternalCompletableFuture;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -64,7 +63,7 @@ public abstract class AbstractAtomicRegisterSnapshotTest<T> extends HazelcastRaf
 
     @Test
     public void test_snapshot() throws Exception {
-        final T initialValue = setAndGetInitialValue();
+        T initialValue = setAndGetInitialValue();
 
         // force snapshot
         for (int i = 0; i < SNAPSHOT_THRESHOLD; i++) {
@@ -75,36 +74,31 @@ public abstract class AbstractAtomicRegisterSnapshotTest<T> extends HazelcastRaf
         // shutdown the last instance
         instances[instances.length - 1].shutdown();
 
-        final HazelcastInstance instance = factory.newHazelcastInstance(createConfig(3, 3));
-        instance.getCPSubsystem().getCPSubsystemManagementService().promoteToCPMember().get();
+        HazelcastInstance instance = factory.newHazelcastInstance(createConfig(3, 3));
+        instance.getCPSubsystem().getCPSubsystemManagementService().promoteToCPMember()
+                .toCompletableFuture().get();
 
         // Read from local CP member, which should install snapshot after promotion.
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() {
-                InternalCompletableFuture<Object> future = queryLocally(instance);
-                try {
-                    T value = getValue(future);
-                    assertEquals(initialValue, value);
-                } catch (CPSubsystemException e) {
-                    // Raft node may not be created yet...
-                    throw new AssertionError(e);
-                }
+        assertTrueEventually(() -> {
+            InternalCompletableFuture<Object> future = queryLocally(instance);
+            try {
+                T value = getValue(future);
+                assertEquals(initialValue, value);
+            } catch (CPSubsystemException e) {
+                // Raft node may not be created yet...
+                throw new AssertionError(e);
             }
         });
 
-        assertTrueAllTheTime(new AssertTask() {
-            @Override
-            public void run() {
-                InternalCompletableFuture<Object> future = queryLocally(instance);
-                T value = getValue(future);
-                assertEquals(initialValue, value);
-            }
+        assertTrueAllTheTime(() -> {
+            InternalCompletableFuture<Object> future = queryLocally(instance);
+            T value = getValue(future);
+            assertEquals(initialValue, value);
         }, 5);
     }
 
     protected T getValue(InternalCompletableFuture<Object> future) {
-        return (T) future.join();
+        return (T) future.joinInternal();
     }
 
     private InternalCompletableFuture<Object> queryLocally(HazelcastInstance instance) {

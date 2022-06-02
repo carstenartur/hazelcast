@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +18,13 @@ package com.hazelcast.internal.journal;
 
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastInstanceAware;
+import com.hazelcast.internal.nio.IOUtil;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.spi.impl.SerializationServiceSupport;
-import com.hazelcast.spi.serialization.SerializationService;
+import com.hazelcast.internal.serialization.SerializationService;
 
 import java.io.IOException;
 import java.util.Map.Entry;
@@ -90,20 +91,20 @@ public class DeserializingEntry<K, V> implements Entry<K, V>, HazelcastInstanceA
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return EventJournalDataSerializerHook.DESERIALIZING_ENTRY;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeData(toData(key, dataKey));
-        out.writeData(toData(value, dataValue));
+        IOUtil.writeData(out, toData(key, dataKey));
+        IOUtil.writeData(out, toData(value, dataValue));
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        dataKey = in.readData();
-        dataValue = in.readData();
+        dataKey = IOUtil.readData(in);
+        dataValue = IOUtil.readData(in);
     }
 
     private Data toData(Object value, Data defaultValue) {

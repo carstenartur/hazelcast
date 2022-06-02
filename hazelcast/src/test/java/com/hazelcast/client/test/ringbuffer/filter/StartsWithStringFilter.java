@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,19 +51,19 @@ public class StartsWithStringFilter implements IFunction<String, Boolean>, Ident
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return CLASS_ID;
     }
 
     @Override
     public void writeData(ObjectDataOutput out)
             throws IOException {
-        out.writeUTF(startString);
+        out.writeString(startString);
     }
 
     @Override
     public void readData(ObjectDataInput in)
             throws IOException {
-        startString = in.readUTF();
+        startString = in.readString();
     }
 }

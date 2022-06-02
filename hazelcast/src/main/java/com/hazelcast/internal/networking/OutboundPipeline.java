@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,14 +22,13 @@ package com.hazelcast.internal.networking;
  */
 public interface OutboundPipeline {
 
-
     /**
      * Adds the handlers at the end of the pipeline
      *
      * No verification is done if the handler is already added and a handler
      * should only be added once.
      *
-     * This method should only be made on the thread 'owning' the handler.
+     * This method should only be made on the thread 'owning' the pipeline.
      *
      * @param handlers the handlers to add.
      * @return this
@@ -44,7 +43,7 @@ public interface OutboundPipeline {
      * No verification is done if any of the handlers is already added and a
      * handler should only be added once.
      *
-     * This method should only be made on the thread 'owning' the handler.
+     * This method should only be made on the thread 'owning' the pipeline.
      *
      * @param oldHandler  the handlers to replace
      * @param newHandlers the new handlers to insert.
@@ -57,7 +56,7 @@ public interface OutboundPipeline {
     /**
      * Removes the given handler from the pipeline.
      *
-     * This method should only be made on the thread 'owning' the handler.
+     * This method should only be made on the thread 'owning' the pipeline.
      *
      * @param handler the handler to remove.
      * @return this
@@ -70,15 +69,15 @@ public interface OutboundPipeline {
      * Request to flush all data to flush from the handlers to
      * the network.
      *
-     * It will cause at least one processing of the outbound pipeline.
+     * It will cause at least one processing of the OutboundPipeline.
      *
-     * This method is threadsafe and can safely be called from any thread.
+     * This method is thread-safe and can safely be called from any thread.
      *
      * Calling it while there is nothing in the pipeline will not do any damage,
      * apart from consuming cpu cycles.
      *
      * This can be used for example, with protocol or handshaking. So imagine
-     * there is a handshake decoder (e.g. protocol or tls), that as soon as it
+     * there is a handshake decoder (e.g. protocol or TLS), that as soon as it
      * has received some data like 'hello', it wants to send back a message to
      * the other side as part of the handshake. This can be done by looking up
      * the handshake encoder, queue the message on that encoder and then call

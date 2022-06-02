@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,21 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.internal.config.ConfigDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.spi.discovery.DiscoveryStrategyFactory;
-import com.hazelcast.util.MapUtil;
+import com.hazelcast.internal.util.MapUtil;
 
+import javax.annotation.Nonnull;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+
+import static com.hazelcast.internal.util.Preconditions.checkHasText;
+import static com.hazelcast.internal.util.Preconditions.checkNotNull;
 
 /**
  * This configuration class describes a {@link com.hazelcast.spi.discovery.DiscoveryStrategy}
@@ -45,48 +50,50 @@ public class DiscoveryStrategyConfig implements IdentifiedDataSerializable {
     }
 
     public DiscoveryStrategyConfig(String className) {
-        this(className, Collections.<String, Comparable>emptyMap());
+        this(className, Collections.emptyMap());
     }
 
     public DiscoveryStrategyConfig(String className,
                                    Map<String, Comparable> properties) {
         this.className = className;
         this.properties = properties == null
-                ? MapUtil.<String, Comparable>createHashMap(1)
-                : new HashMap<String, Comparable>(properties);
+                ? MapUtil.createHashMap(1)
+                : new HashMap<>(properties);
         this.discoveryStrategyFactory = null;
     }
 
 
     public DiscoveryStrategyConfig(DiscoveryStrategyFactory discoveryStrategyFactory) {
-        this(discoveryStrategyFactory, Collections.<String, Comparable>emptyMap());
+        this(discoveryStrategyFactory, Collections.emptyMap());
     }
 
     public DiscoveryStrategyConfig(DiscoveryStrategyFactory discoveryStrategyFactory, Map<String, Comparable> properties) {
         this.className = null;
         this.properties = properties == null
-                ? MapUtil.<String, Comparable>createHashMap(1)
-                : new HashMap<String, Comparable>(properties);
+                ? MapUtil.createHashMap(1)
+                : new HashMap<>(properties);
         this.discoveryStrategyFactory = discoveryStrategyFactory;
     }
 
     public DiscoveryStrategyConfig(DiscoveryStrategyConfig config) {
         className = config.className;
         discoveryStrategyFactory = config.discoveryStrategyFactory;
-        properties = new HashMap<String, Comparable>(config.properties);
+        properties = new HashMap<>(config.properties);
     }
 
     public String getClassName() {
         return className;
     }
 
-    public DiscoveryStrategyConfig setClassName(String className) {
-        this.className = className;
+    public DiscoveryStrategyConfig setClassName(@Nonnull String className) {
+        this.className = checkHasText(className, "Discovery strategy factory class name must contain text");
+        this.discoveryStrategyFactory = null;
         return this;
     }
 
-    public DiscoveryStrategyConfig setDiscoveryStrategyFactory(DiscoveryStrategyFactory discoveryStrategyFactory) {
-        this.discoveryStrategyFactory = discoveryStrategyFactory;
+    public DiscoveryStrategyConfig setDiscoveryStrategyFactory(@Nonnull DiscoveryStrategyFactory discoveryStrategyFactory) {
+        this.discoveryStrategyFactory = checkNotNull(discoveryStrategyFactory, "Discovery strategy factory cannot be null!");
+        this.className = null;
         return this;
     }
 
@@ -94,18 +101,20 @@ public class DiscoveryStrategyConfig implements IdentifiedDataSerializable {
         return discoveryStrategyFactory;
     }
 
-    public void addProperty(String key, Comparable value) {
+    public DiscoveryStrategyConfig addProperty(String key, Comparable value) {
         properties.put(key, value);
+        return this;
     }
 
-    public void removeProperty(String key) {
+    public DiscoveryStrategyConfig removeProperty(String key) {
         properties.remove(key);
+        return this;
     }
 
     public DiscoveryStrategyConfig setProperties(Map<String, Comparable> properties) {
         this.properties = properties == null
-                ? MapUtil.<String, Comparable>createHashMap(1)
-                : new HashMap<String, Comparable>(properties);
+                ? MapUtil.createHashMap(1)
+                : new HashMap<>(properties);
         return this;
     }
 
@@ -128,27 +137,27 @@ public class DiscoveryStrategyConfig implements IdentifiedDataSerializable {
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return ConfigDataSerializerHook.DISCOVERY_STRATEGY_CONFIG;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(className);
+        out.writeString(className);
 
         out.writeInt(properties.size());
         for (Map.Entry<String, Comparable> entry : properties.entrySet()) {
-            out.writeUTF(entry.getKey());
+            out.writeString(entry.getKey());
             out.writeObject(entry.getValue());
         }
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        className = in.readUTF();
+        className = in.readString();
         int size = in.readInt();
         for (int i = 0; i < size; i++) {
-            properties.put(in.readUTF(), (Comparable) in.readObject());
+            properties.put(in.readString(), in.readObject());
         }
     }
 }

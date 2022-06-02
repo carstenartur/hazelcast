@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import com.hazelcast.map.impl.EntryEventFilter;
 import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.impl.QueryableEntry;
 
@@ -38,8 +38,8 @@ public class QueryEventFilter extends EntryEventFilter {
     public QueryEventFilter() {
     }
 
-    public QueryEventFilter(boolean includeValue, Data key, Predicate predicate) {
-        super(includeValue, key);
+    public QueryEventFilter(Data key, Predicate predicate, boolean includeValue) {
+        super(key, includeValue);
         this.predicate = predicate;
     }
 
@@ -55,7 +55,7 @@ public class QueryEventFilter extends EntryEventFilter {
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return MapDataSerializerHook.QUERY_EVENT_FILTER;
     }
 

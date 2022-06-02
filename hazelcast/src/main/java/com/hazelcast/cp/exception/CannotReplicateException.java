@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,10 @@
 package com.hazelcast.cp.exception;
 
 import com.hazelcast.config.cp.RaftAlgorithmConfig;
-import com.hazelcast.core.Endpoint;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 import com.hazelcast.spi.exception.RetryableException;
+
+import java.util.UUID;
 
 /**
  * A {@code CPSubsystemException} which is thrown when an entry cannot be
@@ -36,7 +38,16 @@ public class CannotReplicateException extends CPSubsystemException implements Re
 
     private static final long serialVersionUID = 4407025930140337716L;
 
-    public CannotReplicateException(Endpoint leader) {
-        super("Cannot replicate new operations for now", leader);
+    public CannotReplicateException(RaftEndpoint leader) {
+        super("Cannot replicate new operations for now", leader != null ? leader.getUuid() : null);
+    }
+
+    private CannotReplicateException(UUID leaderUuid, Throwable cause) {
+        super("Cannot replicate new operations for now", cause, leaderUuid);
+    }
+
+    @Override
+    public CannotReplicateException wrap() {
+        return new CannotReplicateException(getLeaderUuid(), this);
     }
 }

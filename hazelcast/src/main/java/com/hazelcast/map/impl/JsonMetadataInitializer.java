@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.hazelcast.core.HazelcastJsonValue;
 import com.hazelcast.json.internal.JsonSchemaHelper;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.Data;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -37,12 +37,9 @@ public class JsonMetadataInitializer implements MetadataInitializer {
 
     public Object createFromData(Data data) throws IOException {
         if (data.isJson()) {
-            JsonParser parser = FACTORY.createParser(new ByteArrayInputStream(data.toByteArray(),
-                    HEAP_DATA_OVERHEAD + UTF_CHAR_COUNT_FIELD_SIZE, data.dataSize() - UTF_CHAR_COUNT_FIELD_SIZE));
-            try {
+            try (JsonParser parser = FACTORY.createParser(new ByteArrayInputStream(data.toByteArray(),
+                    HEAP_DATA_OVERHEAD + UTF_CHAR_COUNT_FIELD_SIZE, data.dataSize() - UTF_CHAR_COUNT_FIELD_SIZE))) {
                 return JsonSchemaHelper.createSchema(parser);
-            } finally {
-                parser.close();
             }
         }
         return null;
@@ -51,11 +48,8 @@ public class JsonMetadataInitializer implements MetadataInitializer {
     public Object createFromObject(Object obj) throws IOException {
         if (obj instanceof HazelcastJsonValue) {
             String str = obj.toString();
-            JsonParser parser = FACTORY.createParser(str);
-            try {
+            try (JsonParser parser = FACTORY.createParser(str)) {
                 return JsonSchemaHelper.createSchema(parser);
-            } finally {
-                parser.close();
             }
         }
         return null;

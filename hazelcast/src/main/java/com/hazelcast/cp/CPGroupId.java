@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,16 +18,19 @@ package com.hazelcast.cp;
 
 /**
  * Identifier for CP groups.
+ *
+ * @see CPGroup
+ * @see CPSubsystem
  */
 public interface CPGroupId {
 
     /**
      * Returns name of the CP group.
      */
-    String name();
+    String getName();
 
     /**
      * Returns unique id of the CP group.
      */
-    long id();
+    long getId();
 }

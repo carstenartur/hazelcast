@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,11 @@
 
 package com.hazelcast.config;
 
-import com.hazelcast.nio.IOUtil;
+import com.hazelcast.internal.nio.IOUtil;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
@@ -37,54 +36,37 @@ import java.util.TreeSet;
 import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class XmlYamlConfigBuilderEqualsTest extends HazelcastTestSupport {
-
-    @Before
-    public void assumeRunningOnJdk8() {
-        assumeThatJDK8OrHigher();
-    }
 
     @Test
     public void testFullConfigNormalNetwork() {
-        Config xmlConfig = new ClasspathXmlConfig("hazelcast-fullconfig.xml");
-        Config yamlConfig = new ClasspathYamlConfig("hazelcast-fullconfig.yaml");
-
-        sortClientPermissionConfigs(xmlConfig);
-        sortClientPermissionConfigs(yamlConfig);
-
-        String xmlConfigFromXml = new ConfigXmlGenerator(true).generate(xmlConfig);
-        String xmlConfigFromYaml = new ConfigXmlGenerator(true).generate(yamlConfig);
-
-        assertEquals(xmlConfigFromXml, xmlConfigFromYaml);
+        assertXmlYamlFileEquals("hazelcast-fullconfig");
     }
 
     @Test
     public void testFullConfigAdvancedNetwork() {
-        Config xmlConfig = new ClasspathXmlConfig("hazelcast-fullconfig-advanced-network-config.xml");
-        Config yamlConfig = new ClasspathYamlConfig("hazelcast-fullconfig-advanced-network-config.yaml");
-
-        sortClientPermissionConfigs(xmlConfig);
-        sortClientPermissionConfigs(yamlConfig);
-
-        String xmlConfigFromXml = new ConfigXmlGenerator(true).generate(xmlConfig);
-        String xmlConfigFromYaml = new ConfigXmlGenerator(true).generate(yamlConfig);
-
-        assertEquals(xmlConfigFromXml, xmlConfigFromYaml);
+        assertXmlYamlFileEquals("hazelcast-fullconfig-advanced-network-config");
     }
 
     @Test
     public void testDefaultConfig() {
-        Config xmlConfig = new ClasspathXmlConfig("hazelcast-default.xml");
-        Config yamlConfig = new ClasspathYamlConfig("hazelcast-default.yaml");
+        assertXmlYamlFileEquals("hazelcast-default");
+    }
 
-        sortClientPermissionConfigs(xmlConfig);
-        sortClientPermissionConfigs(yamlConfig);
+    @Test
+    public void testDefaultAssemblyConfig() {
+        assertXmlYamlFileEquals("hazelcast-default-assembly");
+    }
 
-        String xmlConfigFromXml = new ConfigXmlGenerator(true).generate(xmlConfig);
-        String xmlConfigFromYaml = new ConfigXmlGenerator(true).generate(yamlConfig);
+    @Test
+    public void testDockerAssemblyConfig() {
+        assertXmlYamlFileEquals("hazelcast-docker-assembly");
+    }
 
-        assertEquals(xmlConfigFromXml, xmlConfigFromYaml);
+    @Test
+    public void testSecurityHardenedExample() {
+        assertXmlYamlFileEquals("hazelcast-security-hardened");
     }
 
     @Test
@@ -144,12 +126,12 @@ public class XmlYamlConfigBuilderEqualsTest extends HazelcastTestSupport {
         assertEquals(xmlConfigFromXml, xmlConfigFromYaml);
     }
 
-    public String readResourceToString(String resource) throws IOException {
+    public static String readResourceToString(String resource) throws IOException {
         InputStream xmlInputStream = XmlYamlConfigBuilderEqualsTest.class.getClassLoader().getResourceAsStream(resource);
         return new String(IOUtil.toByteArray(xmlInputStream));
     }
 
-    private File createPasswordFile(String passwordFileName, String passwordFileContent) throws IOException {
+    static File createPasswordFile(String passwordFileName, String passwordFileContent) throws IOException {
         File workDir = new File(".");
         File file = new File(workDir, passwordFileName);
         file.deleteOnExit();
@@ -163,6 +145,19 @@ public class XmlYamlConfigBuilderEqualsTest extends HazelcastTestSupport {
             }
         }
         return file;
+    }
+
+    private void assertXmlYamlFileEquals(String filenameBase) {
+        Config xmlConfig = new ClasspathXmlConfig(filenameBase + ".xml");
+        Config yamlConfig = new ClasspathYamlConfig(filenameBase + ".yaml");
+
+        sortClientPermissionConfigs(xmlConfig);
+        sortClientPermissionConfigs(yamlConfig);
+
+        String xmlConfigFromXml = new ConfigXmlGenerator(true).generate(xmlConfig);
+        String xmlConfigFromYaml = new ConfigXmlGenerator(true).generate(yamlConfig);
+
+        assertEquals(xmlConfigFromXml, xmlConfigFromYaml);
     }
 
     private void sortClientPermissionConfigs(Config config) {

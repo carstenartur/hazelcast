@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,9 @@ package com.hazelcast.client.impl.protocol.task.dynamicconfig;
 
 import com.hazelcast.config.EntryListenerConfig;
 import com.hazelcast.config.InMemoryFormat;
-import com.hazelcast.config.MapIndexConfig;
+import com.hazelcast.config.IndexConfig;
 import com.hazelcast.config.QueryCacheConfig;
-import com.hazelcast.spi.serialization.SerializationService;
+import com.hazelcast.internal.serialization.SerializationService;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,14 +35,37 @@ public class QueryCacheConfigHolder {
     private boolean includeValue;
     private boolean populate;
     private boolean coalesce;
+    private boolean serializeKeysExist;
+    private boolean serializeKeys;
     private String inMemoryFormat;
     private String name;
     private PredicateConfigHolder predicateConfigHolder;
     private EvictionConfigHolder evictionConfigHolder;
     private List<ListenerConfigHolder> listenerConfigs;
-    private List<MapIndexConfig> indexConfigs;
+    private List<IndexConfig> indexConfigs;
 
     public QueryCacheConfigHolder() {
+    }
+
+    public QueryCacheConfigHolder(int batchSize, int bufferSize, int delaySeconds, boolean includeValue,
+                                  boolean populate, boolean coalesce, String inMemoryFormat, String name,
+                                  PredicateConfigHolder predicateConfigHolder,
+                                  EvictionConfigHolder evictionConfigHolder, List<ListenerConfigHolder> listenerConfigs,
+                                  List<IndexConfig> indexConfigs, boolean serializeKeysExist, boolean serializeKeys) {
+        this.batchSize = batchSize;
+        this.bufferSize = bufferSize;
+        this.delaySeconds = delaySeconds;
+        this.includeValue = includeValue;
+        this.populate = populate;
+        this.coalesce = coalesce;
+        this.serializeKeysExist = serializeKeysExist;
+        this.serializeKeys = serializeKeys;
+        this.inMemoryFormat = inMemoryFormat;
+        this.name = name;
+        this.predicateConfigHolder = predicateConfigHolder;
+        this.evictionConfigHolder = evictionConfigHolder;
+        this.listenerConfigs = listenerConfigs;
+        this.indexConfigs = indexConfigs;
     }
 
     public int getBatchSize() {
@@ -83,6 +106,10 @@ public class QueryCacheConfigHolder {
 
     public void setPopulate(boolean populate) {
         this.populate = populate;
+    }
+
+    public void setSerializeKeys(boolean serializeKeys) {
+        this.serializeKeys = serializeKeys;
     }
 
     public boolean isCoalesce() {
@@ -133,12 +160,16 @@ public class QueryCacheConfigHolder {
         this.listenerConfigs = listenerConfigs;
     }
 
-    public List<MapIndexConfig> getIndexConfigs() {
+    public List<IndexConfig> getIndexConfigs() {
         return indexConfigs;
     }
 
-    public void setIndexConfigs(List<MapIndexConfig> indexConfigs) {
+    public void setIndexConfigs(List<IndexConfig> indexConfigs) {
         this.indexConfigs = indexConfigs;
+    }
+
+    public boolean isSerializeKeys() {
+        return serializeKeys;
     }
 
     public QueryCacheConfig asQueryCacheConfig(SerializationService serializationService) {
@@ -147,22 +178,25 @@ public class QueryCacheConfigHolder {
         config.setBufferSize(bufferSize);
         config.setCoalesce(coalesce);
         config.setDelaySeconds(delaySeconds);
-        config.setEvictionConfig(evictionConfigHolder.asEvictionConfg(serializationService));
+        config.setEvictionConfig(evictionConfigHolder.asEvictionConfig(serializationService));
         if (listenerConfigs != null && !listenerConfigs.isEmpty()) {
-            List<EntryListenerConfig> entryListenerConfigs = new ArrayList<EntryListenerConfig>(listenerConfigs.size());
+            List<EntryListenerConfig> entryListenerConfigs = new ArrayList<>(listenerConfigs.size());
             for (ListenerConfigHolder holder : listenerConfigs) {
-                entryListenerConfigs.add((EntryListenerConfig) holder.asListenerConfig(serializationService));
+                entryListenerConfigs.add(holder.asListenerConfig(serializationService));
             }
             config.setEntryListenerConfigs(entryListenerConfigs);
         } else {
-            config.setEntryListenerConfigs(new ArrayList<EntryListenerConfig>());
+            config.setEntryListenerConfigs(new ArrayList<>());
         }
         config.setIncludeValue(includeValue);
         config.setInMemoryFormat(InMemoryFormat.valueOf(inMemoryFormat));
-        config.setIndexConfigs(indexConfigs == null ? new ArrayList<MapIndexConfig>() : indexConfigs);
+        config.setIndexConfigs(indexConfigs == null ? new ArrayList<>() : indexConfigs);
         config.setName(name);
         config.setPredicateConfig(predicateConfigHolder.asPredicateConfig(serializationService));
         config.setPopulate(populate);
+        if (serializeKeysExist) {
+            config.setSerializeKeys(serializeKeys);
+        }
         return config;
     }
 
@@ -177,15 +211,15 @@ public class QueryCacheConfigHolder {
         holder.setInMemoryFormat(config.getInMemoryFormat().toString());
         holder.setName(config.getName());
         if (config.getIndexConfigs() != null && !config.getIndexConfigs().isEmpty()) {
-            List<MapIndexConfig> indexConfigs = new ArrayList<MapIndexConfig>(config.getIndexConfigs().size());
-            for (MapIndexConfig indexConfig : config.getIndexConfigs()) {
-                indexConfigs.add(new MapIndexConfig(indexConfig));
+            List<IndexConfig> indexConfigs = new ArrayList<>(config.getIndexConfigs().size());
+            for (IndexConfig indexConfig : config.getIndexConfigs()) {
+                indexConfigs.add(new IndexConfig(indexConfig));
             }
             holder.setIndexConfigs(indexConfigs);
         }
         if (config.getEntryListenerConfigs() != null && !config.getEntryListenerConfigs().isEmpty()) {
             List<ListenerConfigHolder> listenerConfigHolders =
-                    new ArrayList<ListenerConfigHolder>(config.getEntryListenerConfigs().size());
+                    new ArrayList<>(config.getEntryListenerConfigs().size());
             for (EntryListenerConfig listenerConfig : config.getEntryListenerConfigs()) {
                 listenerConfigHolders.add(ListenerConfigHolder.of(listenerConfig, serializationService));
             }
@@ -193,6 +227,7 @@ public class QueryCacheConfigHolder {
         }
         holder.setPredicateConfigHolder(PredicateConfigHolder.of(config.getPredicateConfig(), serializationService));
         holder.setPopulate(config.isPopulate());
+        holder.setSerializeKeys(config.isSerializeKeys());
         return holder;
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,8 @@
 package com.hazelcast.client.impl.protocol.task;
 
 import com.hazelcast.client.impl.protocol.ClientMessage;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
 
 import java.security.Permission;
 
@@ -40,9 +40,8 @@ public class NoSuchMessageTask extends AbstractMessageTask<ClientMessage> {
 
     @Override
     protected void processMessage() {
-        String message = "Unrecognized client message received with type: 0x"
-                + Integer.toHexString(parameters.getMessageType());
-        logger.warning(message);
+        String message = createMessage();
+        logger.finest(message);
         throw new UnsupportedOperationException(message);
     }
 
@@ -71,14 +70,13 @@ public class NoSuchMessageTask extends AbstractMessageTask<ClientMessage> {
         return null;
     }
 
-    // overriding the partition ID send from client as it is not recognized
-    @Override
-    public int getPartitionId() {
-        return -1;
-    }
-
     @Override
     public Permission getRequiredPermission() {
         return null;
+    }
+
+    private String createMessage() {
+        int messageType = parameters.getMessageType();
+        return "Unrecognized client message received with type: 0x" + Integer.toHexString(messageType);
     }
 }

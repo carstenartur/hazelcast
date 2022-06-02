@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,9 +19,8 @@ package com.hazelcast.cp.internal;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.cp.CPGroupId;
 import com.hazelcast.cp.exception.NotLeaderException;
-import com.hazelcast.test.AssertTask;
-import com.hazelcast.test.HazelcastSerialClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.HazelcastParallelClassRunner;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -35,8 +34,8 @@ import static com.hazelcast.cp.internal.raft.QueryPolicy.LEADER_LOCAL;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
-@RunWith(HazelcastSerialClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@RunWith(HazelcastParallelClassRunner.class)
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class RaftInvocationManagerQueryTest extends HazelcastRaftTestSupport {
 
     private HazelcastInstance[] instances;
@@ -89,19 +88,15 @@ public class RaftInvocationManagerQueryTest extends HazelcastRaftTestSupport {
         instances = newInstances(nodeCount);
 
         RaftInvocationManager invocationService = getRaftInvocationManager(instances[0]);
-        final CPGroupId groupId = invocationService.createRaftGroup("test", nodeCount).get();
+        CPGroupId groupId = invocationService.createRaftGroup("test", nodeCount).get();
 
-        final String value = "value";
+        String value = "value";
         invocationService.invoke(groupId, new RaftTestApplyOp(value)).get();
 
-        final HazelcastInstance follower = getRandomFollowerInstance(instances, groupId);
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run()
-                    throws Exception {
-                Future<Object> future = getRaftInvocationManager(follower).query(groupId, new RaftTestQueryOp(), ANY_LOCAL);
-                assertEquals(value, future.get());
-            }
+        HazelcastInstance follower = getRandomFollowerInstance(instances, groupId);
+        assertTrueEventually(() -> {
+            Future<Object> future = getRaftInvocationManager(follower).query(groupId, new RaftTestQueryOp(), ANY_LOCAL);
+            assertEquals(value, future.get());
         });
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.query.impl;
 
+import com.hazelcast.config.IndexConfig;
 import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -29,7 +30,7 @@ import java.util.List;
 public class MapIndexInfo implements IdentifiedDataSerializable {
 
     private String mapName;
-    private List<IndexInfo> indexInfos = new LinkedList<IndexInfo>();
+    private List<IndexConfig> indexConfigs = new LinkedList<>();
 
     public MapIndexInfo(String mapName) {
         this.mapName = mapName;
@@ -38,39 +39,38 @@ public class MapIndexInfo implements IdentifiedDataSerializable {
     public MapIndexInfo() {
     }
 
-    public void addIndexInfo(String attributeName, boolean ordered) {
-        indexInfos.add(new IndexInfo(attributeName, ordered));
-    }
-
-    public void addIndexInfos(Collection<IndexInfo> indexInfos) {
-        this.indexInfos.addAll(indexInfos);
+    public MapIndexInfo addIndexCofigs(Collection<IndexConfig> indexConfigs) {
+        this.indexConfigs.addAll(indexConfigs);
+        return this;
     }
 
     public String getMapName() {
         return mapName;
     }
 
-    public List<IndexInfo> getIndexInfos() {
-        return indexInfos;
+    public List<IndexConfig> getIndexConfigs() {
+        return indexConfigs;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(mapName);
-        out.writeInt(indexInfos.size());
-        for (IndexInfo indexInfo : indexInfos) {
-            indexInfo.writeData(out);
+        out.writeString(mapName);
+        out.writeInt(indexConfigs.size());
+
+        for (IndexConfig indexConfig : indexConfigs) {
+            out.writeObject(indexConfig);
         }
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        mapName = in.readUTF();
+        mapName = in.readString();
         int size = in.readInt();
+
         for (int i = 0; i < size; i++) {
-            IndexInfo indexInfo = new IndexInfo();
-            indexInfo.readData(in);
-            indexInfos.add(indexInfo);
+            IndexConfig indexConfig = in.readObject();
+
+            indexConfigs.add(indexConfig);
         }
     }
 
@@ -80,7 +80,7 @@ public class MapIndexInfo implements IdentifiedDataSerializable {
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return MapDataSerializerHook.MAP_INDEX_INFO;
     }
 

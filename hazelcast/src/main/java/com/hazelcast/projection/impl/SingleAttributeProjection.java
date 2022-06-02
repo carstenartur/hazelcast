@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,9 +23,10 @@ import com.hazelcast.projection.Projection;
 import com.hazelcast.query.impl.Extractable;
 
 import java.io.IOException;
+import java.util.Objects;
 
-import static com.hazelcast.util.Preconditions.checkFalse;
-import static com.hazelcast.util.Preconditions.checkHasText;
+import static com.hazelcast.internal.util.Preconditions.checkFalse;
+import static com.hazelcast.internal.util.Preconditions.checkHasText;
 
 /**
  * Projection that extracts the values of the given attribute and returns it.
@@ -35,7 +36,7 @@ import static com.hazelcast.util.Preconditions.checkHasText;
  *
  * @param <I> type of the input
  */
-public final class SingleAttributeProjection<I, O> extends Projection<I, O> implements IdentifiedDataSerializable {
+public final class SingleAttributeProjection<I, O> implements Projection<I, O>, IdentifiedDataSerializable {
 
     private String attributePath;
 
@@ -63,17 +64,34 @@ public final class SingleAttributeProjection<I, O> extends Projection<I, O> impl
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return ProjectionDataSerializerHook.SINGLE_ATTRIBUTE;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(attributePath);
+        out.writeString(attributePath);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        attributePath = in.readUTF();
+        attributePath = in.readString();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        SingleAttributeProjection<?, ?> that = (SingleAttributeProjection<?, ?>) o;
+        return Objects.equals(attributePath, that.attributePath);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(attributePath);
     }
 }

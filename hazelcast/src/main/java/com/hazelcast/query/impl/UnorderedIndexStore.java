@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,15 @@
 
 package com.hazelcast.query.impl;
 
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.core.TypeConverter;
+import com.hazelcast.internal.serialization.Data;
+import com.hazelcast.internal.util.FlatCompositeIterator;
+import com.hazelcast.query.Predicate;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,17 +35,17 @@ import static com.hazelcast.query.impl.AbstractIndex.NULL;
 /**
  * Store indexes out of turn.
  */
-public class UnorderedIndexStore extends BaseIndexStore {
+@SuppressWarnings("rawtypes")
+public class UnorderedIndexStore extends BaseSingleValueIndexStore {
 
-    private final ConcurrentMap<Comparable, Map<Data, QueryableEntry>> recordMap =
-            new ConcurrentHashMap<Comparable, Map<Data, QueryableEntry>>(1000);
+    private final ConcurrentMap<Comparable, Map<Data, QueryableEntry>> recordMap = new ConcurrentHashMap<>();
     private final IndexFunctor<Comparable, QueryableEntry> addFunctor;
     private final IndexFunctor<Comparable, Data> removeFunctor;
 
     private volatile Map<Data, QueryableEntry> recordsWithNullValue;
 
     public UnorderedIndexStore(IndexCopyBehavior copyOn) {
-        super(copyOn);
+        super(copyOn, true);
         if (copyOn == IndexCopyBehavior.COPY_ON_WRITE) {
             addFunctor = new CopyOnWriteAddFunctor();
             removeFunctor = new CopyOnWriteRemoveFunctor();
@@ -48,7 +53,7 @@ public class UnorderedIndexStore extends BaseIndexStore {
         } else {
             addFunctor = new AddFunctor();
             removeFunctor = new RemoveFunctor();
-            recordsWithNullValue = new ConcurrentHashMap<Data, QueryableEntry>();
+            recordsWithNullValue = new ConcurrentHashMap<>();
         }
     }
 
@@ -120,6 +125,86 @@ public class UnorderedIndexStore extends BaseIndexStore {
     }
 
     @Override
+    public boolean isEvaluateOnly() {
+        return false;
+    }
+
+    @Override
+    public boolean canEvaluate(Class<? extends Predicate> predicateClass) {
+        return false;
+    }
+
+    @Override
+    public Set<QueryableEntry> evaluate(Predicate predicate, TypeConverter converter) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Iterator<QueryableEntry> getSqlRecordIterator(boolean descending) {
+        Iterator<QueryableEntry> iterator = new IndexEntryFlatteningIterator(recordMap.values().iterator());
+        Iterator<QueryableEntry> nullIterator = recordsWithNullValue.values().iterator();
+
+        return new FlatCompositeIterator<>(Arrays.asList(nullIterator, iterator).iterator());
+    }
+
+    @Override
+    public Iterator<QueryableEntry> getSqlRecordIterator(Comparable value) {
+        if (value == NULL) {
+            return recordsWithNullValue.values().iterator();
+        } else {
+            Map<Data, QueryableEntry> res = recordMap.get(canonicalize(value));
+
+            if (res == null) {
+                return Collections.emptyIterator();
+            }
+
+            return res.values().iterator();
+        }
+    }
+
+    @Override
+    public Iterator<QueryableEntry> getSqlRecordIterator(Comparison comparison, Comparable value, boolean descending) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Iterator<QueryableEntry> getSqlRecordIterator(
+            Comparable from,
+            boolean fromInclusive,
+            Comparable to,
+            boolean toInclusive,
+            boolean descending
+    ) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Iterator<IndexKeyEntries> getSqlRecordIteratorBatch(Comparable value) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Iterator<IndexKeyEntries> getSqlRecordIteratorBatch(boolean descending) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Iterator<IndexKeyEntries> getSqlRecordIteratorBatch(Comparison comparison, Comparable value, boolean descending) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public Iterator<IndexKeyEntries> getSqlRecordIteratorBatch(
+            Comparable from,
+            boolean fromInclusive,
+            Comparable to,
+            boolean toInclusive,
+            boolean descending
+    ) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public Set<QueryableEntry> getRecords(Comparable value) {
         takeReadLock();
         try {
@@ -177,9 +262,6 @@ public class UnorderedIndexStore extends BaseIndexStore {
                         break;
                     case GREATER_OR_EQUAL:
                         valid = result <= 0;
-                        break;
-                    case NOT_EQUAL:
-                        valid = result != 0;
                         break;
                     default:
                         throw new IllegalStateException("Unrecognized comparison: " + comparison);
@@ -247,7 +329,7 @@ public class UnorderedIndexStore extends BaseIndexStore {
             } else {
                 Map<Data, QueryableEntry> records = recordMap.get(value);
                 if (records == null) {
-                    records = new ConcurrentHashMap<Data, QueryableEntry>(1, LOAD_FACTOR, 1);
+                    records = new ConcurrentHashMap<>(1, LOAD_FACTOR, 1);
                     recordMap.put(value, records);
                 }
                 return records.put(entry.getKeyData(), entry);
@@ -268,16 +350,16 @@ public class UnorderedIndexStore extends BaseIndexStore {
         public Object invoke(Comparable value, QueryableEntry entry) {
             Object oldValue;
             if (value == NULL) {
-                HashMap<Data, QueryableEntry> copy = new HashMap<Data, QueryableEntry>(recordsWithNullValue);
+                HashMap<Data, QueryableEntry> copy = new HashMap<>(recordsWithNullValue);
                 oldValue = copy.put(entry.getKeyData(), entry);
                 recordsWithNullValue = copy;
             } else {
                 Map<Data, QueryableEntry> records = recordMap.get(value);
                 if (records == null) {
-                    records = new HashMap<Data, QueryableEntry>();
+                    records = new HashMap<>();
                 }
 
-                records = new HashMap<Data, QueryableEntry>(records);
+                records = new HashMap<>(records);
                 oldValue = records.put(entry.getKeyData(), entry);
 
                 recordMap.put(value, records);
@@ -305,7 +387,7 @@ public class UnorderedIndexStore extends BaseIndexStore {
                 Map<Data, QueryableEntry> records = recordMap.get(value);
                 if (records != null) {
                     oldValue = records.remove(indexKey);
-                    if (records.size() == 0) {
+                    if (records.isEmpty()) {
                         recordMap.remove(value);
                     }
                 } else {
@@ -330,13 +412,13 @@ public class UnorderedIndexStore extends BaseIndexStore {
         public Object invoke(Comparable value, Data indexKey) {
             Object oldValue;
             if (value == NULL) {
-                HashMap<Data, QueryableEntry> copy = new HashMap<Data, QueryableEntry>(recordsWithNullValue);
+                HashMap<Data, QueryableEntry> copy = new HashMap<>(recordsWithNullValue);
                 oldValue = copy.remove(indexKey);
                 recordsWithNullValue = copy;
             } else {
                 Map<Data, QueryableEntry> records = recordMap.get(value);
                 if (records != null) {
-                    records = new HashMap<Data, QueryableEntry>(records);
+                    records = new HashMap<>(records);
                     oldValue = records.remove(indexKey);
 
                     if (records.isEmpty()) {

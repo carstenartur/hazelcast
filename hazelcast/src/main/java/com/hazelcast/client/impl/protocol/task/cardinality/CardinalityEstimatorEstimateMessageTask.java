@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,16 +21,16 @@ import com.hazelcast.cardinality.impl.operations.EstimateOperation;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.CardinalityEstimatorEstimateCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractPartitionMessageTask;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
 import com.hazelcast.security.permission.ActionConstants;
 import com.hazelcast.security.permission.CardinalityEstimatorPermission;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.operationservice.Operation;
 
 import java.security.Permission;
 
 public class CardinalityEstimatorEstimateMessageTask
-        extends AbstractPartitionMessageTask<CardinalityEstimatorEstimateCodec.RequestParameters> {
+        extends AbstractPartitionMessageTask<String> {
 
     public CardinalityEstimatorEstimateMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -38,11 +38,11 @@ public class CardinalityEstimatorEstimateMessageTask
 
     @Override
     protected Operation prepareOperation() {
-        return new EstimateOperation(parameters.name);
+        return new EstimateOperation(parameters);
     }
 
     @Override
-    protected CardinalityEstimatorEstimateCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+    protected String decodeClientMessage(ClientMessage clientMessage) {
         return CardinalityEstimatorEstimateCodec.decodeRequest(clientMessage);
     }
 
@@ -58,12 +58,12 @@ public class CardinalityEstimatorEstimateMessageTask
 
     @Override
     public Permission getRequiredPermission() {
-        return new CardinalityEstimatorPermission(parameters.name, ActionConstants.ACTION_READ);
+        return new CardinalityEstimatorPermission(parameters, ActionConstants.ACTION_READ);
     }
 
     @Override
     public String getDistributedObjectName() {
-        return parameters.name;
+        return parameters;
     }
 
     @Override

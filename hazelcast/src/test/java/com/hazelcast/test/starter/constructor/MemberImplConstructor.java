@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,19 @@
 
 package com.hazelcast.test.starter.constructor;
 
-import com.hazelcast.instance.MemberImpl;
+import com.hazelcast.cluster.impl.MemberImpl;
 import com.hazelcast.test.starter.HazelcastStarterConstructor;
 import com.hazelcast.version.MemberVersion;
 
 import java.lang.reflect.Constructor;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 import static com.hazelcast.test.starter.HazelcastProxyFactory.proxyArgumentsIfNeeded;
 import static com.hazelcast.test.starter.ReflectionUtils.getFieldValueReflectively;
 
-@HazelcastStarterConstructor(classNames = {"com.hazelcast.instance.MemberImpl"})
+@HazelcastStarterConstructor(classNames = {"com.hazelcast.cluster.impl.MemberImpl"})
 public class MemberImplConstructor extends AbstractStarterObjectConstructor {
 
     public MemberImplConstructor(Class<?> targetClass) {
@@ -39,16 +40,16 @@ public class MemberImplConstructor extends AbstractStarterObjectConstructor {
         Object address = getFieldValueReflectively(delegate, "address");
         Object memberVersion = getMemberVersion(delegate);
         Boolean localMember = (Boolean) getFieldValueReflectively(delegate, "localMember");
-        String uuid = (String) getFieldValueReflectively(delegate, "uuid");
+        UUID uuid = (UUID) getFieldValueReflectively(delegate, "uuid");
         Object attributes = getFieldValueReflectively(delegate, "attributes");
         Boolean liteMember = (Boolean) getFieldValueReflectively(delegate, "liteMember");
 
         ClassLoader targetClassloader = targetClass.getClassLoader();
         Class<?> memberVersionClass = targetClassloader.loadClass("com.hazelcast.version.MemberVersion");
 
-        Class<?> hzImplClass = targetClassloader.loadClass("com.hazelcast.instance.HazelcastInstanceImpl");
+        Class<?> hzImplClass = targetClassloader.loadClass("com.hazelcast.instance.impl.HazelcastInstanceImpl");
         Constructor<?> constructor = targetClass
-                .getDeclaredConstructor(Map.class, memberVersionClass, Boolean.TYPE, String.class, Map.class, Boolean.TYPE,
+                .getDeclaredConstructor(Map.class, memberVersionClass, Boolean.TYPE, UUID.class, Map.class, Boolean.TYPE,
                         Integer.TYPE, hzImplClass);
         constructor.setAccessible(true);
         Class<?> endpointQualifierClass =

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.hazelcast.cp.internal.datastructures.lock;
 
 import com.hazelcast.cp.internal.datastructures.spi.blocking.WaitKey;
-import com.hazelcast.nio.Address;
+import com.hazelcast.cluster.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
@@ -25,7 +25,7 @@ import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import java.io.IOException;
 import java.util.UUID;
 
-import static com.hazelcast.util.Preconditions.checkNotNull;
+import static com.hazelcast.internal.util.Preconditions.checkNotNull;
 
 /**
  * Represents lock() invocation of a LockEndpoint.
@@ -42,8 +42,6 @@ public class LockInvocationKey extends WaitKey implements IdentifiedDataSerializ
         super(commitIndex, invocationUid, callerAddress, callId);
         checkNotNull(endpoint);
         this.endpoint = endpoint;
-        this.commitIndex = commitIndex;
-        this.invocationUid = invocationUid;
     }
 
     @Override
@@ -61,12 +59,12 @@ public class LockInvocationKey extends WaitKey implements IdentifiedDataSerializ
 
     @Override
     public int getFactoryId() {
-        return RaftLockDataSerializerHook.F_ID;
+        return LockDataSerializerHook.F_ID;
     }
 
     @Override
-    public int getId() {
-        return RaftLockDataSerializerHook.LOCK_INVOCATION_KEY;
+    public int getClassId() {
+        return LockDataSerializerHook.LOCK_INVOCATION_KEY;
     }
 
     @Override

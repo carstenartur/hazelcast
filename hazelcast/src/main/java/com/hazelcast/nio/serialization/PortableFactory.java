@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,12 @@ package com.hazelcast.nio.serialization;
  * @see com.hazelcast.nio.serialization.Portable
  * @see com.hazelcast.nio.serialization.VersionedPortable
  */
+@FunctionalInterface
 public interface PortableFactory {
 
     /**
-     * Creates a Portable instance using given class ID
+     * Creates a Portable instance using the given class ID
+     *
      * @param classId portable class ID
      * @return portable instance or null if class ID is not known by this factory
      */

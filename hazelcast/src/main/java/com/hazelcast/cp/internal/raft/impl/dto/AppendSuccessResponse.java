@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.cp.internal.raft.impl.dto;
 
-import com.hazelcast.core.Endpoint;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 import com.hazelcast.cp.internal.raft.impl.RaftDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -36,20 +36,22 @@ import java.io.IOException;
  */
 public class AppendSuccessResponse implements IdentifiedDataSerializable {
 
-    private Endpoint follower;
+    private RaftEndpoint follower;
     private int term;
     private long lastLogIndex;
+    private long queryRound;
 
     public AppendSuccessResponse() {
     }
 
-    public AppendSuccessResponse(Endpoint follower, int term, long lastLogIndex) {
+    public AppendSuccessResponse(RaftEndpoint follower, int term, long lastLogIndex, long queryRound) {
         this.follower = follower;
         this.term = term;
         this.lastLogIndex = lastLogIndex;
+        this.queryRound = queryRound;
     }
 
-    public Endpoint follower() {
+    public RaftEndpoint follower() {
         return follower;
     }
 
@@ -61,13 +63,17 @@ public class AppendSuccessResponse implements IdentifiedDataSerializable {
         return lastLogIndex;
     }
 
+    public long queryRound() {
+        return queryRound;
+    }
+
     @Override
     public int getFactoryId() {
         return RaftDataSerializerHook.F_ID;
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftDataSerializerHook.APPEND_SUCCESS_RESPONSE;
     }
 
@@ -76,6 +82,7 @@ public class AppendSuccessResponse implements IdentifiedDataSerializable {
         out.writeInt(term);
         out.writeObject(follower);
         out.writeLong(lastLogIndex);
+        out.writeLong(queryRound);
     }
 
     @Override
@@ -83,12 +90,13 @@ public class AppendSuccessResponse implements IdentifiedDataSerializable {
         term = in.readInt();
         follower = in.readObject();
         lastLogIndex = in.readLong();
+        queryRound = in.readLong();
     }
 
     @Override
     public String toString() {
         return "AppendSuccessResponse{" + "follower=" + follower + ", term=" + term  + ", lastLogIndex="
-                + lastLogIndex + '}';
+                + lastLogIndex + ", queryRound=" + queryRound + '}';
     }
 
 }

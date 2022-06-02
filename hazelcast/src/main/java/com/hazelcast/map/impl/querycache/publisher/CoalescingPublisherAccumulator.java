@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ import com.hazelcast.map.impl.querycache.accumulator.BasicAccumulator;
 import com.hazelcast.map.impl.querycache.event.BatchEventData;
 import com.hazelcast.map.impl.querycache.event.QueryCacheEventData;
 import com.hazelcast.map.impl.querycache.event.sequence.Sequenced;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.Data;
 
 import java.util.Collection;
 import java.util.HashMap;
@@ -41,7 +41,7 @@ class CoalescingPublisherAccumulator extends BasicAccumulator<QueryCacheEventDat
     /**
      * Index map to hold last unpublished event sequence per key.
      */
-    private final Map<Data, Long> index = new HashMap<Data, Long>();
+    private final Map<Data, Long> index = new HashMap<>();
 
     CoalescingPublisherAccumulator(QueryCacheContext context, AccumulatorInfo info) {
         super(context, info);

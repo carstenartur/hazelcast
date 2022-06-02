@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,11 @@
 package com.hazelcast.cache.impl;
 
 import com.hazelcast.cache.CacheEventType;
+import com.hazelcast.internal.nio.IOUtil;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.BinaryInterface;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.BinaryInterface;
+import com.hazelcast.internal.serialization.Data;
 
 import java.io.IOException;
 
@@ -86,27 +87,27 @@ public class CacheEventDataImpl
     @Override
     public void writeData(ObjectDataOutput out)
             throws IOException {
-        out.writeUTF(name);
+        out.writeString(name);
         out.writeInt(eventType.getType());
-        out.writeData(dataKey);
-        out.writeData(dataNewValue);
-        out.writeData(dataOldValue);
+        IOUtil.writeData(out, dataKey);
+        IOUtil.writeData(out, dataNewValue);
+        IOUtil.writeData(out, dataOldValue);
         out.writeBoolean(isOldValueAvailable);
     }
 
     @Override
     public void readData(ObjectDataInput in)
             throws IOException {
-        name = in.readUTF();
+        name = in.readString();
         eventType = CacheEventType.getByType(in.readInt());
-        dataKey = in.readData();
-        dataNewValue = in.readData();
-        dataOldValue = in.readData();
+        dataKey = IOUtil.readData(in);
+        dataNewValue = IOUtil.readData(in);
+        dataOldValue = IOUtil.readData(in);
         isOldValueAvailable = in.readBoolean();
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return CacheDataSerializerHook.CACHE_EVENT_DATA;
     }
 

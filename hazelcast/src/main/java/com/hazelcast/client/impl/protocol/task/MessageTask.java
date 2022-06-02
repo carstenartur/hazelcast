@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,16 @@
 
 package com.hazelcast.client.impl.protocol.task;
 
-import com.hazelcast.spi.impl.PartitionSpecificRunnable;
-
 /**
  * Interface for all client message tasks to implement
  */
-public interface MessageTask extends PartitionSpecificRunnable {
+public interface MessageTask extends Runnable {
+
+    /**
+     * Returns {@code true} if current task is a management one and should be protected by additional access checks (e.g. the
+     * client source address).
+     *
+     * @return {@code true} when the task is a protected management task; {@code false} otherwise
+     */
+    boolean isManagementTask();
 }

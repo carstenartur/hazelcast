@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,15 @@
 
 package com.hazelcast.map.impl.query;
 
+import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
+import com.hazelcast.internal.serialization.SerializationService;
+import com.hazelcast.map.IMap;
 import com.hazelcast.query.Predicate;
-import com.hazelcast.query.TruePredicate;
-import com.hazelcast.spi.serialization.SerializationService;
+import com.hazelcast.query.Predicates;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -33,13 +34,14 @@ import org.junit.runner.RunWith;
 import java.util.Map;
 import java.util.Set;
 
+import static com.hazelcast.test.Accessors.getSerializationService;
 import static com.hazelcast.test.TestCollectionUtils.setOf;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class LocalKeySetTest extends HazelcastTestSupport {
 
     private IMap<String, String> map;
@@ -55,7 +57,9 @@ public class LocalKeySetTest extends HazelcastTestSupport {
 
     @Before
     public void setup() {
-        HazelcastInstance[] cluster = createHazelcastInstanceFactory(2).newInstances();
+        Config config = regularInstanceConfig()
+                .setProperty(QueryEngineImpl.DISABLE_MIGRATION_FALLBACK.getName(), "true");
+        HazelcastInstance[] cluster = createHazelcastInstanceFactory(2).newInstances(config);
         HazelcastInstance local = cluster[0];
         HazelcastInstance remote = cluster[1];
 
@@ -78,7 +82,7 @@ public class LocalKeySetTest extends HazelcastTestSupport {
 
     @Test
     public void whenMapEmpty() {
-        Set<String> result = map.localKeySet(TruePredicate.INSTANCE);
+        Set<String> result = map.localKeySet(Predicates.alwaysTrue());
 
         assertTrue(result.isEmpty());
     }
@@ -100,7 +104,7 @@ public class LocalKeySetTest extends HazelcastTestSupport {
         map.put(localKey2, "b");
         map.put(remoteKey1, "c");
 
-        Set<String> result = map.localKeySet(TruePredicate.INSTANCE);
+        Set<String> result = map.localKeySet(Predicates.alwaysTrue());
 
         assertEquals(setOf(localKey1, localKey2), result);
     }
@@ -120,9 +124,18 @@ public class LocalKeySetTest extends HazelcastTestSupport {
     }
 
     @Test
+    public void whenPartitionPredicate() {
+        map.put(localKey1, "local");
+        map.put(remoteKey1, "remote");
+
+        Predicate<String, String> partitionPredicate = Predicates.partitionPredicate(remoteKey1, Predicates.alwaysTrue());
+        assertEquals(0, map.localKeySet(partitionPredicate).size());
+    }
+
+    @Test
     public void testResultType() {
         map.put(localKey1, "a");
-        Set<String> entries = map.localKeySet(TruePredicate.INSTANCE);
+        Set<String> entries = map.localKeySet(Predicates.alwaysTrue());
 
         QueryResultCollection collection = assertInstanceOf(QueryResultCollection.class, entries);
         QueryResultRow row = (QueryResultRow) collection.getRows().iterator().next();

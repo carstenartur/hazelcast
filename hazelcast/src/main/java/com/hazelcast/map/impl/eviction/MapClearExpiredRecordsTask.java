@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,11 +20,11 @@ import com.hazelcast.internal.eviction.ClearExpiredRecordsTask;
 import com.hazelcast.internal.eviction.ExpiredKey;
 import com.hazelcast.internal.nearcache.impl.invalidation.InvalidationQueue;
 import com.hazelcast.map.impl.PartitionContainer;
-import com.hazelcast.map.impl.operation.ClearExpiredOperation;
 import com.hazelcast.map.impl.operation.EvictBatchBackupOperation;
+import com.hazelcast.map.impl.operation.MapClearExpiredOperation;
 import com.hazelcast.map.impl.recordstore.RecordStore;
-import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.NodeEngine;
+import com.hazelcast.spi.impl.operationservice.Operation;
 import com.hazelcast.spi.properties.HazelcastProperty;
 
 import java.util.Collection;
@@ -40,22 +40,30 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
  * Clears expired entries (TTL & idle).
- * This task provides per partition expiration operation logic. (not per map, not per record store).
- * Fires cleanup operations at most partition operation thread count or some factor of it in one round.
+ * <p>
+ * This task provides per partition expiration operation logic. (not
+ * per map, not per record store). Fires cleanup operations at most
+ * partition operation thread count or some factor of it in one round.
  * <ul>
  * <li>
- * {@value MapClearExpiredRecordsTask#PROP_CLEANUP_PERCENTAGE}: Scannable percentage
- * of entries in a maps' partition in each round.
- * Default percentage is {@value MapClearExpiredRecordsTask#DEFAULT_CLEANUP_PERCENTAGE}%.
+ * {@value PROP_TASK_PERIOD_SECONDS}: The time between termination of
+ * one execution of this task and the commencement of the next one.
+ * Default value is {@value DEFAULT_TASK_PERIOD_SECONDS} seconds.
  * </li>
  * <li>
- * {@value MapClearExpiredRecordsTask#PROP_CLEANUP_OPERATION_COUNT}: Number of
- * scannable partitions in each round. No default value exists. Dynamically calculated against partition-count or
- * partition-thread-count.
+ * {@value PROP_CLEANUP_PERCENTAGE}: Scannable percentage
+ * of entries in a maps' partition in each round. Default
+ * percentage is {@value DEFAULT_CLEANUP_PERCENTAGE}%.
  * </li>
  * <li>
- * {@value MapClearExpiredRecordsTask#PROP_PRIMARY_DRIVES_BACKUP}: Used to enable/disable
- * management of backup expiration from primary. This can only be used with max idle seconds expiration.
+ * {@value PROP_CLEANUP_OPERATION_COUNT}: Number of scannable
+ * partitions in each round. No default value exists. Dynamically
+ * calculated against partition-count or partition-thread-count.
+ * </li>
+ * <li>
+ * {@value PROP_PRIMARY_DRIVES_BACKUP}: Used to enable/disable
+ * management of backup expiration from primary. This
+ * can only be used with max idle seconds expiration.
  * </li>
  * </ul>
  *
@@ -65,22 +73,19 @@ import static java.util.concurrent.TimeUnit.SECONDS;
  * Node-wide setting example:
  * <pre>
  *           Config config = new Config();
- *           config.setProperty(
- *           {@value MapClearExpiredRecordsTask#PROP_CLEANUP_OPERATION_COUNT}, "3");
+ *           config.setProperty({@value PROP_CLEANUP_OPERATION_COUNT}, "3");
  *           Hazelcast.newHazelcastInstance(config);
  *       </pre>
- * </p>
  * <p>
  * System-wide setting example:
  * <pre>
- *        System.setProperty(
- *        {@value MapClearExpiredRecordsTask#PROP_CLEANUP_OPERATION_COUNT}, "3");
+ *        System.setProperty({@value PROP_CLEANUP_OPERATION_COUNT}, "3");
  *    </pre>
- * </p>
  */
 public class MapClearExpiredRecordsTask
         extends ClearExpiredRecordsTask<PartitionContainer, RecordStore> {
 
+    public static final String PROP_CLEANUP_ENABLED = "hazelcast.internal.map.expiration.cleanup.enabled";
     public static final String PROP_PRIMARY_DRIVES_BACKUP = "hazelcast.internal.map.expiration.primary.drives_backup";
     public static final String PROP_CLEANUP_PERCENTAGE = "hazelcast.internal.map.expiration.cleanup.percentage";
     public static final String PROP_CLEANUP_OPERATION_COUNT = "hazelcast.internal.map.expiration.cleanup.operation.count";
@@ -97,20 +102,20 @@ public class MapClearExpiredRecordsTask
             = new HazelcastProperty(PROP_CLEANUP_PERCENTAGE, DEFAULT_CLEANUP_PERCENTAGE);
     private static final HazelcastProperty CLEANUP_OPERATION_COUNT
             = new HazelcastProperty(PROP_CLEANUP_OPERATION_COUNT);
+    private static final HazelcastProperty CLEANUP_ENABLED
+            = new HazelcastProperty(PROP_CLEANUP_ENABLED, true);
 
     private final boolean primaryDrivesEviction;
 
-    private final Comparator<PartitionContainer> partitionContainerComparator = new Comparator<PartitionContainer>() {
-        @Override
-        public int compare(PartitionContainer o1, PartitionContainer o2) {
-            final long s1 = o1.getLastCleanupTimeCopy();
-            final long s2 = o2.getLastCleanupTimeCopy();
-            return (s1 < s2) ? -1 : ((s1 == s2) ? 0 : 1);
-        }
+    private final Comparator<PartitionContainer> partitionContainerComparator = (o1, o2) -> {
+        final long s1 = o1.getLastCleanupTimeCopy();
+        final long s2 = o2.getLastCleanupTimeCopy();
+        return Long.compare(s1, s2);
     };
 
     public MapClearExpiredRecordsTask(PartitionContainer[] containers, NodeEngine nodeEngine) {
-        super(SERVICE_NAME, containers, CLEANUP_OPERATION_COUNT, CLEANUP_PERCENTAGE, TASK_PERIOD_SECONDS, nodeEngine);
+        super(SERVICE_NAME, containers, CLEANUP_ENABLED, CLEANUP_OPERATION_COUNT,
+                CLEANUP_PERCENTAGE, TASK_PERIOD_SECONDS, nodeEngine);
         this.primaryDrivesEviction = nodeEngine.getProperties().getBoolean(PRIMARY_DRIVES_BACKUP);
     }
 
@@ -140,7 +145,7 @@ public class MapClearExpiredRecordsTask
     @Override
     protected Operation newPrimaryExpiryOp(int expirationPercentage, PartitionContainer container) {
         int partitionId = container.getPartitionId();
-        return new ClearExpiredOperation(expirationPercentage)
+        return new MapClearExpiredOperation(expirationPercentage)
                 .setNodeEngine(nodeEngine)
                 .setCallerUuid(nodeEngine.getLocalMember().getUuid())
                 .setPartitionId(partitionId)
@@ -176,7 +181,7 @@ public class MapClearExpiredRecordsTask
         ConcurrentMap<String, RecordStore> maps = container.getMaps();
         for (RecordStore recordStore : maps.values()) {
             int totalBackupCount = recordStore.getMapContainer().getTotalBackupCount();
-            toBackupSender.invokeBackupExpiryOperation(Collections.<ExpiredKey>emptyList(),
+            toBackupSender.invokeBackupExpiryOperation(Collections.emptyList(),
                     totalBackupCount, recordStore.getPartitionId(), recordStore);
         }
     }

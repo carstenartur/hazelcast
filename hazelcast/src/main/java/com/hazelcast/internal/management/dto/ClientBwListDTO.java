@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,13 @@ package com.hazelcast.internal.management.dto;
 import com.hazelcast.internal.json.JsonArray;
 import com.hazelcast.internal.json.JsonObject;
 import com.hazelcast.internal.json.JsonValue;
-import com.hazelcast.internal.management.JsonSerializable;
+import com.hazelcast.json.internal.JsonSerializable;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.hazelcast.util.JsonUtil.getArray;
-import static com.hazelcast.util.JsonUtil.getString;
+import static com.hazelcast.internal.util.JsonUtil.getArray;
+import static com.hazelcast.internal.util.JsonUtil.getString;
 
 /**
  * A serializable DTO that describes client B/W list filtering configuration received from Management Center.
@@ -67,7 +67,7 @@ public class ClientBwListDTO implements JsonSerializable {
         String modeStr = getString(json, "mode");
         mode = Mode.valueOf(modeStr);
 
-        entries = new ArrayList<ClientBwListEntryDTO>();
+        entries = new ArrayList<>();
         JsonArray entriesArray = getArray(json, "entries");
         for (JsonValue jsonValue : entriesArray) {
             ClientBwListEntryDTO entryDTO = new ClientBwListEntryDTO();
@@ -78,7 +78,26 @@ public class ClientBwListDTO implements JsonSerializable {
 
     public enum Mode {
 
-        DISABLED, WHITELIST, BLACKLIST
+        DISABLED(0), WHITELIST(1), BLACKLIST(2);
+
+        private final int id;
+
+        Mode(int id) {
+            this.id = id;
+        }
+
+        public int getId() {
+            return id;
+        }
+
+        public static Mode getById(final int id) {
+            for (Mode mode : values()) {
+                if (mode.id == id) {
+                    return mode;
+                }
+            }
+            return null;
+        }
 
     }
 

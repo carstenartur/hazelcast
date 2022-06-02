@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,22 +18,23 @@ package com.hazelcast.internal.nearcache.impl.invalidation;
 
 import com.hazelcast.internal.nearcache.NearCache;
 import com.hazelcast.internal.nearcache.impl.DefaultNearCache;
+import com.hazelcast.internal.serialization.SerializationService;
+import com.hazelcast.internal.util.ConstructorFunction;
+import com.hazelcast.internal.util.ContextMutexFactory;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.spi.TaskScheduler;
+import com.hazelcast.spi.impl.executionservice.TaskScheduler;
 import com.hazelcast.spi.properties.HazelcastProperties;
 import com.hazelcast.spi.properties.HazelcastProperty;
-import com.hazelcast.spi.serialization.SerializationService;
-import com.hazelcast.util.ConstructorFunction;
-import com.hazelcast.util.ContextMutexFactory;
 
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static com.hazelcast.util.ConcurrencyUtil.getOrPutSynchronized;
-import static com.hazelcast.util.Preconditions.checkNotNegative;
+import static com.hazelcast.internal.util.ConcurrencyUtil.getOrPutSynchronized;
+import static com.hazelcast.internal.util.Preconditions.checkNotNegative;
 import static java.lang.String.format;
 import static java.lang.System.nanoTime;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -73,7 +74,7 @@ public final class RepairingTask implements Runnable {
     final long reconciliationIntervalNanos;
 
     private final int partitionCount;
-    private final String localUuid;
+    private final UUID localUuid;
     private final ILogger logger;
     private final TaskScheduler scheduler;
     private final InvalidationMetaDataFetcher invalidationMetaDataFetcher;
@@ -87,7 +88,7 @@ public final class RepairingTask implements Runnable {
 
     public RepairingTask(HazelcastProperties properties, InvalidationMetaDataFetcher invalidationMetaDataFetcher,
                          TaskScheduler scheduler, SerializationService serializationService,
-                         MinimalPartitionService partitionService, String localUuid, ILogger logger) {
+                         MinimalPartitionService partitionService, UUID localUuid, ILogger logger) {
         this.reconciliationIntervalNanos = SECONDS.toNanos(getReconciliationIntervalSeconds(properties));
         this.maxToleratedMissCount = getMaxToleratedMissCount(properties);
         this.invalidationMetaDataFetcher = invalidationMetaDataFetcher;
@@ -217,16 +218,8 @@ public final class RepairingTask implements Runnable {
     private void initRepairingHandler(RepairingHandler handler) {
         logger.finest("Initializing repairing handler");
 
-        boolean initialized = false;
-        try {
-            invalidationMetaDataFetcher.init(handler);
-            initialized = true;
-        } catch (Exception e) {
-            logger.warning(e);
-        } finally {
-            if (!initialized) {
-                initRepairingHandlerAsync(handler);
-            }
+        if (!invalidationMetaDataFetcher.init(handler)) {
+            initRepairingHandlerAsync(handler);
         }
     }
 

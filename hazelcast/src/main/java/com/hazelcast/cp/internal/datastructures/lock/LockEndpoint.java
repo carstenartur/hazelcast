@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import java.io.IOException;
 
 import static com.hazelcast.cp.internal.session.AbstractProxySessionManager.NO_SESSION_ID;
-import static com.hazelcast.util.Preconditions.checkTrue;
+import static com.hazelcast.internal.util.Preconditions.checkTrue;
 
 /**
  * LockEndpoint represents a thread in a Raft client. It is a combination of
@@ -55,12 +55,12 @@ public class LockEndpoint implements IdentifiedDataSerializable {
 
     @Override
     public int getFactoryId() {
-        return RaftLockDataSerializerHook.F_ID;
+        return LockDataSerializerHook.F_ID;
     }
 
     @Override
-    public int getId() {
-        return RaftLockDataSerializerHook.LOCK_ENDPOINT;
+    public int getClassId() {
+        return LockDataSerializerHook.LOCK_ENDPOINT;
     }
 
     @Override

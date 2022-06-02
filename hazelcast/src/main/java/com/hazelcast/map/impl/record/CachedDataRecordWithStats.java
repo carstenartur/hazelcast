@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,12 @@
 
 package com.hazelcast.map.impl.record;
 
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.Data;
 
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
-import static com.hazelcast.util.JVMUtil.REFERENCE_COST_IN_BYTES;
+import static com.hazelcast.internal.util.JVMUtil.REFERENCE_COST_IN_BYTES;
 
 /**
  * CachedDataRecordWithStats.
@@ -29,12 +30,9 @@ class CachedDataRecordWithStats extends DataRecordWithStats {
     private static final AtomicReferenceFieldUpdater<CachedDataRecordWithStats, Object> CACHED_VALUE =
             AtomicReferenceFieldUpdater.newUpdater(CachedDataRecordWithStats.class, Object.class, "cachedValue");
 
-    private static final int CACHED_VALUE_REF_COST_IN_BYTES = REFERENCE_COST_IN_BYTES;
-
     private transient volatile Object cachedValue;
 
     CachedDataRecordWithStats() {
-        super();
     }
 
     CachedDataRecordWithStats(Data value) {
@@ -59,7 +57,7 @@ class CachedDataRecordWithStats extends DataRecordWithStats {
 
     @Override
     public long getCost() {
-        return super.getCost() + CACHED_VALUE_REF_COST_IN_BYTES;
+        return super.getCost() + REFERENCE_COST_IN_BYTES;
     }
 
     @Override
@@ -77,9 +75,7 @@ class CachedDataRecordWithStats extends DataRecordWithStats {
         }
 
         CachedDataRecordWithStats that = (CachedDataRecordWithStats) o;
-
-        return cachedValue != null ? cachedValue.equals(that.cachedValue) : that.cachedValue == null;
-
+        return Objects.equals(cachedValue, that.cachedValue);
     }
 
     @Override
@@ -89,4 +85,11 @@ class CachedDataRecordWithStats extends DataRecordWithStats {
         return result;
     }
 
+    @Override
+    public String toString() {
+        return "CachedDataRecordWithStats{"
+                + "cachedValue=" + cachedValue
+                + ", " + super.toString()
+                + "} ";
+    }
 }

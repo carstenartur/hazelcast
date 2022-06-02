@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,15 +18,16 @@ package com.hazelcast.cache.impl;
 
 import com.hazelcast.config.CacheConfig;
 import com.hazelcast.internal.eviction.ExpirationManager;
-import com.hazelcast.spi.ServiceNamespace;
-import com.hazelcast.util.ConcurrencyUtil;
-import com.hazelcast.util.ConstructorFunction;
+import com.hazelcast.internal.partition.impl.NameSpaceUtil;
+import com.hazelcast.internal.services.ServiceNamespace;
+import com.hazelcast.internal.util.ConcurrencyUtil;
+import com.hazelcast.internal.util.ConstructorFunction;
 
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Predicate;
 
 /**
  * <p>
@@ -40,7 +41,7 @@ public class CachePartitionSegment implements ConstructorFunction<String, ICache
     protected final int partitionId;
     protected final Object mutex = new Object();
     protected final AbstractCacheService cacheService;
-    protected final ConcurrentMap<String, ICacheRecordStore> recordStores = new ConcurrentHashMap<String, ICacheRecordStore>();
+    protected final ConcurrentMap<String, ICacheRecordStore> recordStores = new ConcurrentHashMap<>();
     private boolean runningCleanupOperation;
 
     private volatile long lastCleanupTime;
@@ -48,7 +49,7 @@ public class CachePartitionSegment implements ConstructorFunction<String, ICache
     /**
      * Used when sorting partition containers in {@link ExpirationManager}
      * A non-volatile copy of lastCleanupTime is used with two reasons.
-     * <p/>
+     * <p>
      * 1. We need an un-modified field during sorting.
      * 2. Decrease number of volatile reads.
      */
@@ -186,12 +187,15 @@ public class CachePartitionSegment implements ConstructorFunction<String, ICache
     }
 
     public Collection<ServiceNamespace> getAllNamespaces(int replicaIndex) {
-        Collection<ServiceNamespace> namespaces = new HashSet<ServiceNamespace>();
-        for (ICacheRecordStore recordStore : recordStores.values()) {
-            if (recordStore.getConfig().getTotalBackupCount() >= replicaIndex) {
-                namespaces.add(recordStore.getObjectNamespace());
-            }
-        }
-        return namespaces;
+        return getNamespaces(ignored -> true, replicaIndex);
+    }
+
+    public Collection<ServiceNamespace> getNamespaces(Predicate<CacheConfig> predicate, int replicaIndex) {
+        return NameSpaceUtil.getAllNamespaces(recordStores,
+                recordStore -> {
+                    CacheConfig cacheConfig = recordStore.getConfig();
+                    return recordStore.getConfig().getTotalBackupCount() >= replicaIndex
+                            && predicate.test(cacheConfig);
+                }, ICacheRecordStore::getObjectNamespace);
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,29 +16,20 @@
 
 package com.hazelcast.query.impl.predicates;
 
+import com.hazelcast.query.PartitionPredicate;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.impl.AndResultSet;
 import com.hazelcast.query.impl.OrResultSet;
 import com.hazelcast.query.impl.QueryableEntry;
 
 import java.util.Collection;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.regex.Pattern;
+import java.util.Optional;
 
 import static com.hazelcast.query.impl.AbstractIndex.NULL;
 
 public final class PredicateUtils {
-
-    private static final int EXPECTED_AVERAGE_COMPONENT_NAME_LENGTH = 16;
-
-    private static final int MAX_INDEX_COMPONENTS = 255;
-
-    private static final Pattern THIS_PATTERN = Pattern.compile("^this\\.");
-
-    private static final Pattern COMMA_PATTERN = Pattern.compile("\\s*,\\s*");
-
     private PredicateUtils() {
+        // No-op.
     }
 
     /**
@@ -68,101 +59,23 @@ public final class PredicateUtils {
     }
 
     /**
-     * @return {@code true} if the given predicate is a {@link RangePredicate},
-     * {@code false} otherwise.
-     */
-    public static boolean isRangePredicate(Predicate predicate) {
-        // XXX: NotEqualPredicate is a subclass of EqualPredicate
-        return predicate instanceof RangePredicate && !(predicate instanceof NotEqualPredicate);
-    }
-
-    /**
-     * @return {@code true} if the given predicate is an {@link EqualPredicate},
-     * {@code false} otherwise.
-     */
-    public static boolean isEqualPredicate(Predicate predicate) {
-        // XXX: NotEqualPredicate is a subclass of EqualPredicate
-        return predicate instanceof EqualPredicate && !(predicate instanceof NotEqualPredicate);
-    }
-
-    /**
-     * Produces canonical attribute representation by stripping an unnecessary
-     * "this." qualifier from the passed attribute, if any.
+     * Unwraps the given potentially {@link Optional optional} value.
      *
-     * @param attribute the attribute to canonicalize.
-     * @return the canonicalized attribute representation.
-     * @see #constructCanonicalCompositeIndexName
+     * @param value the potentially optional value to unwrap.
+     * @return an unwrapped value, if the given value is optional; the
+     * original given value, if it's not optional.
      */
-    public static String canonicalizeAttribute(String attribute) {
-        return THIS_PATTERN.matcher(attribute).replaceFirst("");
+    @SuppressWarnings("unchecked")
+    public static <T> T unwrapIfOptional(Object value) {
+        return value instanceof Optional ? ((Optional<T>) value).orElse(null) : (T) value;
     }
 
-    /**
-     * Parses the given index name into components.
-     *
-     * @param name the index name to parse.
-     * @return the parsed components or {@code null} if the given index name
-     * doesn't describe a composite index components.
-     * @throws IllegalArgumentException if the given index name is empty.
-     * @throws IllegalArgumentException if the given index name contains empty
-     *                                  components.
-     * @throws IllegalArgumentException if the given index name contains
-     *                                  duplicate components.
-     * @throws IllegalArgumentException if the given index name has more than
-     *                                  255 components.
-     * @see #constructCanonicalCompositeIndexName
-     */
-    public static String[] parseOutCompositeIndexComponents(String name) {
-        String[] components = COMMA_PATTERN.split(name, -1);
-
-        if (components.length == 1) {
-            return null;
+    public static PagingPredicateImpl unwrapPagingPredicate(Predicate predicate) {
+        if (predicate instanceof PagingPredicateImpl) {
+            return (PagingPredicateImpl) predicate;
         }
 
-        if (components.length > MAX_INDEX_COMPONENTS) {
-            throw new IllegalArgumentException("Too many composite index attributes: " + name);
-        }
-
-        Set<String> seenComponents = new HashSet<String>(components.length);
-        for (int i = 0; i < components.length; ++i) {
-            String component = PredicateUtils.canonicalizeAttribute(components[i]);
-            components[i] = component;
-
-            if (component.isEmpty()) {
-                throw new IllegalArgumentException("Empty composite index attribute: " + name);
-            }
-            if (!seenComponents.add(component)) {
-                throw new IllegalArgumentException("Duplicate composite index attribute: " + name);
-            }
-        }
-
-        return components;
+        Predicate unwrappedPredicate = ((PartitionPredicate) predicate).getTarget();
+        return (PagingPredicateImpl) unwrappedPredicate;
     }
-
-    /**
-     * Constructs a canonical index name from the given index components.
-     * <p>
-     * A canonical name is a comma-separated list of index components with a
-     * single space character going after every comma.
-     * <p>
-     * It's a caller's responsibility to canonicalize individual components
-     * as specified by {@link #canonicalizeAttribute}.
-     *
-     * @param components the index components to construct the canonical index
-     *                   name from.
-     * @return the constructed canonical index name.
-     */
-    public static String constructCanonicalCompositeIndexName(String[] components) {
-        assert components.length > 1;
-
-        StringBuilder builder = new StringBuilder(components.length * EXPECTED_AVERAGE_COMPONENT_NAME_LENGTH);
-        for (String component : components) {
-            if (builder.length() > 0) {
-                builder.append(", ");
-            }
-            builder.append(component);
-        }
-        return builder.toString();
-    }
-
 }

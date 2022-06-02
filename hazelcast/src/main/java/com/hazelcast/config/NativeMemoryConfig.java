@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,29 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.core.HazelcastException;
+import com.hazelcast.map.IMap;
 import com.hazelcast.memory.MemorySize;
 import com.hazelcast.memory.MemoryUnit;
+import com.hazelcast.memory.NativeOutOfMemoryError;
 
-import static com.hazelcast.util.Preconditions.checkPositive;
-import static com.hazelcast.util.Preconditions.isNotNull;
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+import java.util.List;
+import java.util.Objects;
+
+import static com.hazelcast.internal.util.Preconditions.checkPositive;
+import static com.hazelcast.internal.util.Preconditions.isNotNull;
+import static java.util.Objects.requireNonNull;
 
 /**
  * Configures native memory region.
  * <p>
  * Native memory is allocated outside JVM heap space and is not subject to JVM garbage collection.
- * Therefore, hundreds of gigabytes of native memory can be allocated & used without introducing
+ * Therefore, hundreds of gigabytes of native memory can be allocated &amp; used without introducing
  * pressure on GC mechanism.
  * <p>
- * Data structures, such as {@link com.hazelcast.core.IMap} and {@link com.hazelcast.cache.ICache},
+ * Data structures, such as {@link IMap} and {@link com.hazelcast.cache.ICache},
  * store their data (entries, indexes etc.) in native memory region when they are configured with
  * {@link InMemoryFormat#NATIVE}.
  */
@@ -65,6 +74,8 @@ public class NativeMemoryConfig {
     private int pageSize = DEFAULT_PAGE_SIZE;
     private float metadataSpacePercentage = DEFAULT_METADATA_SPACE_PERCENTAGE;
 
+    private PersistentMemoryConfig persistentMemoryConfig = new PersistentMemoryConfig();
+
     public NativeMemoryConfig() {
     }
 
@@ -75,6 +86,7 @@ public class NativeMemoryConfig {
         minBlockSize = nativeMemoryConfig.minBlockSize;
         pageSize = nativeMemoryConfig.pageSize;
         metadataSpacePercentage = nativeMemoryConfig.metadataSpacePercentage;
+        persistentMemoryConfig = new PersistentMemoryConfig(nativeMemoryConfig.persistentMemoryConfig);
     }
 
     /**
@@ -89,7 +101,7 @@ public class NativeMemoryConfig {
      * <p>
      * Total size of the memory blocks allocated in native memory region cannot exceed this memory size.
      * When native memory region is completely allocated and in-use, further allocation requests will fail
-     * with {@link com.hazelcast.memory.NativeOutOfMemoryError}.
+     * with {@link NativeOutOfMemoryError}.
      *
      * @param size memory size
      * @return this {@link NativeMemoryConfig} instance
@@ -155,7 +167,7 @@ public class NativeMemoryConfig {
      * @return this {@link NativeMemoryConfig} instance
      */
     public NativeMemoryConfig setMinBlockSize(int minBlockSize) {
-        this.minBlockSize = checkPositive(minBlockSize, "Minimum block size should be positive");
+        this.minBlockSize = checkPositive("minBlockSize", minBlockSize);
         return this;
     }
 
@@ -184,7 +196,7 @@ public class NativeMemoryConfig {
      * @return this {@link NativeMemoryConfig} instance
      */
     public NativeMemoryConfig setPageSize(int pageSize) {
-        this.pageSize = checkPositive(pageSize, "Page size should be positive");
+        this.pageSize = checkPositive("pageSize", pageSize);
         return this;
     }
 
@@ -210,6 +222,78 @@ public class NativeMemoryConfig {
      */
     public NativeMemoryConfig setMetadataSpacePercentage(float metadataSpacePercentage) {
         this.metadataSpacePercentage = metadataSpacePercentage;
+        return this;
+    }
+
+    /**
+     * Returns the persistent memory configuration this native memory
+     * configuration uses.
+     *
+     * @return the persistent memory configuration
+     */
+    @Nonnull
+    public PersistentMemoryConfig getPersistentMemoryConfig() {
+        return persistentMemoryConfig;
+    }
+
+    /**
+     * Sets the persistent memory configuration this native memory
+     * configuration uses.
+     *
+     * @param persistentMemoryConfig The persistent memory configuration to use
+     */
+    public void setPersistentMemoryConfig(@Nonnull PersistentMemoryConfig persistentMemoryConfig) {
+        this.persistentMemoryConfig = requireNonNull(persistentMemoryConfig);
+    }
+
+    /**
+     * Returns the persistent memory directory (e.g. Intel Optane) to be
+     * used to store memory structures allocated by native memory manager.
+     * If there are multiple persistent memory directories are defined in
+     * {@link #persistentMemoryConfig}, an {@link IllegalStateException}
+     * is thrown.
+     *
+     * @see PersistentMemoryConfig#getDirectoryConfigs()
+     * @deprecated Since 4.1 multiple persistent memory directories are
+     * supported. Please use {@link PersistentMemoryConfig#getDirectoryConfigs()}
+     * instead.
+     */
+    @Deprecated
+    @Nullable
+    public String getPersistentMemoryDirectory() {
+        List<PersistentMemoryDirectoryConfig> directoryConfigs = persistentMemoryConfig.getDirectoryConfigs();
+        int directoriesDefined = directoryConfigs.size();
+        if (directoriesDefined > 1) {
+            throw new HazelcastException("There are multiple persistent memory directories configured. Please use "
+                    + "PersistentMemoryConfig.getDirectoryConfigs()!");
+        }
+
+        return directoriesDefined == 1 ? directoryConfigs.get(0).getDirectory() : null;
+    }
+
+    /**
+     * Sets the persistent memory directory (e.g. Intel Optane) to be used
+     * to store memory structures allocated by native memory manager. If
+     * the {@link #persistentMemoryConfig} already contains directory
+     * definition, it is overridden with the provided {@code directory}.
+     *
+     * @param directory the persistent memory directory
+     * @return this {@link NativeMemoryConfig} instance
+     * @see #getPersistentMemoryConfig()
+     * @see PersistentMemoryConfig#addDirectoryConfig(PersistentMemoryDirectoryConfig)
+     * @deprecated Since 4.1 multiple persistent memory directories are
+     * supported. Please use {@link #setPersistentMemoryConfig(PersistentMemoryConfig)}
+     * or {@link PersistentMemoryConfig#addDirectoryConfig(PersistentMemoryDirectoryConfig)}
+     * instead.
+     */
+    @Nonnull
+    @Deprecated
+    public NativeMemoryConfig setPersistentMemoryDirectory(@Nullable String directory) {
+        if (directory != null) {
+            this.persistentMemoryConfig.setDirectoryConfig(new PersistentMemoryDirectoryConfig(directory));
+        } else {
+            this.persistentMemoryConfig.getDirectoryConfigs().clear();
+        }
         return this;
     }
 
@@ -256,7 +340,10 @@ public class NativeMemoryConfig {
         if (Float.compare(that.metadataSpacePercentage, metadataSpacePercentage) != 0) {
             return false;
         }
-        if (size != null ? !size.equals(that.size) : that.size != null) {
+        if (!Objects.equals(size, that.size)) {
+            return false;
+        }
+        if (!persistentMemoryConfig.equals(that.persistentMemoryConfig)) {
             return false;
         }
         return allocatorType == that.allocatorType;
@@ -270,6 +357,7 @@ public class NativeMemoryConfig {
         result = 31 * result + minBlockSize;
         result = 31 * result + pageSize;
         result = 31 * result + (metadataSpacePercentage != +0.0f ? Float.floatToIntBits(metadataSpacePercentage) : 0);
+        result = 31 * result + (persistentMemoryConfig.hashCode());
         return result;
     }
 
@@ -282,6 +370,7 @@ public class NativeMemoryConfig {
                 + ", minBlockSize=" + minBlockSize
                 + ", pageSize=" + pageSize
                 + ", metadataSpacePercentage=" + metadataSpacePercentage
+                + ", persistentMemoryConfig=" + persistentMemoryConfig
                 + '}';
     }
 }

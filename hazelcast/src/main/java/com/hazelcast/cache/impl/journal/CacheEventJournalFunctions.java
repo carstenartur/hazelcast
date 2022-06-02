@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,14 @@
 package com.hazelcast.cache.impl.journal;
 
 import com.hazelcast.cache.CacheEventType;
-import com.hazelcast.cache.journal.EventJournalCacheEvent;
+import com.hazelcast.cache.EventJournalCacheEvent;
 import com.hazelcast.internal.journal.DeserializingEntry;
-import com.hazelcast.nio.serialization.SerializableByConvention;
-import com.hazelcast.util.function.Function;
-import com.hazelcast.util.function.Predicate;
+import com.hazelcast.internal.serialization.SerializableByConvention;
 
 import java.io.Serializable;
 import java.util.Map.Entry;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
  * Utility functions used from Jet. They are here so that they can be also used

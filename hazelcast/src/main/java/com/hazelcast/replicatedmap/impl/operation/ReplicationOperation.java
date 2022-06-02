@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,22 +19,22 @@ package com.hazelcast.replicatedmap.impl.operation;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.replicatedmap.impl.PartitionContainer;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
 import com.hazelcast.replicatedmap.impl.record.AbstractReplicatedRecordStore;
 import com.hazelcast.replicatedmap.impl.record.RecordMigrationInfo;
 import com.hazelcast.replicatedmap.impl.record.ReplicatedRecord;
 import com.hazelcast.replicatedmap.impl.record.ReplicatedRecordStore;
-import com.hazelcast.spi.serialization.SerializationService;
+import com.hazelcast.internal.serialization.SerializationService;
 
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
-import static com.hazelcast.util.MapUtil.createHashMap;
-import static com.hazelcast.util.SetUtil.createHashSet;
+import static com.hazelcast.internal.util.MapUtil.createHashMap;
+import static com.hazelcast.internal.util.SetUtil.createHashSet;
 
 /**
  * Carries all the partition data for replicated map from old owner to the new owner.
@@ -118,7 +118,7 @@ public class ReplicationOperation extends AbstractSerializableOperation {
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         out.writeInt(data.size());
         for (Map.Entry<String, Set<RecordMigrationInfo>> entry : data.entrySet()) {
-            out.writeUTF(entry.getKey());
+            out.writeString(entry.getKey());
             Set<RecordMigrationInfo> recordSet = entry.getValue();
             out.writeInt(recordSet.size());
             for (RecordMigrationInfo record : recordSet) {
@@ -127,7 +127,7 @@ public class ReplicationOperation extends AbstractSerializableOperation {
         }
         out.writeInt(versions.size());
         for (Map.Entry<String, Long> entry : versions.entrySet()) {
-            out.writeUTF(entry.getKey());
+            out.writeString(entry.getKey());
             out.writeLong(entry.getValue());
         }
     }
@@ -137,7 +137,7 @@ public class ReplicationOperation extends AbstractSerializableOperation {
         int size = in.readInt();
         data = createHashMap(size);
         for (int i = 0; i < size; i++) {
-            String name = in.readUTF();
+            String name = in.readString();
             int mapSize = in.readInt();
             Set<RecordMigrationInfo> recordSet = createHashSet(mapSize);
             for (int j = 0; j < mapSize; j++) {
@@ -150,7 +150,7 @@ public class ReplicationOperation extends AbstractSerializableOperation {
         int versionsSize = in.readInt();
         versions = createHashMap(versionsSize);
         for (int i = 0; i < versionsSize; i++) {
-            String name = in.readUTF();
+            String name = in.readString();
             long version = in.readLong();
             versions.put(name, version);
         }
@@ -161,7 +161,7 @@ public class ReplicationOperation extends AbstractSerializableOperation {
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return ReplicatedMapDataSerializerHook.REPLICATION;
     }
 }

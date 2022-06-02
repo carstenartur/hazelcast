@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,16 @@
 
 package com.hazelcast.cp.internal.datastructures.spi;
 
-import com.hazelcast.spi.ManagedService;
+import com.hazelcast.internal.services.ManagedService;
 
 /**
  * An interface that can be implemented by a CP data structure service
- * to receive CP subsystem lifecycle calls
+ * to receive CP Subsystem lifecycle calls
  */
 public interface RaftManagedService extends ManagedService {
 
     /**
-     * Called when the CP subsystem is restarted.
+     * Called when CP Subsystem is restarted.
      */
     void onCPSubsystemRestart();
 

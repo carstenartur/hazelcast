@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,20 @@
 
 package com.hazelcast.internal.partition.operation;
 
+import com.hazelcast.cluster.Address;
 import com.hazelcast.internal.partition.InternalPartitionService;
+import com.hazelcast.internal.partition.PartitionReplica;
 import com.hazelcast.internal.partition.ReplicaErrorLogger;
+import com.hazelcast.internal.partition.impl.InternalPartitionImpl;
 import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
 import com.hazelcast.internal.partition.impl.PartitionReplicaManager;
+import com.hazelcast.internal.services.ServiceNamespace;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.impl.Versioned;
-import com.hazelcast.spi.PartitionAwareOperation;
-import com.hazelcast.spi.ServiceNamespace;
 import com.hazelcast.spi.impl.AllowedDuringPassiveState;
 import com.hazelcast.spi.impl.NodeEngineImpl;
+import com.hazelcast.spi.impl.operationservice.PartitionAwareOperation;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -37,10 +39,9 @@ import java.util.Map;
 import static com.hazelcast.internal.partition.impl.PartitionDataSerializerHook.PARTITION_BACKUP_REPLICA_ANTI_ENTROPY;
 
 // should not be an urgent operation. required to be in order with backup operations on target node
-// RU_COMPAT_39: Do not remove Versioned interface! Version info is needed on 3.9 members while deserializing the operation.
 public final class PartitionBackupReplicaAntiEntropyOperation
         extends AbstractPartitionOperation
-        implements PartitionAwareOperation, AllowedDuringPassiveState, Versioned {
+        implements PartitionAwareOperation, AllowedDuringPassiveState {
 
     private Map<ServiceNamespace, Long> versions;
     private boolean returnResponse;
@@ -49,13 +50,14 @@ public final class PartitionBackupReplicaAntiEntropyOperation
     public PartitionBackupReplicaAntiEntropyOperation() {
     }
 
-    public PartitionBackupReplicaAntiEntropyOperation(Map<ServiceNamespace, Long> versions, boolean returnResponse) {
+    public PartitionBackupReplicaAntiEntropyOperation(Map<ServiceNamespace, Long> versions,
+                                                      boolean returnResponse) {
         this.versions = versions;
         this.returnResponse = returnResponse;
     }
 
     @Override
-    public void run() throws Exception {
+    public void run() {
         if (!isNodeStartCompleted()) {
             response = false;
             return;
@@ -65,8 +67,34 @@ public final class PartitionBackupReplicaAntiEntropyOperation
         int partitionId = getPartitionId();
         int replicaIndex = getReplicaIndex();
 
+        InternalPartitionImpl partition = partitionService.getPartitionStateManager().getPartitionImpl(partitionId);
+        int currentReplicaIndex = partition.getReplicaIndex(PartitionReplica.from(getNodeEngine().getLocalMember()));
+
+        ILogger logger = getLogger();
+        if (replicaIndex != currentReplicaIndex) {
+            logger.fine("Anti-entropy operation for partitionId=" + getPartitionId() + ", replicaIndex=" + getReplicaIndex()
+                    + " is received, but this node is not the expected backup replica!"
+                    + " Current replicaIndex=" + currentReplicaIndex);
+            response = false;
+            return;
+        }
+
+        Address ownerAddress = partition.getOwnerOrNull();
+        if (!getCallerAddress().equals(ownerAddress)) {
+            logger.fine("Anti-entropy operation for partitionId=" + getPartitionId() + ", replicaIndex=" + getReplicaIndex()
+                    + " is received from " + getCallerAddress() + ", but it's not the known primary replica owner: "
+                    + ownerAddress);
+            response = false;
+            return;
+        }
+
         PartitionReplicaManager replicaManager = partitionService.getReplicaManager();
         replicaManager.retainNamespaces(partitionId, versions.keySet());
+
+        if (logger.isFinestEnabled()) {
+            logger.finest("Retained namespaces for partitionId=" + partitionId + ", replicaIndex=" + replicaIndex
+                    + ". Namespaces=" + replicaManager.getNamespaces(partitionId));
+        }
 
         Iterator<Map.Entry<ServiceNamespace, Long>> iter = versions.entrySet().iterator();
         while (iter.hasNext()) {
@@ -150,7 +178,7 @@ public final class PartitionBackupReplicaAntiEntropyOperation
     @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
         int len = in.readInt();
-        versions = new HashMap<ServiceNamespace, Long>(len);
+        versions = new HashMap<>(len);
         for (int i = 0; i < len; i++) {
             ServiceNamespace ns = in.readObject();
             long v = in.readLong();
@@ -166,7 +194,7 @@ public final class PartitionBackupReplicaAntiEntropyOperation
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return PARTITION_BACKUP_REPLICA_ANTI_ENTROPY;
     }
 }

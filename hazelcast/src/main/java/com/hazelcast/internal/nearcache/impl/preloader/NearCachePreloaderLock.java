@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,35 +17,52 @@
 package com.hazelcast.internal.nearcache.impl.preloader;
 
 import com.hazelcast.core.HazelcastException;
+import com.hazelcast.internal.nio.IOUtil;
+import com.hazelcast.internal.util.EmptyStatement;
 import com.hazelcast.logging.ILogger;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.nio.channels.ClosedChannelException;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
 
-import static com.hazelcast.nio.IOUtil.closeResource;
+import static com.hazelcast.internal.nio.IOUtil.closeResource;
 
 class NearCachePreloaderLock {
 
     private final ILogger logger;
 
     private final File lockFile;
-    private final FileChannel channel;
+    private final RandomAccessFile randomAccessFile;
     private final FileLock lock;
 
     NearCachePreloaderLock(ILogger logger, String lockFilename) {
         this.logger = logger;
 
         this.lockFile = new File(lockFilename);
-        this.channel = openChannel(lockFile);
-        this.lock = acquireLock(lockFile, channel);
+        this.randomAccessFile = openRandomAccessFile(lockFile);
+        this.lock = acquireLock(lockFile, randomAccessFile.getChannel());
     }
 
     void release() {
-        releaseInternal(lock, channel);
+        try {
+            lock.release();
+        } catch (ClosedChannelException e) {
+            EmptyStatement.ignore(e);
+        } catch (IOException e) {
+            logger.severe("Problem while releasing the lock on " + lockFile, e);
+        }
+
+        try {
+            randomAccessFile.close();
+        } catch (IOException e) {
+            logger.severe("Problem while closing the channel " + lockFile, e);
+        } finally {
+            IOUtil.delete(lockFile);
+        }
     }
 
     // package private for testing
@@ -70,21 +87,9 @@ class NearCachePreloaderLock {
         }
     }
 
-    // package private for testing
-    void releaseInternal(FileLock lock, FileChannel channel) {
+    private static RandomAccessFile openRandomAccessFile(File lockFile) {
         try {
-            lock.release();
-            channel.close();
-        } catch (IOException e) {
-            logger.severe("Problem while releasing the lock and closing channel on " + lockFile, e);
-        } finally {
-            lockFile.deleteOnExit();
-        }
-    }
-
-    private FileChannel openChannel(File lockFile) {
-        try {
-            return new RandomAccessFile(lockFile, "rw").getChannel();
+            return new RandomAccessFile(lockFile, "rw");
         } catch (IOException e) {
             throw new HazelcastException("Cannot create lock file " + lockFile.getAbsolutePath(), e);
         }

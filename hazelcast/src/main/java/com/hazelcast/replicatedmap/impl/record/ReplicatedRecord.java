@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,9 @@
 
 package com.hazelcast.replicatedmap.impl.record;
 
-import com.hazelcast.util.Clock;
+import com.hazelcast.internal.util.Clock;
 
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 /**
@@ -44,6 +45,8 @@ public class ReplicatedRecord<K, V> {
     private volatile long creationTime = Clock.currentTimeMillis();
 
     public ReplicatedRecord(K key, V value, long ttlMillis) {
+        assert key != null;
+        assert value != null;
         this.key = key;
         this.value = value;
         this.ttlMillis = ttlMillis;
@@ -67,10 +70,6 @@ public class ReplicatedRecord<K, V> {
         return value;
     }
 
-    public boolean isTombstone() {
-        return value == null;
-    }
-
     public long getTtlMillis() {
         return ttlMillis;
     }
@@ -81,6 +80,7 @@ public class ReplicatedRecord<K, V> {
     }
 
     public V setValueInternal(V value, long ttlMillis) {
+        assert value != null;
         V oldValue = this.value;
         this.value = value;
         this.updateTime = Clock.currentTimeMillis();
@@ -140,14 +140,10 @@ public class ReplicatedRecord<K, V> {
         if (ttlMillis != that.ttlMillis) {
             return false;
         }
-        if (key != null ? !key.equals(that.key) : that.key != null) {
+        if (!Objects.equals(key, that.key)) {
             return false;
         }
-        if (value != null ? !value.equals(that.value) : that.value != null) {
-            return false;
-        }
-
-        return true;
+        return Objects.equals(value, that.value);
     }
 
     @Override

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -50,6 +50,8 @@ public interface ICacheManager {
      * Classloader prefix is generated as a string representation of the specified classloader: ({@code cl.toString()})
      *
      * @param name the prefixed name of the cache
+     * @param <K> the type of key
+     * @param <V> the type of value
      * @return the cache instance with the specified prefixed name
      *
      * @throws com.hazelcast.cache.CacheNotExistsException  if there is no configured or created cache

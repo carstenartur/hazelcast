@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,13 @@
 
 package com.hazelcast.topic;
 
+import com.hazelcast.cluster.Member;
+import com.hazelcast.cluster.impl.MemberImpl;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.ListenerConfig;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.ITopic;
-import com.hazelcast.core.Member;
-import com.hazelcast.core.Message;
-import com.hazelcast.core.MessageListener;
-import com.hazelcast.instance.MemberImpl;
-import com.hazelcast.monitor.impl.LocalTopicStatsImpl;
+import com.hazelcast.internal.monitor.impl.LocalTopicStatsImpl;
+import com.hazelcast.internal.util.UuidUtil;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.DataSerializable;
@@ -33,29 +31,32 @@ import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.NightlyTest;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.test.annotation.Repeat;
 import com.hazelcast.topic.impl.TopicService;
-import com.hazelcast.util.UuidUtil;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.hazelcast.test.Accessors.getNode;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
@@ -63,7 +64,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class TopicTest extends HazelcastTestSupport {
 
     @Test
@@ -137,6 +138,121 @@ public class TopicTest extends HazelcastTestSupport {
                 assertEquals(nodeCount, count3.get());
             }
         });
+    }
+
+    @Test
+    public void testTopicPublishAsync() throws Exception {
+        final String randomName = "testTopicPublishAsync" + generateRandomString(5);
+        final AtomicInteger count = new AtomicInteger(0);
+
+        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(1);
+        HazelcastInstance instance = factory.newHazelcastInstance();
+        ITopic<String> topic = instance.getTopic(randomName);
+        topic.addMessageListener(new MessageListener<String>() {
+
+            @Override
+            public void onMessage(Message<String> message) {
+                count.incrementAndGet();
+            }
+        });
+
+        final CompletableFuture<Void> f = topic.publishAsync("TestMessage").toCompletableFuture();
+        assertCompletesEventually(f);
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() {
+                assertEquals(1, count.get());
+            }
+        });
+    }
+
+    @Test
+    public void testTopicPublishAll() throws ExecutionException, InterruptedException {
+        final String randomName = "testTopicPublishAll" + generateRandomString(5);
+        final AtomicInteger count = new AtomicInteger(0);
+
+        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(1);
+        HazelcastInstance instance = factory.newHazelcastInstance();
+        ITopic<String> topic = instance.getTopic(randomName);
+        topic.addMessageListener(new MessageListener<String>() {
+
+            @Override
+            public void onMessage(Message<String> message) {
+                count.incrementAndGet();
+            }
+        });
+
+        final List<String> messages = Arrays.asList("message 1", "message 2", "messgae 3");
+        topic.publishAll(messages);
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() {
+                assertEquals(messages.size(), count.get());
+            }
+        });
+    }
+
+
+    @Test
+    public void testTopicPublishingAllAsync() throws Exception {
+        final String randomName = "testTopicPublishingAllAsync" + generateRandomString(5);
+        final AtomicInteger count = new AtomicInteger(0);
+
+        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(1);
+        HazelcastInstance instance = factory.newHazelcastInstance();
+        ITopic<String> topic = instance.getTopic(randomName);
+        topic.addMessageListener(new MessageListener<String>() {
+
+            @Override
+            public void onMessage(Message<String> message) {
+                count.incrementAndGet();
+            }
+        });
+        final List<String> messages = Arrays.asList("message 1", "message 2", "messgae 3");
+        final CompletableFuture<Void> f = topic.publishAllAsync(messages).toCompletableFuture();
+        assertCompletesEventually(f);
+        assertTrueEventually(new AssertTask() {
+            @Override
+            public void run() {
+                assertEquals(messages.size(), count.get());
+            }
+        });
+    }
+
+    @Test
+    public void testBlockingAsync() {
+        AtomicInteger count = new AtomicInteger(0);
+        final String randomName = "testTopicPublishingAllAsync" + generateRandomString(5);
+        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(1);
+        HazelcastInstance instance = factory.newHazelcastInstance();
+        ITopic<String> topic = instance.getTopic(randomName);
+        topic.addMessageListener(message -> count.incrementAndGet());
+        for (int i = 0; i < 10; i++) {
+            topic.publish("message");
+        }
+        assertTrueEventually(() -> assertEquals(10, count.get()));
+        final List<String> data = Arrays.asList("msg 1", "msg 2", "msg 3", "msg 4", "msg 5");
+        assertCompletesEventually(topic.publishAllAsync(data).toCompletableFuture());
+        assertTrueEventually(() -> assertEquals(15, count.get()));
+    }
+
+    @Test(expected = NullPointerException.class)
+    public void testTopicPublishingAllException() throws ExecutionException, InterruptedException {
+        final int nodeCount = 1;
+        final String randomName = "testTopicPublishingAllException" + generateRandomString(5);
+
+        TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory(nodeCount);
+        HazelcastInstance[] instances = factory.newInstances();
+
+        Collection<Integer> messages = new ArrayList<>();
+        messages.add(1);
+        messages.add(null);
+        messages.add(3);
+
+        for (int i = 0; i < nodeCount; i++) {
+            HazelcastInstance instance = instances[i];
+            instance.getTopic(randomName).publishAll(messages);
+        }
     }
 
     @Test
@@ -286,13 +402,13 @@ public class TopicTest extends HazelcastTestSupport {
 
         public void writeData(ObjectDataOutput out) throws IOException {
             publisher.writeData(out);
-            out.writeUTF(data);
+            out.writeString(data);
         }
 
         public void readData(ObjectDataInput in) throws IOException {
             publisher = new MemberImpl();
             publisher.readData(in);
-            data = in.readUTF();
+            data = in.readString();
         }
 
         @Override
@@ -410,7 +526,6 @@ public class TopicTest extends HazelcastTestSupport {
     }
 
     @Test
-    @Repeat(10)
     public void removeMessageListener() throws InterruptedException {
         String topicName = "removeMessageListener" + generateRandomString(5);
 
@@ -429,7 +544,7 @@ public class TopicTest extends HazelcastTestSupport {
             };
 
             final String message = "message_" + messageListener.hashCode() + "_";
-            final String id = topic.addMessageListener(messageListener);
+            final UUID id = topic.addMessageListener(messageListener);
             topic.publish(message + "1");
             onMessageInvoked.await();
             assertTrue(topic.removeMessageListener(id));
@@ -497,7 +612,7 @@ public class TopicTest extends HazelcastTestSupport {
             }
         };
 
-        String messageListenerId = topic.addMessageListener(messageListener1);
+        UUID messageListenerId = topic.addMessageListener(messageListener1);
         topic.addMessageListener(messageListener2);
         topic.publish(message);
         assertOpenEventually(cp);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,16 @@
 
 package com.hazelcast.internal.jmx;
 
+import com.hazelcast.cluster.Cluster;
+import com.hazelcast.cluster.Member;
 import com.hazelcast.config.Config;
-import com.hazelcast.core.Cluster;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.Member;
-import com.hazelcast.instance.HazelcastInstanceImpl;
-import com.hazelcast.instance.Node;
-import com.hazelcast.monitor.LocalWanPublisherStats;
-import com.hazelcast.monitor.LocalWanStats;
-import com.hazelcast.spi.ExecutionService;
-import com.hazelcast.spi.impl.operationservice.InternalOperationService;
-import com.hazelcast.wan.WanReplicationService;
+import com.hazelcast.instance.impl.HazelcastInstanceImpl;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.monitor.LocalWanPublisherStats;
+import com.hazelcast.internal.monitor.LocalWanStats;
+import com.hazelcast.spi.impl.executionservice.ExecutionService;
+import com.hazelcast.wan.impl.WanReplicationService;
 
 import java.io.File;
 import java.net.URL;
@@ -38,7 +37,7 @@ import java.util.Set;
 
 import static com.hazelcast.config.ConfigAccessor.getActiveMemberNetworkConfig;
 import static com.hazelcast.internal.jmx.ManagementService.quote;
-import static com.hazelcast.util.MapUtil.createHashMap;
+import static com.hazelcast.internal.util.MapUtil.createHashMap;
 
 /**
  * Management bean for {@link com.hazelcast.core.HazelcastInstance}
@@ -52,11 +51,6 @@ public class InstanceMBean extends HazelcastMBean<HazelcastInstanceImpl> {
     final Config config;
     final Cluster cluster;
     private NodeMBean nodeMBean;
-    private NetworkingServiceMBean networkingServiceMBean;
-    private EventServiceMBean eventServiceMBean;
-    private OperationServiceMBean operationServiceMBean;
-    private ProxyServiceMBean proxyServiceMBean;
-    private ClientEngineMBean clientEngineMBean;
     private ManagedExecutorServiceMBean systemExecutorMBean;
     private ManagedExecutorServiceMBean asyncExecutorMBean;
     private ManagedExecutorServiceMBean scheduledExecutorMBean;
@@ -67,6 +61,7 @@ public class InstanceMBean extends HazelcastMBean<HazelcastInstanceImpl> {
     private ManagedExecutorServiceMBean ioExecutorMBean;
     private ManagedExecutorServiceMBean offloadableExecutorMBean;
     private PartitionServiceMBean partitionServiceMBean;
+    private LoggingServiceMBean loggingServiceMBean;
 
     protected InstanceMBean(HazelcastInstanceImpl hazelcastInstance, ManagementService managementService) {
         super(hazelcastInstance, managementService);
@@ -75,8 +70,7 @@ public class InstanceMBean extends HazelcastMBean<HazelcastInstanceImpl> {
         this.cluster = hazelcastInstance.getCluster();
         Node node = hazelcastInstance.node;
         ExecutionService executionService = node.nodeEngine.getExecutionService();
-        InternalOperationService operationService = node.nodeEngine.getOperationService();
-        createMBeans(hazelcastInstance, managementService, node, executionService, operationService);
+        createMBeans(hazelcastInstance, managementService, node, executionService);
         registerMBeans();
         registerWanPublisherMBeans(node.nodeEngine.getWanReplicationService());
     }
@@ -97,21 +91,16 @@ public class InstanceMBean extends HazelcastMBean<HazelcastInstanceImpl> {
             final LocalWanStats localWanStats = replicationStatsEntry.getValue();
             final Map<String, LocalWanPublisherStats> publisherStats = localWanStats.getLocalWanPublisherStats();
 
-            for (String targetGroupName : publisherStats.keySet()) {
-                register(new WanPublisherMBean(wanReplicationService, wanReplicationName, targetGroupName, service));
+            for (String wanPublisherId : publisherStats.keySet()) {
+                register(new WanPublisherMBean(wanReplicationService, wanReplicationName, wanPublisherId, service));
             }
         }
     }
 
     private void createMBeans(HazelcastInstanceImpl hazelcastInstance, ManagementService managementService, Node node,
-                              ExecutionService executionService, InternalOperationService operationService) {
+                              ExecutionService executionService) {
         this.nodeMBean = new NodeMBean(hazelcastInstance, node, managementService);
-        this.networkingServiceMBean = new NetworkingServiceMBean(hazelcastInstance, node.networkingService, service);
-        this.eventServiceMBean = new EventServiceMBean(hazelcastInstance, node.nodeEngine.getEventService(), service);
-        this.operationServiceMBean = new OperationServiceMBean(hazelcastInstance, operationService, service);
-        this.proxyServiceMBean = new ProxyServiceMBean(hazelcastInstance, node.nodeEngine.getProxyService(), service);
         this.partitionServiceMBean = new PartitionServiceMBean(hazelcastInstance, node.partitionService, service);
-        this.clientEngineMBean = new ClientEngineMBean(hazelcastInstance, node.clientEngine, service);
         this.systemExecutorMBean = new ManagedExecutorServiceMBean(
                 hazelcastInstance, executionService.getExecutor(ExecutionService.SYSTEM_EXECUTOR), service);
         this.asyncExecutorMBean = new ManagedExecutorServiceMBean(
@@ -130,16 +119,12 @@ public class InstanceMBean extends HazelcastMBean<HazelcastInstanceImpl> {
                 hazelcastInstance, executionService.getExecutor(ExecutionService.IO_EXECUTOR), service);
         this.offloadableExecutorMBean = new ManagedExecutorServiceMBean(
                 hazelcastInstance, executionService.getExecutor(ExecutionService.OFFLOADABLE_EXECUTOR), service);
+        this.loggingServiceMBean = new LoggingServiceMBean(hazelcastInstance, service);
     }
 
     private void registerMBeans() {
-        register(operationServiceMBean);
         register(nodeMBean);
-        register(networkingServiceMBean);
-        register(eventServiceMBean);
-        register(proxyServiceMBean);
         register(partitionServiceMBean);
-        register(clientEngineMBean);
         register(systemExecutorMBean);
         register(asyncExecutorMBean);
         register(scheduledExecutorMBean);
@@ -149,6 +134,7 @@ public class InstanceMBean extends HazelcastMBean<HazelcastInstanceImpl> {
         register(queryExecutorMBean);
         register(ioExecutorMBean);
         register(offloadableExecutorMBean);
+        register(loggingServiceMBean);
     }
 
     private void createProperties(HazelcastInstanceImpl hazelcastInstance) {
@@ -199,26 +185,6 @@ public class InstanceMBean extends HazelcastMBean<HazelcastInstanceImpl> {
         return offloadableExecutorMBean;
     }
 
-    public OperationServiceMBean getOperationServiceMBean() {
-        return operationServiceMBean;
-    }
-
-    public ProxyServiceMBean getProxyServiceMBean() {
-        return proxyServiceMBean;
-    }
-
-    public ClientEngineMBean getClientEngineMBean() {
-        return clientEngineMBean;
-    }
-
-    public NetworkingServiceMBean getNetworkingServiceMBean() {
-        return networkingServiceMBean;
-    }
-
-    public EventServiceMBean getEventServiceMBean() {
-        return eventServiceMBean;
-    }
-
     public NodeMBean getNodeMBean() {
         return nodeMBean;
     }
@@ -265,10 +231,10 @@ public class InstanceMBean extends HazelcastMBean<HazelcastInstanceImpl> {
         return null;
     }
 
-    @ManagedAnnotation("groupName")
-    @ManagedDescription("Group Name")
-    public String getGroupName() {
-        return config.getGroupConfig().getName();
+    @ManagedAnnotation("clusterName")
+    @ManagedDescription("Cluster Name")
+    public String getClusterName() {
+        return config.getClusterName();
     }
 
     @ManagedAnnotation("port")
@@ -293,7 +259,7 @@ public class InstanceMBean extends HazelcastMBean<HazelcastInstanceImpl> {
     @ManagedDescription("List of Members")
     public List<String> getMembers() {
         Set<Member> members = cluster.getMembers();
-        List<String> list = new ArrayList<String>(members.size());
+        List<String> list = new ArrayList<>(members.size());
         for (Member member : members) {
             list.add(member.getSocketAddress().toString());
         }

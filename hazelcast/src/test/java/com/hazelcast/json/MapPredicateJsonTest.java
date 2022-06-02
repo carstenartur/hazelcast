@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,16 +21,18 @@ import com.hazelcast.config.InMemoryFormat;
 import com.hazelcast.config.MetadataPolicy;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastJsonValue;
-import com.hazelcast.core.IMap;
 import com.hazelcast.internal.json.Json;
 import com.hazelcast.internal.json.JsonArray;
 import com.hazelcast.internal.json.JsonObject;
 import com.hazelcast.internal.json.JsonValue;
+import com.hazelcast.map.IMap;
+import com.hazelcast.query.PagingPredicate;
 import com.hazelcast.query.Predicates;
-import com.hazelcast.test.HazelcastParametersRunnerFactory;
+import com.hazelcast.test.HazelcastParallelParametersRunnerFactory;
+import com.hazelcast.test.HazelcastParametrizedRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -47,9 +49,9 @@ import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-@RunWith(Parameterized.class)
-@UseParametersRunnerFactory(HazelcastParametersRunnerFactory.class)
-@Category({QuickTest.class, ParallelTest.class})
+@RunWith(HazelcastParametrizedRunner.class)
+@UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class MapPredicateJsonTest extends HazelcastTestSupport {
 
     TestHazelcastInstanceFactory factory;
@@ -63,7 +65,7 @@ public class MapPredicateJsonTest extends HazelcastTestSupport {
 
     @Parameterized.Parameters(name = "inMemoryFormat: {0}, metadataPolicy: {1}")
     public static Collection<Object[]> parameters() {
-        return asList(new Object[][] {
+        return asList(new Object[][]{
                 {InMemoryFormat.BINARY, MetadataPolicy.OFF},
                 {InMemoryFormat.BINARY, MetadataPolicy.CREATE_ON_UPDATE},
                 {InMemoryFormat.OBJECT, MetadataPolicy.OFF},
@@ -87,7 +89,7 @@ public class MapPredicateJsonTest extends HazelcastTestSupport {
         return config;
     }
 
-    private JsonObject createNameAgeOnDuty(String name, int age, boolean onDuty) {
+    private static JsonObject createNameAgeOnDuty(String name, int age, boolean onDuty) {
         JsonObject object = Json.object();
         object.add("name", name);
         object.add("age", age);
@@ -95,14 +97,14 @@ public class MapPredicateJsonTest extends HazelcastTestSupport {
         return object;
     }
 
-    private HazelcastJsonValue putJsonString(Map map, String name, int age, boolean onDuty) {
+    private static HazelcastJsonValue putJsonString(Map map, String name, int age, boolean onDuty) {
         String f = createNameAgeOnDuty(name, age, onDuty).toString();
         HazelcastJsonValue json = new HazelcastJsonValue(f);
         map.put(name, json);
         return json;
     }
 
-    private String putWithJsonStringKey(Map map, String name, int age, boolean onDuty) {
+    private static String putWithJsonStringKey(Map map, String name, int age, boolean onDuty) {
         String f = createNameAgeOnDuty(name, age, onDuty).toString();
         HazelcastJsonValue json = new HazelcastJsonValue(f);
         map.put(json, name);
@@ -115,7 +117,7 @@ public class MapPredicateJsonTest extends HazelcastTestSupport {
         return hazelcastJson;
     }
 
-    private String putWithJsonStringKey(Map map, JsonValue key, String value) {
+    private static String putWithJsonStringKey(Map map, JsonValue key, String value) {
         HazelcastJsonValue lazyKey = new HazelcastJsonValue(key.toString());
         map.put(lazyKey, value);
         return value;
@@ -754,5 +756,30 @@ public class MapPredicateJsonTest extends HazelcastTestSupport {
 
         Collection<Integer> keys = map.keySet(Predicates.equal("user", null));
         assertEquals(1, keys.size());
+    }
+
+    @Test
+    public void testPagingPredicate() {
+        IMap<Integer, HazelcastJsonValue> map = instance.getMap(randomMapName());
+
+        for (int i = 0; i < 100; i++) {
+            String json = Json.object()
+                    .add("user", randomString())
+                    .add("id", i)
+                    .toString();
+            map.put(i, new HazelcastJsonValue(json));
+        }
+
+        PagingPredicate<Integer, HazelcastJsonValue> pagingPredicate = Predicates.pagingPredicate(Predicates.alwaysTrue(), 10);
+        Collection<HazelcastJsonValue> values = map.values(pagingPredicate);
+        int totalSize = values.size();
+        while (values.size() > 0) {
+            int size = values.size();
+            assertEquals(10, size);
+            pagingPredicate.nextPage();
+            values = map.values(pagingPredicate);
+            totalSize += values.size();
+        }
+        assertEquals(100, totalSize);
     }
 }

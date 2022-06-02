@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,15 @@
 package com.hazelcast.map.impl.journal;
 
 import com.hazelcast.map.impl.MapDataSerializerHook;
-import com.hazelcast.map.journal.EventJournalMapEvent;
-import com.hazelcast.nio.serialization.SerializableByConvention;
+import com.hazelcast.internal.serialization.SerializableByConvention;
+import com.hazelcast.map.EventJournalMapEvent;
 import com.hazelcast.projection.Projection;
 import com.hazelcast.ringbuffer.impl.ReadResultSetImpl;
-import com.hazelcast.spi.serialization.SerializationService;
-import com.hazelcast.util.function.Function;
-import com.hazelcast.util.function.Predicate;
+import com.hazelcast.internal.serialization.SerializationService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 public class MapEventJournalReadResultSetImpl<K, V, T> extends ReadResultSetImpl<InternalEventJournalMapEvent, T> {
 
@@ -37,15 +38,10 @@ public class MapEventJournalReadResultSetImpl<K, V, T> extends ReadResultSetImpl
             final Function<? super EventJournalMapEvent<K, V>, ? extends T> projection
     ) {
         super(minSize, maxSize, serializationService,
-                predicate == null ? null : new Predicate<InternalEventJournalMapEvent>() {
-                    @Override
-                    @SuppressWarnings("unchecked")
-                    @SuppressFBWarnings("BC_UNCONFIRMED_CAST")
-                    public boolean test(InternalEventJournalMapEvent e) {
-                        return predicate.test((DeserializingEventJournalMapEvent<K, V>) e);
-                    }
-                },
-                projection == null ? null : new ProjectionAdapter<K, V, T>(projection));
+                predicate == null ? null
+                        : (Predicate<InternalEventJournalMapEvent>)
+                        e -> predicate.test((DeserializingEventJournalMapEvent<K, V>) e),
+                projection == null ? null : new ProjectionAdapter<>(projection));
     }
 
     @Override
@@ -53,7 +49,7 @@ public class MapEventJournalReadResultSetImpl<K, V, T> extends ReadResultSetImpl
         // the event journal ringbuffer supports only OBJECT format for now
         final InternalEventJournalMapEvent e = (InternalEventJournalMapEvent) item;
         final DeserializingEventJournalMapEvent<K, V> deserialisingEvent
-                = new DeserializingEventJournalMapEvent<K, V>(serializationService, e);
+                = new DeserializingEventJournalMapEvent<>(serializationService, e);
         super.addItem(seq, deserialisingEvent);
     }
 
@@ -63,12 +59,12 @@ public class MapEventJournalReadResultSetImpl<K, V, T> extends ReadResultSetImpl
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return MapDataSerializerHook.EVENT_JOURNAL_READ_RESULT_SET;
     }
 
     @SerializableByConvention
-    private static class ProjectionAdapter<K, V, T> extends Projection<InternalEventJournalMapEvent, T> {
+    private static class ProjectionAdapter<K, V, T> implements Projection<InternalEventJournalMapEvent, T> {
 
         private final Function<? super EventJournalMapEvent<K, V>, ? extends T> projection;
 

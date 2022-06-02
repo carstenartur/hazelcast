@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,11 +21,11 @@ import com.hazelcast.client.impl.protocol.codec.ListIsEmptyCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractPartitionMessageTask;
 import com.hazelcast.collection.impl.collection.operations.CollectionIsEmptyOperation;
 import com.hazelcast.collection.impl.list.ListService;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
 import com.hazelcast.security.permission.ActionConstants;
 import com.hazelcast.security.permission.ListPermission;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.operationservice.Operation;
 
 import java.security.Permission;
 
@@ -34,7 +34,7 @@ import java.security.Permission;
  * {@link com.hazelcast.client.impl.protocol.codec.ListMessageType#LIST_ADDLISTENER}
  */
 public class ListIsEmptyMessageTask
-        extends AbstractPartitionMessageTask<ListIsEmptyCodec.RequestParameters> {
+        extends AbstractPartitionMessageTask<String> {
 
     public ListIsEmptyMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -42,11 +42,11 @@ public class ListIsEmptyMessageTask
 
     @Override
     protected Operation prepareOperation() {
-        return new CollectionIsEmptyOperation(parameters.name);
+        return new CollectionIsEmptyOperation(parameters);
     }
 
     @Override
-    protected ListIsEmptyCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+    protected String decodeClientMessage(ClientMessage clientMessage) {
         return ListIsEmptyCodec.decodeRequest(clientMessage);
     }
 
@@ -62,7 +62,7 @@ public class ListIsEmptyMessageTask
 
     @Override
     public Permission getRequiredPermission() {
-        return new ListPermission(parameters.name, ActionConstants.ACTION_READ);
+        return new ListPermission(parameters, ActionConstants.ACTION_READ);
     }
 
     @Override
@@ -72,7 +72,7 @@ public class ListIsEmptyMessageTask
 
     @Override
     public String getDistributedObjectName() {
-        return parameters.name;
+        return parameters;
     }
 
     @Override

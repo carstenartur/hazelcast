@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@ package com.hazelcast.internal.eviction;
 import com.hazelcast.cache.HazelcastExpiryPolicy;
 import com.hazelcast.cache.impl.CachePartitionSegment;
 import com.hazelcast.cache.impl.CacheService;
-import com.hazelcast.cache.impl.HazelcastServerCachingProvider;
 import com.hazelcast.cache.impl.ICacheRecordStore;
 import com.hazelcast.config.CacheConfig;
 import com.hazelcast.core.HazelcastInstance;
@@ -41,7 +40,9 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import static com.hazelcast.cache.CacheTestSupport.createServerCachingProvider;
 import static com.hazelcast.cache.impl.eviction.CacheClearExpiredRecordsTask.PROP_TASK_PERIOD_SECONDS;
+import static com.hazelcast.test.Accessors.getNodeEngineImpl;
 import static com.hazelcast.test.OverridePropertyRule.set;
 
 @RunWith(HazelcastSerialClassRunner.class)
@@ -107,7 +108,7 @@ public class CacheExpirationBouncingMemberTest extends AbstractExpirationBouncin
 
     private Cache createCache() {
         HazelcastInstance testDriver = bounceMemberRule.getNextTestDriver();
-        CachingProvider provider = HazelcastServerCachingProvider.createCachingProvider(testDriver);
+        CachingProvider provider = createServerCachingProvider(testDriver);
         return provider.getCacheManager().createCache(name, getCacheConfig());
     }
 
@@ -115,7 +116,7 @@ public class CacheExpirationBouncingMemberTest extends AbstractExpirationBouncin
 
         private final Cache<Integer, Integer> cache;
 
-        public Get(Cache cache) {
+        Get(Cache cache) {
             this.cache = cache;
         }
 
@@ -131,7 +132,7 @@ public class CacheExpirationBouncingMemberTest extends AbstractExpirationBouncin
 
         private final Cache<Integer, Integer> cache;
 
-        public Set(Cache cache) {
+        Set(Cache cache) {
             this.cache = cache;
         }
 

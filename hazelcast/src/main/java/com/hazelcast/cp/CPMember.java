@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,32 +17,34 @@
 package com.hazelcast.cp;
 
 import com.hazelcast.config.cp.CPSubsystemConfig;
-import com.hazelcast.core.Cluster;
-import com.hazelcast.core.Endpoint;
-import com.hazelcast.nio.Address;
+import com.hazelcast.cluster.Cluster;
+import com.hazelcast.cluster.Address;
+
+import java.util.UUID;
 
 /**
  * A CP member is a Hazelcast member that is internally elected to be part of
  * the {@link CPSubsystem}, hence maintain CP data structures. If
  * {@link CPSubsystemConfig#getCPMemberCount()} is configured to be N,
  * first N members of the cluster are assigned as CP members during startup.
- * After the CP subsystem is initialized, other Hazelcast members can be
- * promoted to be a CP member via the
- * {@link CPSubsystemManagementService#promoteToCPMember()} API.
+ * After CP Subsystem is initialized, other Hazelcast members can be promoted
+ * to be a CP member via
+ * {@link CPSubsystemManagementService#promoteToCPMember()}.
  *
+ * @see CPSubsystem
  * @see CPSubsystemConfig
  * @see CPSubsystemManagementService
  */
-public interface CPMember extends Endpoint {
+public interface CPMember {
 
     /**
      * Returns the UUID of this CP member. The CP member UUID does not have to
-     * be same with the uuid of the local member that is accessed via
+     * be same with the UUID of the local member that is accessed via
      * {@link Cluster#getLocalMember()}.
      *
      * @return the UUID of this CP Member
      */
-    String getUuid();
+    UUID getUuid();
 
     /**
      * Returns the address of this CP member.

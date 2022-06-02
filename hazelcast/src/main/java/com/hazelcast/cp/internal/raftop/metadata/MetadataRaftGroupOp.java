@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import com.hazelcast.cp.internal.MetadataRaftGroupManager;
 import com.hazelcast.cp.internal.RaftOp;
 import com.hazelcast.cp.internal.RaftService;
 
-import static com.hazelcast.util.Preconditions.checkTrue;
+import static com.hazelcast.internal.util.Preconditions.checkTrue;
 
 /**
  * Base class for the {@link RaftOp} impls that are committed to the Metadata group.
@@ -34,7 +34,7 @@ public abstract class MetadataRaftGroupOp extends RaftOp {
         RaftService service = getService();
         MetadataRaftGroupManager metadataGroupManager = service.getMetadataGroupManager();
         checkTrue(metadataGroupManager.getMetadataGroupId().equals(groupId),
-                "Cannot perform CP subsystem management call on " + groupId);
+                "Cannot perform CP Subsystem management call on " + groupId);
         return run(metadataGroupManager, commitIndex);
     }
 

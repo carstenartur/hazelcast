@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package com.hazelcast.cp.internal.datastructures.countdownlatch.operation;
 
-import com.hazelcast.core.ICountDownLatch;
-import com.hazelcast.cp.internal.datastructures.countdownlatch.RaftCountDownLatchDataSerializerHook;
-import com.hazelcast.cp.internal.datastructures.countdownlatch.RaftCountDownLatchService;
+import com.hazelcast.cp.ICountDownLatch;
+import com.hazelcast.cp.internal.datastructures.countdownlatch.CountDownLatchDataSerializerHook;
+import com.hazelcast.cp.internal.datastructures.countdownlatch.CountDownLatchService;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.cp.CPGroupId;
@@ -42,13 +42,13 @@ public class TrySetCountOp extends AbstractCountDownLatchOp {
 
     @Override
     public Object run(CPGroupId groupId, long commitIndex) {
-        RaftCountDownLatchService service = getService();
+        CountDownLatchService service = getService();
         return service.trySetCount(groupId, name, count);
     }
 
     @Override
-    public int getId() {
-        return RaftCountDownLatchDataSerializerHook.TRY_SET_COUNT_OP;
+    public int getClassId() {
+        return CountDownLatchDataSerializerHook.TRY_SET_COUNT_OP;
     }
 
     @Override

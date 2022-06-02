@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.query.impl.Comparables;
 
 import java.io.IOException;
+import java.util.Objects;
 
 public final class MinByAggregator<I> extends AbstractAggregator<I, Comparable, I> implements IdentifiedDataSerializable {
 
@@ -74,22 +75,41 @@ public final class MinByAggregator<I> extends AbstractAggregator<I, Comparable, 
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return AggregatorDataSerializerHook.MIN_BY;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(attributePath);
+        out.writeString(attributePath);
         out.writeObject(minValue);
         out.writeObject(minEntry);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        this.attributePath = in.readUTF();
+        this.attributePath = in.readString();
         this.minValue = in.readObject();
         this.minEntry = in.readObject();
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        if (!super.equals(o)) {
+            return false;
+        }
+        MinByAggregator<?> that = (MinByAggregator<?>) o;
+        return Objects.equals(minValue, that.minValue) && Objects.equals(minEntry, that.minEntry);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), minValue, minEntry);
+    }
 }

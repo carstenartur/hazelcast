@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,19 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.internal.config.ConfigDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.util.StringUtil;
+import com.hazelcast.nio.serialization.impl.Versioned;
+import com.hazelcast.spi.annotation.PrivateApi;
 
 import java.io.IOException;
+import java.util.Objects;
 
-import static com.hazelcast.util.Preconditions.checkNotNull;
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.readNullableBoolean;
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.writeNullableBoolean;
+import static com.hazelcast.internal.util.Preconditions.checkNotNull;
 
 /**
  * Configuration for a merkle tree.
@@ -52,7 +57,7 @@ import static com.hazelcast.util.Preconditions.checkNotNull;
  *
  * @since 3.11
  */
-public class MerkleTreeConfig implements IdentifiedDataSerializable {
+public class MerkleTreeConfig implements IdentifiedDataSerializable, Versioned {
     /**
      * Minimal depth of the merkle tree.
      */
@@ -66,9 +71,8 @@ public class MerkleTreeConfig implements IdentifiedDataSerializable {
      */
     private static final int DEFAULT_DEPTH = 10;
 
-    private boolean enabled = true;
+    private Boolean enabled;
     private int depth = DEFAULT_DEPTH;
-    private String mapName;
 
     public MerkleTreeConfig() {
     }
@@ -82,7 +86,6 @@ public class MerkleTreeConfig implements IdentifiedDataSerializable {
     public MerkleTreeConfig(MerkleTreeConfig config) {
         checkNotNull(config, "config can't be null");
         this.enabled = config.enabled;
-        this.mapName = config.mapName;
         this.depth = config.depth;
     }
 
@@ -91,17 +94,7 @@ public class MerkleTreeConfig implements IdentifiedDataSerializable {
         return "MerkleTreeConfig{"
                 + "enabled=" + enabled
                 + ", depth=" + depth
-                + ", mapName='" + mapName + '\''
                 + '}';
-    }
-
-    /**
-     * Returns an immutable version of this configuration.
-     *
-     * @return immutable version of this configuration
-     */
-    MerkleTreeConfig getAsReadOnly() {
-        return new MerkleTreeConfigReadOnly(this);
     }
 
     /**
@@ -118,8 +111,8 @@ public class MerkleTreeConfig implements IdentifiedDataSerializable {
      *
      * @param depth the depth of the merkle tree
      * @return the updated config
-     * @throws ConfigurationException if the {@code depth} is greater than
-     *                                {@value MAX_DEPTH} or less than {@value MIN_DEPTH}
+     * @throws InvalidConfigurationException if the {@code depth} is greater than
+     *                                       {@value MAX_DEPTH} or less than {@value MIN_DEPTH}
      */
     public MerkleTreeConfig setDepth(int depth) {
         if (depth < MIN_DEPTH || depth > MAX_DEPTH) {
@@ -134,9 +127,32 @@ public class MerkleTreeConfig implements IdentifiedDataSerializable {
      * Returns if the merkle tree is enabled.
      *
      * @return {@code true} if the merkle tree is enabled, {@code false} otherwise
+     * @deprecated use {@link #getEnabled()} instead.
      */
+    @Deprecated
     public boolean isEnabled() {
+        return Boolean.TRUE.equals(enabled);
+    }
+
+    /**
+     * Returns if the merkle tree is enabled.
+     *
+     * @return {@code TRUE} if the merkle tree is enabled, {@code FALSE} if disabled
+     *          or {@code null} if user did not explicitly configure Merkle trees,
+     *          so it may or may not be enabled by Hazelcast.
+     */
+    public Boolean getEnabled() {
         return enabled;
+    }
+
+    /**
+     * Method introduced for client protocol compatibility.
+     *
+     * @return whether {@code enabled} field is set or not.
+     */
+    @PrivateApi
+    public boolean isEnabledSet() {
+        return enabled != null;
     }
 
     /**
@@ -150,103 +166,50 @@ public class MerkleTreeConfig implements IdentifiedDataSerializable {
         return this;
     }
 
-    /**
-     * Returns the map name to which this config applies.
-     *
-     * @return the map name
-     */
-    public String getMapName() {
-        return mapName;
-    }
-
-    /**
-     * Sets the map name to which this config applies. Map names
-     * are also matched by pattern and merkle with map name "default"
-     * applies to all maps that do not have more specific merkle tree configs.
-     *
-     * @param mapName the map name
-     * @return the merkle tree config
-     * @throws IllegalArgumentException if the {@code mapName} is {@code null} or empty.
-     */
-    public MerkleTreeConfig setMapName(String mapName) {
-        if (StringUtil.isNullOrEmpty(mapName)) {
-            throw new IllegalArgumentException("Merkle tree map name must not be empty.");
-        }
-        this.mapName = mapName;
-        return this;
-    }
-
     @Override
     public int getFactoryId() {
         return ConfigDataSerializerHook.F_ID;
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return ConfigDataSerializerHook.MERKLE_TREE_CONFIG;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(mapName);
-        out.writeBoolean(enabled);
+        writeNullableBoolean(out, enabled);
         out.writeInt(depth);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        mapName = in.readUTF();
-        enabled = in.readBoolean();
+        enabled = readNullableBoolean(in);
         depth = in.readInt();
     }
 
     @Override
-    public boolean equals(Object o) {
+    public final boolean equals(Object o) {
         if (this == o) {
             return true;
         }
-        if (o == null || getClass() != o.getClass()) {
+        if (!(o instanceof MerkleTreeConfig)) {
             return false;
         }
 
         MerkleTreeConfig that = (MerkleTreeConfig) o;
 
-        if (enabled != that.enabled) {
+        if (!Objects.equals(enabled, that.enabled)) {
             return false;
         }
-        if (depth != that.depth) {
-            return false;
-        }
-        return mapName != null ? mapName.equals(that.mapName) : that.mapName == null;
+        return depth == that.depth;
+
     }
 
     @Override
-    public int hashCode() {
-        int result = (enabled ? 1 : 0);
+    public final int hashCode() {
+        int result = Objects.hashCode(enabled);
         result = 31 * result + depth;
-        result = 31 * result + (mapName != null ? mapName.hashCode() : 0);
         return result;
-    }
-
-    // not private for testing
-    static class MerkleTreeConfigReadOnly extends MerkleTreeConfig {
-        MerkleTreeConfigReadOnly(MerkleTreeConfig config) {
-            super(config);
-        }
-
-        @Override
-        public MerkleTreeConfig setDepth(int depth) {
-            throw new UnsupportedOperationException("This config is read-only");
-        }
-
-        @Override
-        public MerkleTreeConfig setEnabled(boolean enabled) {
-            throw new UnsupportedOperationException("This config is read-only");
-        }
-
-        @Override
-        public MerkleTreeConfig setMapName(String mapName) {
-            throw new UnsupportedOperationException("This config is read-only");
-        }
     }
 }

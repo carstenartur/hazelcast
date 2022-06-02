@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package com.hazelcast.test.starter.constructor;
 import com.hazelcast.test.starter.HazelcastStarterConstructor;
 
 import java.lang.reflect.Constructor;
+import java.util.UUID;
 
 import static com.hazelcast.test.starter.HazelcastProxyFactory.proxyArgumentsIfNeeded;
 import static com.hazelcast.test.starter.ReflectionUtils.getFieldValueReflectively;
@@ -35,8 +36,8 @@ public class PartitionReplicaConstructor extends AbstractStarterObjectConstructo
             throws Exception {
         ClassLoader classloader = targetClass.getClassLoader();
         Class<?> replicaClass = classloader.loadClass("com.hazelcast.internal.partition.PartitionReplica");
-        Class<?> addressClass = classloader.loadClass("com.hazelcast.nio.Address");
-        Constructor<?> constructor = targetClass.getDeclaredConstructor(addressClass, String.class);
+        Class<?> addressClass = classloader.loadClass("com.hazelcast.cluster.Address");
+        Constructor<?> constructor = targetClass.getDeclaredConstructor(addressClass, UUID.class);
 
         Object address = getFieldValueReflectively(delegate, "address");
         Object uuid = getFieldValueReflectively(delegate, "uuid");

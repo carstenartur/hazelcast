@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import com.hazelcast.spi.annotation.Beta;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static com.hazelcast.instance.EndpointQualifier.CLIENT;
@@ -76,7 +77,7 @@ public class AdvancedNetworkConfig {
      * connections opened from that member. When the provided {@code endpointconfig} is a
      * {@link ServerSocketEndpointConfig}, then the {@code HazelcastInstance} will additionally listen on
      * the configured port for incoming WAN connections.
-     * <p/>
+     * <p>
      * Example of how to configure Hazelcast instances for active-passive WAN replication:
      * <ul>
      * <li>
@@ -110,9 +111,10 @@ public class AdvancedNetworkConfig {
      * // setup WAN replication
      * WanReplicationConfig wanReplicationConfig = new WanReplicationConfig();
      * // WAN publisher config references endpoint config by name
-     * WanPublisherConfig publisherConfig = new WanPublisherConfig().setEndpoint("wan-tokyo");
-     * publisherConfig.getProperties().put("endpoints", "tokyo.hazelcast.com:8765");
-     * wanReplicationConfig.addWanPublisherConfig(publisherConfig);
+     * WanBatchReplicationPublisherConfig publisherConfig = new WanBatchReplicationPublisherConfig()
+     *                 .setEndpoint("wan-tokyo")
+     *                 .setTargetEndpoints("tokyo.hazelcast.com:8765");
+     * wanReplicationConfig.addWanBatchReplicationPublisherConfig(publisherConfig);
      * config.addWanReplicationConfig(wanReplicationConfig);
      *
      * HazelcastInstance active = Hazelcast.newHazelcastInstance(config);
@@ -307,7 +309,7 @@ public class AdvancedNetworkConfig {
         }
 
         @Override
-        public void setPortCount(int portCount) {
+        public NetworkConfig setPortCount(int portCount) {
             throw new UnsupportedOperationException();
         }
 
@@ -458,6 +460,26 @@ public class AdvancedNetworkConfig {
                     + ", memcacheProtocolConfig=" + getMemcacheProtocolConfig()
                     + '}';
         }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            if (!super.equals(o)) {
+                return false;
+            }
+            MemberNetworkingView that = (MemberNetworkingView) o;
+            return Objects.equals(config, that.config);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(super.hashCode(), config);
+        }
     }
 
     private static int countEndpointConfigs(Map<EndpointQualifier, EndpointConfig> endpointConfigs,
@@ -471,5 +493,23 @@ public class AdvancedNetworkConfig {
         return count;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        AdvancedNetworkConfig that = (AdvancedNetworkConfig) o;
+        return enabled == that.enabled && Objects.equals(endpointConfigs, that.endpointConfigs)
+                && Objects.equals(join, that.join)
+                && Objects.equals(icmpFailureDetectorConfig, that.icmpFailureDetectorConfig)
+                && Objects.equals(memberAddressProviderConfig, that.memberAddressProviderConfig);
+    }
 
+    @Override
+    public int hashCode() {
+        return Objects.hash(enabled, endpointConfigs, join, icmpFailureDetectorConfig, memberAddressProviderConfig);
+    }
 }

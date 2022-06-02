@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,16 +18,16 @@ package com.hazelcast.cache.impl.journal;
 
 import com.hazelcast.cache.impl.CacheDataSerializerHook;
 import com.hazelcast.cache.impl.CacheService;
-import com.hazelcast.cache.journal.EventJournalCacheEvent;
+import com.hazelcast.cache.EventJournalCacheEvent;
 import com.hazelcast.internal.journal.EventJournal;
 import com.hazelcast.internal.journal.EventJournalReadOperation;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.ringbuffer.impl.ReadResultSetImpl;
-import com.hazelcast.util.function.Function;
-import com.hazelcast.util.function.Predicate;
 
 import java.io.IOException;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
  * Reads from the cache event journal in batches. You may specify the start sequence,
@@ -74,7 +74,7 @@ public class CacheEventJournalReadOperation<K, V, T>
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return CacheDataSerializerHook.EVENT_JOURNAL_READ_OPERATION;
     }
 

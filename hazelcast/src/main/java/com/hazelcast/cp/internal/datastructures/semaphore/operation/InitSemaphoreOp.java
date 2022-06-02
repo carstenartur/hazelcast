@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,10 @@
 
 package com.hazelcast.cp.internal.datastructures.semaphore.operation;
 
-import com.hazelcast.core.ISemaphore;
-import com.hazelcast.cp.internal.datastructures.semaphore.RaftSemaphore;
-import com.hazelcast.cp.internal.datastructures.semaphore.RaftSemaphoreDataSerializerHook;
-import com.hazelcast.cp.internal.datastructures.semaphore.RaftSemaphoreService;
+import com.hazelcast.cp.ISemaphore;
+import com.hazelcast.cp.internal.datastructures.semaphore.Semaphore;
+import com.hazelcast.cp.internal.datastructures.semaphore.SemaphoreDataSerializerHook;
+import com.hazelcast.cp.internal.datastructures.semaphore.SemaphoreService;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
@@ -32,7 +32,7 @@ import java.io.IOException;
 /**
  * Operation for {@link ISemaphore#init(int)}
  *
- * @see RaftSemaphore#init(int)
+ * @see Semaphore#init(int)
  */
 public class InitSemaphoreOp extends RaftOp implements IndeterminateOperationStateAware, IdentifiedDataSerializable {
 
@@ -49,7 +49,7 @@ public class InitSemaphoreOp extends RaftOp implements IndeterminateOperationSta
 
     @Override
     public Object run(CPGroupId groupId, long commitIndex) {
-        RaftSemaphoreService service = getService();
+        SemaphoreService service = getService();
         return service.initSemaphore(groupId, name, permits);
     }
 
@@ -60,28 +60,28 @@ public class InitSemaphoreOp extends RaftOp implements IndeterminateOperationSta
 
     @Override
     protected String getServiceName() {
-        return RaftSemaphoreService.SERVICE_NAME;
+        return SemaphoreService.SERVICE_NAME;
     }
 
     @Override
     public int getFactoryId() {
-        return RaftSemaphoreDataSerializerHook.F_ID;
+        return SemaphoreDataSerializerHook.F_ID;
     }
 
     @Override
-    public int getId() {
-        return RaftSemaphoreDataSerializerHook.INIT_SEMAPHORE_OP;
+    public int getClassId() {
+        return SemaphoreDataSerializerHook.INIT_SEMAPHORE_OP;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(name);
+        out.writeString(name);
         out.writeInt(permits);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        name = in.readUTF();
+        name = in.readString();
         permits = in.readInt();
     }
 

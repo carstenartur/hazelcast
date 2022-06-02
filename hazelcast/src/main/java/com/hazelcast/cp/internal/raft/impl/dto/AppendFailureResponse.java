@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.cp.internal.raft.impl.dto;
 
-import com.hazelcast.core.Endpoint;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 import com.hazelcast.cp.internal.raft.impl.RaftDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -36,20 +36,20 @@ import java.io.IOException;
  */
 public class AppendFailureResponse implements IdentifiedDataSerializable {
 
-    private Endpoint follower;
+    private RaftEndpoint follower;
     private int term;
     private long expectedNextIndex;
 
     public AppendFailureResponse() {
     }
 
-    public AppendFailureResponse(Endpoint follower, int term, long expectedNextIndex) {
+    public AppendFailureResponse(RaftEndpoint follower, int term, long expectedNextIndex) {
         this.follower = follower;
         this.term = term;
         this.expectedNextIndex = expectedNextIndex;
     }
 
-    public Endpoint follower() {
+    public RaftEndpoint follower() {
         return follower;
     }
 
@@ -67,7 +67,7 @@ public class AppendFailureResponse implements IdentifiedDataSerializable {
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftDataSerializerHook.APPEND_FAILURE_RESPONSE;
     }
 

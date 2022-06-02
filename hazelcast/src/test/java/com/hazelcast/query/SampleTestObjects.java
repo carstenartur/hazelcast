@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Timestamp;
 import java.util.Date;
+import java.util.Optional;
 import java.util.UUID;
 
 public final class SampleTestObjects {
@@ -55,13 +56,13 @@ public final class SampleTestObjects {
 
         @Override
         public void writePortable(PortableWriter writer) throws IOException {
-            writer.writeUTF("n", name);
+            writer.writeString("n", name);
             writer.writeInt("a", age);
         }
 
         @Override
         public void readPortable(PortableReader reader) throws IOException {
-            name = reader.readUTF("n");
+            name = reader.readString("n");
             age = reader.readInt("a");
         }
 
@@ -557,4 +558,17 @@ public final class SampleTestObjects {
             return attribute;
         }
     }
+
+    public static class ObjectWithOptional<T> implements Serializable {
+        private T attribute;
+
+        public ObjectWithOptional(T attribute) {
+            this.attribute = attribute;
+        }
+
+        public Optional<T> getAttribute() {
+            return Optional.ofNullable(attribute);
+        }
+    }
+
 }

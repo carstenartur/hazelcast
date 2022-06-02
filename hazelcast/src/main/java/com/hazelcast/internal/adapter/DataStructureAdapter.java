@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,7 @@
 
 package com.hazelcast.internal.adapter;
 
-import com.hazelcast.core.ICompletableFuture;
-import com.hazelcast.monitor.LocalMapStats;
+import com.hazelcast.map.LocalMapStats;
 import com.hazelcast.query.Predicate;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
@@ -28,6 +27,7 @@ import javax.cache.processor.EntryProcessorException;
 import javax.cache.processor.EntryProcessorResult;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -40,29 +40,29 @@ public interface DataStructureAdapter<K, V> {
 
     V get(K key);
 
-    ICompletableFuture<V> getAsync(K key);
+    CompletionStage<V> getAsync(K key);
 
     void set(K key, V value);
 
-    ICompletableFuture<Void> setAsync(K key, V value);
+    CompletionStage<Void> setAsync(K key, V value);
 
-    ICompletableFuture<Void> setAsync(K key, V value, long ttl, TimeUnit timeunit);
+    CompletionStage<Void> setAsync(K key, V value, long ttl, TimeUnit timeunit);
 
-    ICompletableFuture<Void> setAsync(K key, V value, ExpiryPolicy expiryPolicy);
+    CompletionStage<Void> setAsync(K key, V value, ExpiryPolicy expiryPolicy);
 
     V put(K key, V value);
 
-    ICompletableFuture<V> putAsync(K key, V value);
+    CompletionStage<V> putAsync(K key, V value);
 
-    ICompletableFuture<V> putAsync(K key, V value, long ttl, TimeUnit timeunit);
+    CompletionStage<V> putAsync(K key, V value, long ttl, TimeUnit timeunit);
 
-    ICompletableFuture<V> putAsync(K key, V value, ExpiryPolicy expiryPolicy);
+    CompletionStage<V> putAsync(K key, V value, ExpiryPolicy expiryPolicy);
 
     void putTransient(K key, V value, long ttl, TimeUnit timeunit);
 
     boolean putIfAbsent(K key, V value);
 
-    ICompletableFuture<Boolean> putIfAbsentAsync(K key, V value);
+    CompletionStage<Boolean> putIfAbsentAsync(K key, V value);
 
     void setTtl(K key, long duration, TimeUnit timeUnit);
 
@@ -70,15 +70,35 @@ public interface DataStructureAdapter<K, V> {
 
     boolean replace(K key, V oldValue, V newValue);
 
+    @MethodNotAvailable
+    default V getAndReplace(K key, V value) {
+        throw new MethodNotAvailableException();
+    }
+
+    @MethodNotAvailable
+    default CompletionStage<V> getAndReplaceAsync(K key, V value) {
+        throw new MethodNotAvailableException();
+    }
+
     V remove(K key);
 
     boolean remove(K key, V oldValue);
 
-    ICompletableFuture<V> removeAsync(K key);
+    CompletionStage<V> removeAsync(K key);
+
+    @MethodNotAvailable
+    default V getAndRemove(K key) {
+        throw new MethodNotAvailableException();
+    }
+
+    @MethodNotAvailable
+    default CompletionStage<V> getAndRemoveAsync(K key) {
+        throw new MethodNotAvailableException();
+    }
 
     void delete(K key);
 
-    ICompletableFuture<Boolean> deleteAsync(K key);
+    CompletionStage<Boolean> deleteAsync(K key);
 
     boolean evict(K key);
 
@@ -145,9 +165,13 @@ public interface DataStructureAdapter<K, V> {
         PUT_IF_ABSENT_ASYNC("putIfAbsentAsync", Object.class, Object.class),
         REPLACE("replace", Object.class, Object.class),
         REPLACE_WITH_OLD_VALUE("replace", Object.class, Object.class, Object.class),
+        GET_AND_REPLACE("getAndReplace", Object.class, Object.class),
+        GET_AND_REPLACE_ASYNC("getAndReplaceAsync", Object.class, Object.class),
         REMOVE("remove", Object.class),
         REMOVE_WITH_OLD_VALUE("remove", Object.class, Object.class),
         REMOVE_ASYNC("removeAsync", Object.class),
+        GET_AND_REMOVE("getAndRemove", Object.class),
+        GET_AND_REMOVE_ASYNC("getAndRemoveAsync", Object.class),
         DELETE("delete", Object.class),
         DELETE_ASYNC("deleteAsync", Object.class),
         EVICT("evict", Object.class),

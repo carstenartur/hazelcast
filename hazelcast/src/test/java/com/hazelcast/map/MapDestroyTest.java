@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,31 +18,33 @@ package com.hazelcast.map;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
-import com.hazelcast.instance.Node;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.jet.impl.JobRepository;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.MapServiceContext;
 import com.hazelcast.map.impl.PartitionContainer;
-import com.hazelcast.map.impl.recordstore.RecordStore;
 import com.hazelcast.spi.impl.NodeEngineImpl;
-import com.hazelcast.spi.properties.GroupProperty;
+import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import java.util.concurrent.ConcurrentMap;
+import java.util.Map;
+import java.util.stream.Collectors;
 
+import static com.hazelcast.test.Accessors.getNode;
+import static com.hazelcast.test.Accessors.getNodeEngineImpl;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class MapDestroyTest extends HazelcastTestSupport {
 
     private HazelcastInstance instance1;
@@ -58,7 +60,7 @@ public class MapDestroyTest extends HazelcastTestSupport {
         // while a map is being destroyed which can result in a memory leak. This will be overhauled as part of
         // object lifecycle revamp.
         // For more details, see: https://github.com/hazelcast/hazelcast/issues/7132
-        config.setProperty(GroupProperty.PARTITION_MAX_PARALLEL_REPLICATIONS.getName(), String.valueOf(Integer.MAX_VALUE));
+        config.setProperty(ClusterProperty.PARTITION_MAX_PARALLEL_REPLICATIONS.getName(), String.valueOf(Integer.MAX_VALUE));
         instance1 = factory.newHazelcastInstance(config);
         instance2 = factory.newHazelcastInstance(config);
     }
@@ -91,7 +93,9 @@ public class MapDestroyTest extends HazelcastTestSupport {
 
         for (int i = 0; i < partitionCount; i++) {
             PartitionContainer container = context.getPartitionContainer(i);
-            ConcurrentMap<String, RecordStore> maps = container.getMaps();
+            Map<String, ?> maps = container.getMaps().entrySet().stream()
+                    .filter(e -> !e.getKey().startsWith(JobRepository.INTERNAL_JET_OBJECTS_PREFIX))
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
             assertTrue(maps.isEmpty());
         }
     }
@@ -104,6 +108,6 @@ public class MapDestroyTest extends HazelcastTestSupport {
 
     private int getPartitionCount(HazelcastInstance instance) {
         Node node = getNode(instance);
-        return node.getProperties().getInteger(GroupProperty.PARTITION_COUNT);
+        return node.getProperties().getInteger(ClusterProperty.PARTITION_COUNT);
     }
 }

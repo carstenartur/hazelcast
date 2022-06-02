@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,18 +19,18 @@ package com.hazelcast.client.impl.protocol.task.ringbuffer;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.RingbufferCapacityCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractPartitionMessageTask;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
 import com.hazelcast.ringbuffer.impl.RingbufferService;
 import com.hazelcast.ringbuffer.impl.operations.GenericOperation;
 import com.hazelcast.security.permission.ActionConstants;
 import com.hazelcast.security.permission.RingBufferPermission;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.operationservice.Operation;
 
 import java.security.Permission;
 
 public class RingbufferCapacityMessageTask
-        extends AbstractPartitionMessageTask<RingbufferCapacityCodec.RequestParameters> {
+        extends AbstractPartitionMessageTask<String> {
 
     public RingbufferCapacityMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -38,11 +38,11 @@ public class RingbufferCapacityMessageTask
 
     @Override
     protected Operation prepareOperation() {
-        return new GenericOperation(parameters.name, GenericOperation.OPERATION_CAPACITY);
+        return new GenericOperation(parameters, GenericOperation.OPERATION_CAPACITY);
     }
 
     @Override
-    protected RingbufferCapacityCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+    protected String decodeClientMessage(ClientMessage clientMessage) {
         return RingbufferCapacityCodec.decodeRequest(clientMessage);
     }
 
@@ -62,7 +62,7 @@ public class RingbufferCapacityMessageTask
 
     @Override
     public Permission getRequiredPermission() {
-        return new RingBufferPermission(parameters.name, ActionConstants.ACTION_READ);
+        return new RingBufferPermission(parameters, ActionConstants.ACTION_READ);
     }
 
     @Override
@@ -72,7 +72,7 @@ public class RingbufferCapacityMessageTask
 
     @Override
     public String getDistributedObjectName() {
-        return parameters.name;
+        return parameters;
     }
 
 }

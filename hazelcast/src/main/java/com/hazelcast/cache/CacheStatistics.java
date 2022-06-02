@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,13 @@
 
 package com.hazelcast.cache;
 
-import com.hazelcast.monitor.NearCacheStats;
+import com.hazelcast.partition.LocalReplicationStats;
+import com.hazelcast.nearcache.NearCacheStats;
 
 /**
  * Cache statistics
  * <p>
- *     Cache statistics are accumulated starting from the time a cache is created. <br/>
+ *     Cache statistics are accumulated starting from the time a cache is created. <br>
  *     An instance of this class represents local node values only! For an accumulated view
  *     on cluster level, the user has to retrieve all nodes statistics and aggregate values
  *     on his own.
@@ -33,7 +34,6 @@ import com.hazelcast.monitor.NearCacheStats;
  *       CacheStatistics cacheStatistics = unwrappedCache.getLocalCacheStatistics();
  *       long cacheHits = cacheStatistics.getCacheHits();
  *     </pre>
- * </p>
  *
  * @since 3.3.1
  */
@@ -204,4 +204,10 @@ public interface CacheStatistics {
      * @return the Near Cache statistics
      */
     NearCacheStats getNearCacheStatistics();
+
+    /**
+     * @return replication statistics.
+     * @since 5.0
+     */
+    LocalReplicationStats getReplicationStats();
 }

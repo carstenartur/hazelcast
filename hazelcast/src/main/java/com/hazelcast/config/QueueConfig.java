@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,28 +16,32 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.collection.IQueue;
+import com.hazelcast.internal.config.ConfigDataSerializerHook;
+import com.hazelcast.internal.util.StringUtil;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.nio.serialization.impl.Versioned;
-import com.hazelcast.spi.merge.SplitBrainMergeTypeProvider;
-import com.hazelcast.spi.merge.SplitBrainMergeTypes;
 
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import static com.hazelcast.internal.serialization.impl.SerializationUtil.readNullableList;
 import static com.hazelcast.internal.serialization.impl.SerializationUtil.writeNullableList;
-import static com.hazelcast.util.Preconditions.checkAsyncBackupCount;
-import static com.hazelcast.util.Preconditions.checkBackupCount;
-import static com.hazelcast.util.Preconditions.checkNotNull;
+import static com.hazelcast.internal.util.Preconditions.checkAsyncBackupCount;
+import static com.hazelcast.internal.util.Preconditions.checkBackupCount;
+import static com.hazelcast.internal.util.Preconditions.checkNotNull;
 
 /**
- * Contains the configuration for an {@link com.hazelcast.core.IQueue}.
+ * Contains the configuration for an {@link IQueue}.
  */
 @SuppressWarnings("checkstyle:methodcount")
-public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataSerializable, Versioned , NamedConfig {
+public class QueueConfig implements IdentifiedDataSerializable, NamedConfig, Versioned {
 
     /**
      * Default value for the maximum size of the Queue.
@@ -45,7 +49,7 @@ public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataS
     public static final int DEFAULT_MAX_SIZE = 0;
 
     /**
-     * Default value for the sychronous backup count.
+     * Default value for the synchronous backup count.
      */
     public static final int DEFAULT_SYNC_BACKUP_COUNT = 1;
 
@@ -67,9 +71,9 @@ public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataS
     private int emptyQueueTtl = DEFAULT_EMPTY_QUEUE_TTL;
     private QueueStoreConfig queueStoreConfig;
     private boolean statisticsEnabled = true;
-    private String quorumName;
+    private String splitBrainProtectionName;
     private MergePolicyConfig mergePolicyConfig = new MergePolicyConfig();
-    private transient QueueConfigReadOnly readOnly;
+    private String priorityComparatorClassName;
 
     public QueueConfig() {
     }
@@ -86,23 +90,11 @@ public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataS
         this.maxSize = config.maxSize;
         this.emptyQueueTtl = config.emptyQueueTtl;
         this.statisticsEnabled = config.statisticsEnabled;
-        this.quorumName = config.quorumName;
-        this.mergePolicyConfig = config.mergePolicyConfig;
+        this.splitBrainProtectionName = config.splitBrainProtectionName;
+        this.mergePolicyConfig = new MergePolicyConfig(config.mergePolicyConfig);
         this.queueStoreConfig = config.queueStoreConfig != null ? new QueueStoreConfig(config.queueStoreConfig) : null;
-        this.listenerConfigs = new ArrayList<ItemListenerConfig>(config.getItemListenerConfigs());
-    }
-
-    /**
-     * Gets immutable version of this configuration.
-     *
-     * @return immutable version of this configuration
-     * @deprecated this method will be removed in 4.0; it is meant for internal usage only
-     */
-    public QueueConfigReadOnly getAsReadOnly() {
-        if (readOnly == null) {
-            readOnly = new QueueConfigReadOnly(this);
-        }
-        return readOnly;
+        this.listenerConfigs = new ArrayList<>(config.getItemListenerConfigs());
+        this.priorityComparatorClassName = config.priorityComparatorClassName;
     }
 
     /**
@@ -139,6 +131,7 @@ public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataS
      *
      * @param maxSize set the maximum size of the Queue to this value
      * @return the Queue configuration
+     * @throws IllegalArgumentException if the provided max size is negative
      */
     public QueueConfig setMaxSize(int maxSize) {
         if (maxSize < 0) {
@@ -173,7 +166,8 @@ public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataS
      * @return the current QueueConfig
      * @throws IllegalArgumentException if backupCount is smaller than 0,
      *                                  or larger than the maximum number of backups,
-     *                                  or the sum of the backups and async backups is larger than the maximum number of backups
+     *                                  or the sum of the backups and async backups is larger than the maximum
+     *                                  number of backups
      * @see #setAsyncBackupCount(int)
      */
     public QueueConfig setBackupCount(int backupCount) {
@@ -197,7 +191,8 @@ public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataS
      * @return the updated QueueConfig
      * @throws IllegalArgumentException if asyncBackupCount smaller than 0,
      *                                  or larger than the maximum number of backup
-     *                                  or the sum of the backups and async backups is larger than the maximum number of backups
+     *                                  or the sum of the backups and async backups is larger than the maximum
+     *                                  number of backups
      * @see #setBackupCount(int)
      * @see #getAsyncBackupCount()
      */
@@ -211,7 +206,7 @@ public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataS
      *
      * @return the QueueStore configuration
      */
-    public QueueStoreConfig getQueueStoreConfig() {
+    public @Nullable QueueStoreConfig getQueueStoreConfig() {
         return queueStoreConfig;
     }
 
@@ -221,7 +216,7 @@ public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataS
      * @param queueStoreConfig set the QueueStore configuration to this configuration
      * @return the QueueStore configuration
      */
-    public QueueConfig setQueueStoreConfig(QueueStoreConfig queueStoreConfig) {
+    public QueueConfig setQueueStoreConfig(@Nullable QueueStoreConfig queueStoreConfig) {
         this.queueStoreConfig = queueStoreConfig;
         return this;
     }
@@ -280,9 +275,9 @@ public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataS
      *
      * @return the list of item listener configurations for this queue
      */
-    public List<ItemListenerConfig> getItemListenerConfigs() {
+    public @Nonnull List<ItemListenerConfig> getItemListenerConfigs() {
         if (listenerConfigs == null) {
-            listenerConfigs = new ArrayList<ItemListenerConfig>();
+            listenerConfigs = new ArrayList<>();
         }
         return listenerConfigs;
     }
@@ -293,28 +288,28 @@ public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataS
      * @param listenerConfigs the list of item listener configurations to set for this queue
      * @return the updated queue configuration
      */
-    public QueueConfig setItemListenerConfigs(List<ItemListenerConfig> listenerConfigs) {
+    public QueueConfig setItemListenerConfigs(@Nullable List<ItemListenerConfig> listenerConfigs) {
         this.listenerConfigs = listenerConfigs;
         return this;
     }
 
     /**
-     * Returns the quorum name for queue operations.
+     * Returns the split brain protection name for queue operations.
      *
-     * @return the quorum name
+     * @return the split brain protection name
      */
-    public String getQuorumName() {
-        return quorumName;
+    public @Nullable String getSplitBrainProtectionName() {
+        return splitBrainProtectionName;
     }
 
     /**
-     * Sets the quorum name for queue operations.
+     * Sets the split brain protection name for queue operations.
      *
-     * @param quorumName the quorum name
+     * @param splitBrainProtectionName the split brain protection name
      * @return the updated queue configuration
      */
-    public QueueConfig setQuorumName(String quorumName) {
-        this.quorumName = quorumName;
+    public QueueConfig setSplitBrainProtectionName(@Nullable String splitBrainProtectionName) {
+        this.splitBrainProtectionName = splitBrainProtectionName;
         return this;
     }
 
@@ -323,7 +318,7 @@ public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataS
      *
      * @return the {@link MergePolicyConfig} for this queue
      */
-    public MergePolicyConfig getMergePolicyConfig() {
+    public @Nonnull MergePolicyConfig getMergePolicyConfig() {
         return mergePolicyConfig;
     }
 
@@ -332,14 +327,48 @@ public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataS
      *
      * @return the updated queue configuration
      */
-    public QueueConfig setMergePolicyConfig(MergePolicyConfig mergePolicyConfig) {
+    public QueueConfig setMergePolicyConfig(@Nonnull MergePolicyConfig mergePolicyConfig) {
         this.mergePolicyConfig = checkNotNull(mergePolicyConfig, "mergePolicyConfig cannot be null");
         return this;
     }
 
-    @Override
-    public Class getProvidedMergeTypes() {
-        return SplitBrainMergeTypes.QueueMergeTypes.class;
+    /**
+     * Check if underlying implementation is a {@code PriorityQueue}. Otherwise
+     * it is a FIFO queue.
+     *
+     * @return {@code true} if priority queue has been configured, {@code false}
+     * otherwise
+     */
+    public boolean isPriorityQueue() {
+        return !StringUtil.isNullOrEmptyAfterTrim(priorityComparatorClassName);
+    }
+
+    /**
+     * Returns the class name that will be used to compare queue items.
+     * If the returned class name is non-empty, the queue will behave as a priority
+     * queue, otherwise it behaves as a FIFO queue.
+     * <p>
+     * If this value is non-null, then Hazelcast will ignore the queue store
+     * {@link QueueStoreConfig#STORE_MEMORY_LIMIT} configuration value.
+     */
+    public @Nullable String getPriorityComparatorClassName() {
+        return priorityComparatorClassName;
+    }
+
+    /**
+     * Sets the class name that will be used to compare queue items.
+     * If the provided class name is non-empty, the queue will behave as a priority
+     * queue, otherwise it behaves as a FIFO queue.
+     *
+     * Setting the comparator to a non-null value also makes the queue store ignore
+     * the {@link QueueStoreConfig#STORE_MEMORY_LIMIT} configuration value.
+     *
+     * @param priorityComparatorClassName the class name that will be used to compare queue items
+     * @return this QueueConfig instance
+     */
+    public QueueConfig setPriorityComparatorClassName(@Nullable String priorityComparatorClassName) {
+        this.priorityComparatorClassName = priorityComparatorClassName;
+        return this;
     }
 
     @Override
@@ -354,6 +383,7 @@ public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataS
                 + ", queueStoreConfig=" + queueStoreConfig
                 + ", statisticsEnabled=" + statisticsEnabled
                 + ", mergePolicyConfig=" + mergePolicyConfig
+                + ", priorityComparatorClassName=" + priorityComparatorClassName
                 + '}';
     }
 
@@ -363,13 +393,13 @@ public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataS
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return ConfigDataSerializerHook.QUEUE_CONFIG;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(name);
+        out.writeString(name);
         writeNullableList(listenerConfigs, out);
         out.writeInt(backupCount);
         out.writeInt(asyncBackupCount);
@@ -377,13 +407,14 @@ public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataS
         out.writeInt(emptyQueueTtl);
         out.writeObject(queueStoreConfig);
         out.writeBoolean(statisticsEnabled);
-        out.writeUTF(quorumName);
+        out.writeString(splitBrainProtectionName);
         out.writeObject(mergePolicyConfig);
+        out.writeString(priorityComparatorClassName);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        name = in.readUTF();
+        name = in.readString();
         listenerConfigs = readNullableList(in);
         backupCount = in.readInt();
         asyncBackupCount = in.readInt();
@@ -391,12 +422,13 @@ public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataS
         emptyQueueTtl = in.readInt();
         queueStoreConfig = in.readObject();
         statisticsEnabled = in.readBoolean();
-        quorumName = in.readUTF();
+        splitBrainProtectionName = in.readString();
         mergePolicyConfig = in.readObject();
+        priorityComparatorClassName = in.readString();
     }
 
     @Override
-    @SuppressWarnings({"checkstyle:cyclomaticcomplexity", "checkstyle:npathcomplexity"})
+    @SuppressWarnings({"checkstyle:cyclomaticcomplexity"})
     public final boolean equals(Object o) {
         if (this == o) {
             return true;
@@ -404,50 +436,24 @@ public class QueueConfig implements SplitBrainMergeTypeProvider, IdentifiedDataS
         if (!(o instanceof QueueConfig)) {
             return false;
         }
-
         QueueConfig that = (QueueConfig) o;
-        if (backupCount != that.backupCount) {
-            return false;
-        }
-        if (asyncBackupCount != that.asyncBackupCount) {
-            return false;
-        }
-        if (getMaxSize() != that.getMaxSize()) {
-            return false;
-        }
-        if (emptyQueueTtl != that.emptyQueueTtl) {
-            return false;
-        }
-        if (statisticsEnabled != that.statisticsEnabled) {
-            return false;
-        }
-        if (!name.equals(that.name)) {
-            return false;
-        }
-        if (!getItemListenerConfigs().equals(that.getItemListenerConfigs())) {
-            return false;
-        }
-        if (queueStoreConfig != null ? !queueStoreConfig.equals(that.queueStoreConfig) : that.queueStoreConfig != null) {
-            return false;
-        }
-        if (quorumName != null ? !quorumName.equals(that.quorumName) : that.quorumName != null) {
-            return false;
-        }
-        return mergePolicyConfig != null ? mergePolicyConfig.equals(that.mergePolicyConfig) : that.mergePolicyConfig == null;
+        return backupCount == that.backupCount
+                && asyncBackupCount == that.asyncBackupCount
+                && getMaxSize() == that.getMaxSize()
+                && emptyQueueTtl == that.emptyQueueTtl
+                && statisticsEnabled == that.statisticsEnabled
+                && Objects.equals(name, that.name)
+                && getItemListenerConfigs().equals(that.getItemListenerConfigs())
+                && Objects.equals(queueStoreConfig, that.queueStoreConfig)
+                && Objects.equals(splitBrainProtectionName, that.splitBrainProtectionName)
+                && Objects.equals(mergePolicyConfig, that.mergePolicyConfig)
+                && Objects.equals(priorityComparatorClassName, that.priorityComparatorClassName);
     }
 
     @Override
     public final int hashCode() {
-        int result = name.hashCode();
-        result = 31 * result + getItemListenerConfigs().hashCode();
-        result = 31 * result + backupCount;
-        result = 31 * result + asyncBackupCount;
-        result = 31 * result + getMaxSize();
-        result = 31 * result + emptyQueueTtl;
-        result = 31 * result + (queueStoreConfig != null ? queueStoreConfig.hashCode() : 0);
-        result = 31 * result + (statisticsEnabled ? 1 : 0);
-        result = 31 * result + (quorumName != null ? quorumName.hashCode() : 0);
-        result = 31 * result + (mergePolicyConfig != null ? mergePolicyConfig.hashCode() : 0);
-        return result;
+        return Objects.hash(name, getItemListenerConfigs(), backupCount, asyncBackupCount, getMaxSize(), emptyQueueTtl,
+                queueStoreConfig, statisticsEnabled, splitBrainProtectionName, mergePolicyConfig,
+                priorityComparatorClassName);
     }
 }

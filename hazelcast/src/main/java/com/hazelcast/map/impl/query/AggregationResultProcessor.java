@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,9 @@
 package com.hazelcast.map.impl.query;
 
 import com.hazelcast.aggregation.Aggregator;
+import com.hazelcast.internal.serialization.SerializationService;
+import com.hazelcast.internal.util.collection.PartitionIdSet;
 import com.hazelcast.query.impl.QueryableEntry;
-import com.hazelcast.spi.serialization.SerializationService;
-
-import java.util.Collection;
 
 /**
  * Responsible for populating {@link AggregationResult}s
@@ -36,8 +35,8 @@ public class AggregationResultProcessor implements ResultProcessor<AggregationRe
     }
 
     @Override
-    public AggregationResult populateResult(Query query, long resultLimit, Collection<QueryableEntry> entries,
-                                            Collection<Integer> partitionIds) {
+    public AggregationResult populateResult(Query query, long resultLimit, Iterable<QueryableEntry> entries,
+                                            PartitionIdSet partitionIds) {
         return accumulationExecutor.execute(query.getAggregator(), entries, partitionIds);
     }
 

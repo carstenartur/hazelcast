@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,6 +37,6 @@ public class LeaderElectionTimeoutTask extends RaftNodeStatusAwareTask implement
             return;
         }
         logger.warning("Leader election for term: " + raftNode.state().term() + " has timed out!");
-        new LeaderElectionTask(raftNode).run();
+        new LeaderElectionTask(raftNode, false).run();
     }
 }

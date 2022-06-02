@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,17 +18,18 @@ package com.hazelcast.query.impl.predicates;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.config.InMemoryFormat;
-import com.hazelcast.core.IMap;
+import com.hazelcast.config.IndexType;
+import com.hazelcast.map.IMap;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.test.HazelcastParallelParametersRunnerFactory;
+import com.hazelcast.test.HazelcastParametrizedRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameter;
 import org.junit.runners.Parameterized.Parameters;
 import org.junit.runners.Parameterized.UseParametersRunnerFactory;
@@ -45,9 +46,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-@RunWith(Parameterized.class)
+@RunWith(HazelcastParametrizedRunner.class)
 @UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class BoundedRangePredicateQueriesTest extends HazelcastTestSupport {
 
     private static final int MIN = -100;
@@ -71,8 +72,8 @@ public class BoundedRangePredicateQueriesTest extends HazelcastTestSupport {
         config.getMapConfig("persons").setInMemoryFormat(inMemoryFormat);
 
         map = createHazelcastInstance(config).getMap("persons");
-        map.addIndex("age", false);
-        map.addIndex("height", true);
+        map.addIndex(IndexType.HASH, "age");
+        map.addIndex(IndexType.SORTED, "height");
         // the weight attribute is unindexed
 
         map.put(MIN - 1, new Person(null));
@@ -89,7 +90,7 @@ public class BoundedRangePredicateQueriesTest extends HazelcastTestSupport {
 
     @Test
     public void testClosedRange() {
-        Predicate expected = new PersonPredicate(new com.hazelcast.util.function.Predicate<Integer>() {
+        Predicate expected = new PersonPredicate(new java.util.function.Predicate<Integer>() {
             @Override
             public boolean test(Integer value) {
                 return value != null && value >= 1 && value <= 10;
@@ -103,7 +104,7 @@ public class BoundedRangePredicateQueriesTest extends HazelcastTestSupport {
 
     @Test
     public void testLeftOpenRange() {
-        Predicate expected = new PersonPredicate(new com.hazelcast.util.function.Predicate<Integer>() {
+        Predicate expected = new PersonPredicate(new java.util.function.Predicate<Integer>() {
             @Override
             public boolean test(Integer value) {
                 return value != null && value > 1 && value <= 10;
@@ -117,7 +118,7 @@ public class BoundedRangePredicateQueriesTest extends HazelcastTestSupport {
 
     @Test
     public void testRightOpenRange() {
-        Predicate expected = new PersonPredicate(new com.hazelcast.util.function.Predicate<Integer>() {
+        Predicate expected = new PersonPredicate(new java.util.function.Predicate<Integer>() {
             @Override
             public boolean test(Integer value) {
                 return value != null && value >= 1 && value < 10;
@@ -131,7 +132,7 @@ public class BoundedRangePredicateQueriesTest extends HazelcastTestSupport {
 
     @Test
     public void testOpenRange() {
-        Predicate expected = new PersonPredicate(new com.hazelcast.util.function.Predicate<Integer>() {
+        Predicate expected = new PersonPredicate(new java.util.function.Predicate<Integer>() {
             @Override
             public boolean test(Integer value) {
                 return value != null && value > 1 && value < 10;
@@ -145,7 +146,7 @@ public class BoundedRangePredicateQueriesTest extends HazelcastTestSupport {
 
     @Test
     public void testDegenerateRange() {
-        Predicate expected = new PersonPredicate(new com.hazelcast.util.function.Predicate<Integer>() {
+        Predicate expected = new PersonPredicate(new java.util.function.Predicate<Integer>() {
             @Override
             public boolean test(Integer value) {
                 return value != null && value >= 1 && value <= 1;
@@ -197,9 +198,9 @@ public class BoundedRangePredicateQueriesTest extends HazelcastTestSupport {
 
     private static class PersonPredicate implements Predicate<Integer, Person> {
 
-        private final com.hazelcast.util.function.Predicate<Integer> predicate;
+        private final java.util.function.Predicate<Integer> predicate;
 
-        public PersonPredicate(com.hazelcast.util.function.Predicate<Integer> predicate) {
+        PersonPredicate(java.util.function.Predicate<Integer> predicate) {
             this.predicate = predicate;
         }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,17 +18,17 @@ package com.hazelcast.spi.impl.operationexecutor.impl;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.instance.BuildInfo;
-import com.hazelcast.instance.DefaultNodeExtension;
-import com.hazelcast.instance.Node;
+import com.hazelcast.instance.impl.DefaultNodeExtension;
+import com.hazelcast.instance.impl.Node;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
-import com.hazelcast.logging.LoggingServiceImpl;
-import com.hazelcast.nio.Address;
+import com.hazelcast.logging.impl.LoggingServiceImpl;
+import com.hazelcast.cluster.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.Packet;
-import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.UrgentSystemOperation;
+import com.hazelcast.internal.nio.Packet;
+import com.hazelcast.spi.impl.operationservice.Operation;
+import com.hazelcast.spi.impl.operationservice.UrgentSystemOperation;
 import com.hazelcast.spi.impl.operationexecutor.OperationHostileThread;
 import com.hazelcast.spi.impl.operationexecutor.OperationRunner;
 import com.hazelcast.spi.impl.operationexecutor.OperationRunnerFactory;
@@ -36,7 +36,7 @@ import com.hazelcast.spi.impl.operationservice.impl.responses.Response;
 import com.hazelcast.spi.properties.HazelcastProperties;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.util.function.Consumer;
+import com.hazelcast.version.MemberVersion;
 import org.junit.After;
 import org.junit.Before;
 import org.mockito.Mockito;
@@ -44,6 +44,7 @@ import org.mockito.Mockito;
 import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.function.Consumer;
 
 import static java.util.Collections.synchronizedList;
 import static org.junit.Assert.assertEquals;
@@ -52,7 +53,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * Abstract test support to test the {@link OperationExecutorImpl}.
- * <p/>
+ * <p>
  * The idea is the following; all dependencies for the executor are available as fields in this object and by calling the
  * {@link #initExecutor()} method, the actual ClassicOperationExecutor instance is created. But if you need to replace
  * the dependencies by mocks, just replace them before calling the {@link #initExecutor()} method.
@@ -71,13 +72,15 @@ public abstract class OperationExecutorImpl_AbstractTest extends HazelcastTestSu
 
     @Before
     public void setup() throws Exception {
-        loggingService = new LoggingServiceImpl("foo", "jdk", new BuildInfo("1", "1", "1", 1, false, (byte) 1));
+        loggingService = new LoggingServiceImpl("foo", "jdk", new BuildInfo("1", "1", "1", 1, false, (byte) 1, "1"), true, null);
 
         serializationService = new DefaultSerializationServiceBuilder().build();
         config = smallInstanceConfig();
         thisAddress = new Address("localhost", 5701);
         Node node = Mockito.mock(Node.class);
         when(node.getConfig()).thenReturn(config);
+        when(node.getProperties()).thenReturn(new HazelcastProperties(config));
+        when(node.getVersion()).thenReturn(new MemberVersion(0, 0, 0));
         nodeExtension = new DefaultNodeExtension(node);
         handlerFactory = new DummyOperationRunnerFactory();
 
@@ -229,14 +232,15 @@ public abstract class OperationExecutorImpl_AbstractTest extends HazelcastTestSu
         }
 
         @Override
-        public void run(Packet packet) throws Exception {
+        public boolean run(Packet packet) throws Exception {
             packets.add(packet);
             Operation op = serializationService.toObject(packet);
             run(op);
+            return false;
         }
 
         @Override
-        public void run(Operation task) {
+        public boolean run(Operation task) {
             operations.add(task);
 
             currentTask = task;
@@ -247,6 +251,7 @@ public abstract class OperationExecutorImpl_AbstractTest extends HazelcastTestSu
             } finally {
                 currentTask = null;
             }
+            return false;
         }
     }
 

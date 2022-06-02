@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package com.hazelcast.collection.impl;
 
+import com.hazelcast.collection.ISet;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.logging.ILogger;
@@ -25,6 +26,8 @@ import com.hazelcast.test.TestHazelcastInstanceFactory;
 
 import java.util.Collection;
 
+import static com.hazelcast.test.Accessors.getBackupInstance;
+import static com.hazelcast.test.Accessors.getPartitionIdViaReflection;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -37,10 +40,10 @@ public abstract class AbstractCollectionBackupTest extends HazelcastTestSupport 
     private static final ILogger LOGGER = Logger.getLogger(AbstractCollectionBackupTest.class);
 
     protected TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
-    protected Config config = new Config();
+    protected Config config = smallInstanceConfig();
 
     /**
-     * Returns an instance of a Hazelcast collection, e.g. {@link com.hazelcast.core.ISet}.
+     * Returns an instance of a Hazelcast collection, e.g. {@link ISet}.
      *
      * @param instance the {@link HazelcastInstance} to retrieve the collection from
      * @param name     the name of the collection

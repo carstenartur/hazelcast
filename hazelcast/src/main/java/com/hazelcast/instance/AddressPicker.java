@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.instance;
 
-import com.hazelcast.nio.Address;
+import com.hazelcast.cluster.Address;
 
 import java.nio.channels.ServerSocketChannel;
 import java.util.Map;
@@ -24,23 +24,15 @@ import java.util.Map;
 /**
  * Strategy to select an {@link Address} that a Hazelcast cluster member binds its server socket to
  * and a (potentially different) address that Hazelcast will advertise to other cluster members and clients.
- *
  */
 public interface AddressPicker {
 
     /**
      * Picks both server socket listener address and public address.
      *
-     * @throws Exception
+     * @throws Exception if failure happened while picking an address.
      */
     void pickAddress() throws Exception;
-
-    /**
-     * @return the bind address for this node's member server socket
-     * @deprecated use {@link #getBindAddress(EndpointQualifier) getBindAddress(EndpointQualifier.MEMBER} instead
-     */
-    @Deprecated
-    Address getBindAddress();
 
     /**
      * Returns a server socket listener address. The returned address for different {@link EndpointQualifier}s
@@ -53,13 +45,6 @@ public interface AddressPicker {
     Address getBindAddress(EndpointQualifier qualifier);
 
     /**
-     * @return the public address for this node's member server socket
-     * @deprecated use {@link #getPublicAddress(EndpointQualifier) getPublicAddress(EndpointQualifier.MEMBER} instead
-     */
-    @Deprecated
-    Address getPublicAddress();
-
-    /**
      * Returns a public address to be advertised to other cluster members and clients.
      *
      * @return {@link Address} another members can use to connect to this member or <code>null</code> if called before
@@ -68,14 +53,27 @@ public interface AddressPicker {
      */
     Address getPublicAddress(EndpointQualifier qualifier);
 
+    /**
+     * Returns all public {@link Address}es of this member which are advertised to other
+     * members, mapped by corresponding {@link EndpointQualifier}. Also, see
+     * {@link com.hazelcast.internal.cluster.impl.MemberHandshake} and
+     * {@link com.hazelcast.internal.server.tcp.SendMemberHandshakeTask}.
+     *
+     * @return a {@code Map<EndpointQualifier, Address>} of this member's public addresses
+     * or an empty map if called before {@link #pickAddress()}
+     * @since 3.12
+     */
     Map<EndpointQualifier, Address> getPublicAddressMap();
 
     /**
-     * @return the server socket channel for this node's member server socket
-     * @deprecated use {@link #getServerSocketChannel(EndpointQualifier) getServerSocketChannel(EndpointQualifier.MEMBER} instead
+     * Returns all bound server socket {@link Address}es of this member, mapped by
+     * corresponding {@link EndpointQualifier}
+     *
+     * @return a {@code Map<EndpointQualifier, Address>} of the bound addresses of
+     * this member's server sockets or an empty map if called before {@link #pickAddress()}
+     * @since 5.1
      */
-    @Deprecated
-    ServerSocketChannel getServerSocketChannel();
+    Map<EndpointQualifier, Address> getBindAddressMap();
 
     /**
      * Returns a server channel.

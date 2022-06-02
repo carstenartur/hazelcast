@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.query.impl.Comparables;
 
 import java.io.IOException;
+import java.util.Objects;
 
 public final class MaxAggregator<I, R extends Comparable> extends AbstractAggregator<I, R, R>
         implements IdentifiedDataSerializable {
@@ -72,20 +73,39 @@ public final class MaxAggregator<I, R extends Comparable> extends AbstractAggreg
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return AggregatorDataSerializerHook.MAX;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(attributePath);
+        out.writeString(attributePath);
         out.writeObject(max);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        this.attributePath = in.readUTF();
+        this.attributePath = in.readString();
         this.max = in.readObject();
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        if (!super.equals(o)) {
+            return false;
+        }
+        MaxAggregator<?, ?> that = (MaxAggregator<?, ?>) o;
+        return Objects.equals(max, that.max);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(super.hashCode(), max);
+    }
 }

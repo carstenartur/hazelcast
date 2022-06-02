@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,101 +16,48 @@
 
 package com.hazelcast.map.impl.record;
 
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.query.Metadata;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
-import static com.hazelcast.nio.Bits.INT_SIZE_IN_BYTES;
-import static com.hazelcast.nio.Bits.LONG_SIZE_IN_BYTES;
-import static com.hazelcast.util.JVMUtil.REFERENCE_COST_IN_BYTES;
-import static com.hazelcast.util.TimeUtil.zeroOutMs;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static java.util.concurrent.TimeUnit.SECONDS;
+import static com.hazelcast.internal.nio.Bits.INT_SIZE_IN_BYTES;
+import static com.hazelcast.internal.util.JVMUtil.OBJECT_HEADER_SIZE;
+import static com.hazelcast.internal.util.TimeStripUtil.recomputeWithBaseTime;
+import static com.hazelcast.internal.util.TimeStripUtil.stripBaseTime;
+import static com.hazelcast.map.impl.record.RecordReaderWriter.DATA_RECORD_WITH_STATS_READER_WRITER;
 
 /**
  * @param <V> the type of the value of Record.
  */
-@SuppressWarnings({ "checkstyle:methodcount", "VolatileLongOrDoubleField" })
+@SuppressWarnings({"checkstyle:methodcount", "VolatileLongOrDoubleField"})
 public abstract class AbstractRecord<V> implements Record<V> {
 
-    /**
-     * Base time to be used for storing time values as diffs (int) rather than full blown epoch based vals (long)
-     * This allows for a space in seconds, of roughly 68 years.
-     *
-     * Reference value (1514764800000) - Monday, January 1, 2018 12:00:00 AM
-     *
-     * The fixed time in the past (instead of {@link System#currentTimeMillis()} prevents any
-     * time discrepancies among nodes, mis-translated as diffs of -1 ie. {@link Record#NOT_AVAILABLE} values.
-     * (see. https://github.com/hazelcast/hazelcast-enterprise/issues/2527)
-     */
-    public static final long EPOCH_TIME = zeroOutMs(1514764800000L);
+    private static final int NUMBER_OF_INTS = 6;
 
-    private static final int NUMBER_OF_LONGS = 2;
-    private static final int NUMBER_OF_INTS = 5;
-
-    protected Data key;
-    protected long version;
-    protected int ttl;
-    protected int maxIdle;
-
+    protected int version;
     @SuppressFBWarnings(value = "VO_VOLATILE_INCREMENT",
             justification = "Record can be accessed by only its own partition thread.")
-    protected volatile long hits;
-    private volatile int lastAccessTime = NOT_AVAILABLE;
-    private volatile int lastUpdateTime = NOT_AVAILABLE;
-    private int creationTime = NOT_AVAILABLE;
-    private Metadata metadata;
+    protected volatile int hits;
+    private volatile int lastAccessTime = UNSET;
+    private volatile int lastUpdateTime = UNSET;
+
+    private int creationTime = UNSET;
+    private int lastStoredTime = UNSET;
 
     AbstractRecord() {
     }
 
     @Override
-    public void setMetadata(Metadata metadata) {
-        this.metadata = metadata;
+    public RecordReaderWriter getMatchingRecordReaderWriter() {
+        return DATA_RECORD_WITH_STATS_READER_WRITER;
     }
 
     @Override
-    public Metadata getMetadata() {
-        return metadata;
-    }
-
-    @Override
-    public final long getVersion() {
+    public final int getVersion() {
         return version;
     }
 
     @Override
-    public final void setVersion(long version) {
+    public final void setVersion(int version) {
         this.version = version;
-    }
-
-    @Override
-    public long getTtl() {
-        return ttl == Integer.MAX_VALUE ? Long.MAX_VALUE : SECONDS.toMillis(ttl);
-    }
-
-    @Override
-    public void setTtl(long ttl) {
-        long ttlSeconds = MILLISECONDS.toSeconds(ttl);
-        if (ttlSeconds == 0 && ttl != 0) {
-            ttlSeconds = 1;
-        }
-
-        this.ttl =  ttlSeconds > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) ttlSeconds;
-    }
-
-    @Override
-    public long getMaxIdle() {
-        return maxIdle == Integer.MAX_VALUE ? Long.MAX_VALUE : SECONDS.toMillis(maxIdle);
-    }
-
-    @Override
-    public void setMaxIdle(long maxIdle) {
-        long maxIdleSeconds = MILLISECONDS.toSeconds(maxIdle);
-        if (maxIdleSeconds == 0 && maxIdle != 0) {
-            maxIdleSeconds = 1;
-        }
-        this.maxIdle = maxIdleSeconds > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) maxIdleSeconds;
     }
 
     @Override
@@ -144,84 +91,37 @@ public abstract class AbstractRecord<V> implements Record<V> {
     }
 
     @Override
-    public long getHits() {
+    public int getHits() {
         return hits;
     }
 
     @Override
-    public void setHits(long hits) {
+    public void setHits(int hits) {
         this.hits = hits;
     }
 
     @Override
     public long getCost() {
-        return REFERENCE_COST_IN_BYTES + (NUMBER_OF_LONGS * LONG_SIZE_IN_BYTES) + (NUMBER_OF_INTS * INT_SIZE_IN_BYTES);
-    }
-
-    @Override
-    public void onUpdate(long now) {
-        version++;
-        lastUpdateTime = stripBaseTime(now);
-    }
-
-    @Override
-    public Object getCachedValueUnsafe() {
-        return Record.NOT_CACHED;
-    }
-
-    @Override
-    public void onAccess(long now) {
-        hits++;
-        lastAccessTime = stripBaseTime(now);
-    }
-
-    @Override
-    public void onStore() {
-    }
-
-    @Override
-    public boolean casCachedValue(Object expectedValue, Object newValue) {
-        return true;
-    }
-
-    @Override
-    public Data getKey() {
-        return key;
-    }
-
-    public void setKey(Data key) {
-        this.key = key;
-    }
-
-    @Override
-    public final long getSequence() {
-        return NOT_AVAILABLE;
-    }
-
-    @Override
-    public final void setSequence(long sequence) {
-    }
-
-    @Override
-    public long getExpirationTime() {
-        return NOT_AVAILABLE;
-    }
-
-    @Override
-    public void setExpirationTime(long expirationTime) {
+        return OBJECT_HEADER_SIZE
+                + (NUMBER_OF_INTS * INT_SIZE_IN_BYTES);
     }
 
     @Override
     public long getLastStoredTime() {
-        return NOT_AVAILABLE;
+        if (lastStoredTime == UNSET) {
+            return 0L;
+        }
+
+        return recomputeWithBaseTime(lastStoredTime);
     }
 
     @Override
     public void setLastStoredTime(long lastStoredTime) {
+        this.lastStoredTime = stripBaseTime(lastStoredTime);
     }
 
-    @SuppressWarnings("checkstyle:npathcomplexity")
     @Override
+    @SuppressWarnings("checkstyle:npathcomplexity")
     public boolean equals(Object o) {
         if (this == o) {
             return true;
@@ -235,15 +135,6 @@ public abstract class AbstractRecord<V> implements Record<V> {
         if (version != that.version) {
             return false;
         }
-        if (ttl != that.ttl) {
-            return false;
-        }
-        if (maxIdle != that.maxIdle) {
-            return false;
-        }
-        if (creationTime != that.creationTime) {
-            return false;
-        }
         if (hits != that.hits) {
             return false;
         }
@@ -253,38 +144,74 @@ public abstract class AbstractRecord<V> implements Record<V> {
         if (lastUpdateTime != that.lastUpdateTime) {
             return false;
         }
-        return key.equals(that.key);
+        if (creationTime != that.creationTime) {
+            return false;
+        }
+        if (lastStoredTime != that.lastStoredTime) {
+            return false;
+        }
+        return true;
     }
 
     @Override
     public int hashCode() {
-        int result = key != null ? key.hashCode() : 0;
-        result = 31 * result + (int) (version ^ (version >>> 32));
-        result = 31 * result + ttl;
-        result = 31 * result + maxIdle;
-        result = 31 * result + creationTime;
-        result = 31 * result + (int) (hits ^ (hits >>> 32));
+        int result = version;
+        result = 31 * result + hits;
         result = 31 * result + lastAccessTime;
         result = 31 * result + lastUpdateTime;
+        result = 31 * result + creationTime;
+        result = 31 * result + lastStoredTime;
         return result;
     }
 
-    protected long recomputeWithBaseTime(int value) {
-        if (value == NOT_AVAILABLE) {
-            return 0L;
-        }
-
-        long exploded = SECONDS.toMillis(value);
-        return exploded + EPOCH_TIME;
+    @Override
+    public int getRawCreationTime() {
+        return creationTime;
     }
 
-    protected int stripBaseTime(long value) {
-        int diff = NOT_AVAILABLE;
-        if (value > 0) {
-            diff = (int) MILLISECONDS.toSeconds(value - EPOCH_TIME);
-        }
-
-        return diff;
+    @Override
+    public int getRawLastAccessTime() {
+        return lastAccessTime;
     }
 
+    @Override
+    public int getRawLastUpdateTime() {
+        return lastUpdateTime;
+    }
+
+    @Override
+    public void setRawCreationTime(int creationTime) {
+        this.creationTime = creationTime;
+    }
+
+    @Override
+    public void setRawLastAccessTime(int lastAccessTime) {
+        this.lastAccessTime = lastAccessTime;
+    }
+
+    @Override
+    public void setRawLastUpdateTime(int lastUpdateTime) {
+        this.lastUpdateTime = lastUpdateTime;
+    }
+
+    @Override
+    public int getRawLastStoredTime() {
+        return lastStoredTime;
+    }
+
+    @Override
+    public void setRawLastStoredTime(int time) {
+        this.lastStoredTime = time;
+    }
+
+    @Override
+    public String toString() {
+        return "AbstractRecord{"
+                + ", version=" + version
+                + ", hits=" + hits
+                + ", lastAccessTime=" + lastAccessTime
+                + ", lastUpdateTime=" + lastUpdateTime
+                + ", creationTime=" + creationTime
+                + '}';
+    }
 }

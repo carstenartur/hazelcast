@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,18 @@
 
 package com.hazelcast.spi.impl.operationservice.impl;
 
+import com.hazelcast.cluster.impl.MemberImpl;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.MemberLeftException;
-import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.instance.StaticMemberNodeContext;
-import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.properties.GroupProperty;
+import com.hazelcast.spi.impl.operationservice.Operation;
+import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -39,13 +39,14 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-import static com.hazelcast.instance.HazelcastInstanceFactory.newHazelcastInstance;
+import static com.hazelcast.instance.impl.HazelcastInstanceFactory.newHazelcastInstance;
+import static com.hazelcast.test.Accessors.getOperationService;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class Invocation_OnMemberLeftTest extends HazelcastTestSupport {
 
     private OperationServiceImpl localOperationService;
@@ -58,11 +59,11 @@ public class Invocation_OnMemberLeftTest extends HazelcastTestSupport {
     public void setup() {
         instanceFactory = createHazelcastInstanceFactory();
         Config config = new Config();
-        config.setProperty(GroupProperty.MAX_JOIN_SECONDS.getName(), "5");
+        config.setProperty(ClusterProperty.MAX_JOIN_SECONDS.getName(), "5");
 
         HazelcastInstance[] cluster = instanceFactory.newInstances(config, 2);
 
-        localOperationService = getOperationServiceImpl(cluster[0]);
+        localOperationService = getOperationService(cluster[0]);
         localInvocationMonitor = localOperationService.getInvocationMonitor();
 
         remote = cluster[1];
@@ -89,22 +90,14 @@ public class Invocation_OnMemberLeftTest extends HazelcastTestSupport {
 
     @Test
     public void whenMemberRestarts_withSameAddress() throws Exception {
-        whenMemberRestarts(new Runnable() {
-            @Override
-            public void run() {
-                remote = instanceFactory.newHazelcastInstance(remoteMember.getAddress());
-            }
-        });
+        whenMemberRestarts(() -> remote = instanceFactory.newHazelcastInstance(remoteMember.getAddress()));
     }
 
     @Test
     public void whenMemberRestarts_withSameIdentity() throws Exception {
-        whenMemberRestarts(new Runnable() {
-            @Override
-            public void run() {
-                StaticMemberNodeContext nodeContext = new StaticMemberNodeContext(instanceFactory, remoteMember);
-                remote = newHazelcastInstance(new Config(), remoteMember.toString(), nodeContext);
-            }
+        whenMemberRestarts(() -> {
+            StaticMemberNodeContext nodeContext = new StaticMemberNodeContext(instanceFactory, remoteMember);
+            remote = newHazelcastInstance(new Config(), remoteMember.toString(), nodeContext);
         });
     }
 
@@ -115,12 +108,9 @@ public class Invocation_OnMemberLeftTest extends HazelcastTestSupport {
         final CountDownLatch blockMonitorLatch = new CountDownLatch(1);
         final CountDownLatch resumeMonitorLatch = new CountDownLatch(1);
 
-        localInvocationMonitor.execute(new Runnable() {
-            @Override
-            public void run() {
-                blockMonitorLatch.countDown();
-                assertOpenEventually(resumeMonitorLatch);
-            }
+        localInvocationMonitor.execute(() -> {
+            blockMonitorLatch.countDown();
+            assertOpenEventually(resumeMonitorLatch);
         });
 
         assertOpenEventually(blockMonitorLatch);

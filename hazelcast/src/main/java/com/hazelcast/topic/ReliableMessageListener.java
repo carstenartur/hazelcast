@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,6 @@
  */
 
 package com.hazelcast.topic;
-
-import com.hazelcast.core.MessageListener;
 
 /**
  * A {@link MessageListener} to better integrate with the reliable topic.
@@ -99,10 +97,10 @@ public interface ReliableMessageListener<E> extends MessageListener<E> {
 
     /**
      * Checks if the ReliableMessageListener should be terminated based on an
-     * exception thrown while calling {@link #onMessage(com.hazelcast.core.Message)}.
+     * exception thrown while calling {@link #onMessage(Message)}.
      *
      * @param failure the exception thrown while calling
-     *                {@link #onMessage(com.hazelcast.core.Message)}.
+     *                {@link #onMessage(Message)}.
      * @return {@code true} if the ReliableMessageListener should terminate itself,
      * {@code false} if it should keep on running.
      */

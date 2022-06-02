@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,18 @@
 package com.hazelcast.internal.ascii.rest;
 
 import com.hazelcast.internal.ascii.NoOpCommand;
-import com.hazelcast.nio.IOUtil;
-import com.hazelcast.nio.ascii.TextDecoder;
-import com.hazelcast.util.StringUtil;
+import com.hazelcast.internal.nio.IOUtil;
+import com.hazelcast.internal.nio.ascii.TextDecoder;
+import com.hazelcast.internal.server.ServerConnection;
+import com.hazelcast.internal.util.StringUtil;
 
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 
 import static com.hazelcast.internal.ascii.TextCommandConstants.TextCommandType.HTTP_POST;
-import static com.hazelcast.util.StringUtil.stringToBytes;
+import static com.hazelcast.internal.ascii.rest.HttpStatusCode.SC_100;
+import static com.hazelcast.internal.util.JVMUtil.upcast;
+import static com.hazelcast.internal.util.StringUtil.stringToBytes;
 
 public class HttpPostCommand extends HttpCommand {
 
@@ -56,10 +59,10 @@ public class HttpPostCommand extends HttpCommand {
      * User-Agent: HTTPTool/1.0
      * Content-TextCommandType: application/x-www-form-urlencoded
      * Content-Length: 45
-     * <next_line>
-     * <next_line>
+     * &lt;next_line&gt;
+     * &lt;next_line&gt;
      * byte[45]
-     * <next_line>
+     * &lt;next_line&gt;
      *
      * @param src
      * @return
@@ -72,7 +75,7 @@ public class HttpPostCommand extends HttpCommand {
         }
         if (complete) {
             if (data != null) {
-                data.flip();
+                upcast(data).flip();
             }
         }
         return complete;
@@ -144,16 +147,16 @@ public class HttpPostCommand extends HttpCommand {
         if (b == CARRIAGE_RETURN) {
             readLF(cb);
         } else {
-            cb.position(cb.position() - 1);
+            upcast(cb).position(cb.position() - 1);
         }
     }
 
     private void readLF(ByteBuffer cb) {
-        assert cb.hasRemaining() : "'\\n' should follow '\\r'";
+        assert cb.hasRemaining() : "'\\n' must follow '\\r'";
 
         byte b = cb.get();
         if (b != LINE_FEED) {
-            throw new IllegalStateException("'\\n' should follow '\\r', but got '" + (char) b + "'");
+            throw new IllegalStateException("'\\n' must follow '\\r', but got '" + (char) b + "'");
         }
     }
 
@@ -167,7 +170,7 @@ public class HttpPostCommand extends HttpCommand {
         } else {
             result = StringUtil.bytesToString(bb.array(), 0, bb.position());
         }
-        bb.clear();
+        upcast(bb).clear();
         return result;
     }
 
@@ -221,7 +224,7 @@ public class HttpPostCommand extends HttpCommand {
         int capacity = lineBuffer.capacity() << 1;
 
         ByteBuffer newBuffer = ByteBuffer.allocate(capacity);
-        lineBuffer.flip();
+        upcast(lineBuffer).flip();
         newBuffer.put(lineBuffer);
         lineBuffer = newBuffer;
     }
@@ -234,7 +237,11 @@ public class HttpPostCommand extends HttpCommand {
         } else if (!chunked && currentLine.startsWith(HEADER_CHUNKED)) {
             chunked = true;
         } else if (currentLine.startsWith(HEADER_EXPECT_100)) {
-            decoder.sendResponse(new NoOpCommand(RES_100));
+            decoder.sendResponse(new NoOpCommand(SC_100.statusLine));
         }
+    }
+
+    protected ServerConnection getConnection() {
+        return decoder.getConnection();
     }
 }

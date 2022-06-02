@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,26 +16,26 @@
 
 package com.hazelcast.map.impl.query;
 
-import com.hazelcast.query.PagingPredicate;
+import com.hazelcast.internal.iteration.IterationPointer;
+import com.hazelcast.internal.util.executor.ManagedExecutorService;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.impl.QueryableEntriesSegment;
-import com.hazelcast.util.executor.ManagedExecutorService;
+import com.hazelcast.query.impl.predicates.PagingPredicateImpl;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 
-import static com.hazelcast.query.PagingPredicateAccessor.getNearestAnchorEntry;
-import static com.hazelcast.util.FutureUtil.RETHROW_EVERYTHING;
-import static com.hazelcast.util.FutureUtil.returnWithDeadline;
+import static com.hazelcast.internal.util.FutureUtil.RETHROW_EVERYTHING;
+import static com.hazelcast.internal.util.FutureUtil.returnWithDeadline;
+import static com.hazelcast.internal.util.SetUtil.singletonPartitionIdSet;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
 /**
- * Implementation of the {@link PartitionScanExecutor} which executes the partition scan in a parallel-fashion
+ * Implementation of the {@link PartitionScanExecutor} which executes the partition scan in a parallel fashion
  * delegating to the underlying executor.
  */
 public class ParallelPartitionScanExecutor implements PartitionScanExecutor {
@@ -52,12 +52,14 @@ public class ParallelPartitionScanExecutor implements PartitionScanExecutor {
         this.timeoutInMillis = timeoutInMillis;
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public void execute(String mapName, Predicate predicate, Collection<Integer> partitions, Result result) {
         runUsingPartitionScanWithoutPaging(mapName, predicate, partitions, result);
-        if (predicate instanceof PagingPredicate) {
-            Map.Entry<Integer, Map.Entry> nearestAnchorEntry = getNearestAnchorEntry((PagingPredicate) predicate);
-            result.orderAndLimit((PagingPredicate) predicate, nearestAnchorEntry);
+        if (predicate instanceof PagingPredicateImpl) {
+            PagingPredicateImpl pagingPredicate = (PagingPredicateImpl) predicate;
+            Map.Entry<Integer, Map.Entry> nearestAnchorEntry = pagingPredicate.getNearestAnchorEntry();
+            result.orderAndLimit(pagingPredicate, nearestAnchorEntry);
         }
     }
 
@@ -66,13 +68,15 @@ public class ParallelPartitionScanExecutor implements PartitionScanExecutor {
      * Parallel execution for a partition chunk query is not supported.
      */
     @Override
-    public QueryableEntriesSegment execute(String mapName, Predicate predicate, int partitionId, int tableIndex, int fetchSize) {
-        return partitionScanRunner.run(mapName, predicate, partitionId, tableIndex, fetchSize);
+    public QueryableEntriesSegment execute(
+            String mapName, Predicate predicate, int partitionId,
+            IterationPointer[] pointers, int fetchSize) {
+        return partitionScanRunner.run(mapName, predicate, partitionId, pointers, fetchSize);
     }
 
     protected void runUsingPartitionScanWithoutPaging(String name, Predicate predicate, Collection<Integer> partitions,
                                                       Result result) {
-        List<Future<Result>> futures = new ArrayList<Future<Result>>(partitions.size());
+        List<Future<Result>> futures = new ArrayList<>(partitions.size());
 
         for (Integer partitionId : partitions) {
             Future<Result> future = runPartitionScanForPartition(name, predicate, partitionId, result.createSubResult());
@@ -110,7 +114,8 @@ public class ParallelPartitionScanExecutor implements PartitionScanExecutor {
         @Override
         public Result call() {
             partitionScanRunner.run(name, predicate, partition, result);
-            result.setPartitionIds(Collections.singletonList(partition));
+            result.setPartitionIds(singletonPartitionIdSet(partitionScanRunner.partitionService.getPartitionCount(),
+                    partition));
             return result;
         }
     }

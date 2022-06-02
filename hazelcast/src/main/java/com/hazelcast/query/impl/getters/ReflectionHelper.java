@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,17 @@ package com.hazelcast.query.impl.getters;
 
 import com.hazelcast.query.QueryException;
 import com.hazelcast.query.impl.AttributeType;
-import com.hazelcast.util.ExceptionUtil;
+import com.hazelcast.internal.util.ExceptionUtil;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Timestamp;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -36,7 +40,7 @@ import static com.hazelcast.query.impl.getters.NullGetter.NULL_GETTER;
 import static com.hazelcast.query.impl.getters.NullMultiValueGetter.NULL_MULTIVALUE_GETTER;
 import static com.hazelcast.query.impl.getters.SuffixModifierUtils.getModifierSuffix;
 import static com.hazelcast.query.impl.getters.SuffixModifierUtils.removeModifierSuffix;
-import static com.hazelcast.util.EmptyStatement.ignore;
+import static com.hazelcast.internal.util.EmptyStatement.ignore;
 
 /**
  * Scans your classpath, indexes the metadata, allows you to query it on runtime.
@@ -77,6 +81,14 @@ public final class ReflectionHelper {
             return AttributeType.SQL_DATE;
         } else if (klass == Date.class) {
             return AttributeType.DATE;
+        } else if (klass == LocalTime.class) {
+            return AttributeType.SQL_LOCAL_TIME;
+        } else if (klass == LocalDate.class) {
+            return AttributeType.SQL_LOCAL_DATE;
+        } else if (klass == LocalDateTime.class) {
+            return AttributeType.SQL_LOCAL_DATE_TIME;
+        } else if (klass == OffsetDateTime.class) {
+            return AttributeType.SQL_OFFSET_DATE_TIME;
         } else if (klass.isEnum()) {
             return AttributeType.ENUM;
         } else if (klass == UUID.class) {
@@ -85,7 +97,7 @@ public final class ReflectionHelper {
         return null;
     }
 
-    public static Getter createGetter(Object obj, String attribute) {
+    public static Getter createGetter(Object obj, String attribute, boolean failOnMissingAttribute) {
         if (obj == null || obj == NULL) {
             return NULL_GETTER;
         }
@@ -160,8 +172,12 @@ public final class ReflectionHelper {
                     }
                 }
                 if (localGetter == null) {
-                    throw new IllegalArgumentException("There is no suitable accessor for '"
-                            + baseName + "' on class '" + clazz.getName() + "'");
+                    if (failOnMissingAttribute) {
+                        throw new IllegalArgumentException("There is no suitable accessor for '"
+                                + baseName + "' on class '" + clazz.getName() + "'");
+                    } else {
+                        return NULL_GETTER;
+                    }
                 }
                 parent = localGetter;
             }
@@ -172,8 +188,12 @@ public final class ReflectionHelper {
         }
     }
 
-    public static Object extractValue(Object object, String attributeName) throws Exception {
-        return createGetter(object, attributeName).getValue(object);
+    public static Getter createGetter(Object obj, String attribute) {
+        return createGetter(obj, attribute, true);
+    }
+
+    public static Object extractValue(Object object, String attributeName, boolean failOnMissingAttribute) throws Exception {
+        return createGetter(object, attributeName, failOnMissingAttribute).getValue(object);
     }
 
     public static <T> T invokeMethod(Object object, String methodName) throws RuntimeException {

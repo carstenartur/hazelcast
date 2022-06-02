@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,36 +16,28 @@
 
 package com.hazelcast.query.impl.predicates;
 
+import com.hazelcast.config.IndexConfig;
+import com.hazelcast.config.IndexType;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
 import com.hazelcast.query.impl.IndexCopyBehavior;
+import com.hazelcast.query.impl.IndexUtils;
 import com.hazelcast.query.impl.Indexes;
 import com.hazelcast.query.impl.InternalIndex;
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import static com.hazelcast.query.impl.predicates.PredicateUtils.canonicalizeAttribute;
-import static com.hazelcast.query.impl.predicates.PredicateUtils.parseOutCompositeIndexComponents;
+import static com.hazelcast.config.MapConfig.DEFAULT_IN_MEMORY_FORMAT;
+import static com.hazelcast.query.impl.IndexUtils.canonicalizeAttribute;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class AttributeCanonicalizationTest {
-
-    @Test(expected = IllegalArgumentException.class)
-    public void testEmptyComponentIsNotAllowed() {
-        parseOutCompositeIndexComponents("a,");
-    }
-
-    @Test(expected = IllegalArgumentException.class)
-    public void testDuplicateComponentsAreNotAllowed() {
-        parseOutCompositeIndexComponents("a,b,a");
-    }
 
     @Test
     public void testAttributes() {
@@ -73,13 +65,14 @@ public class AttributeCanonicalizationTest {
 
     @Test
     public void testIndexes() {
-        Indexes indexes = Indexes.newBuilder(new DefaultSerializationServiceBuilder().build(), IndexCopyBehavior.NEVER).build();
+        Indexes indexes = Indexes.newBuilder(
+                new DefaultSerializationServiceBuilder().build(), IndexCopyBehavior.NEVER, DEFAULT_IN_MEMORY_FORMAT).build();
 
         checkIndex(indexes, "foo", "foo");
-        checkIndex(indexes, "foo", "this.foo");
+        checkIndex(indexes, "this.foo", "foo");
         checkIndex(indexes, "this", "this");
         checkIndex(indexes, "foo.this.bar", "foo.this.bar");
-        checkIndex(indexes, "foo.bar", "this.foo.bar");
+        checkIndex(indexes, "this.foo.bar", "foo.bar");
         checkIndex(indexes, "foo.bar", "foo.bar");
         checkIndex(indexes, "__key", "__key");
         checkIndex(indexes, "__key.foo", "__key.foo");
@@ -87,36 +80,69 @@ public class AttributeCanonicalizationTest {
 
     @Test
     public void testCompositeIndexes() {
-        Indexes indexes = Indexes.newBuilder(new DefaultSerializationServiceBuilder().build(), IndexCopyBehavior.NEVER).build();
+        Indexes indexes = Indexes.newBuilder(
+                new DefaultSerializationServiceBuilder().build(), IndexCopyBehavior.NEVER, DEFAULT_IN_MEMORY_FORMAT).build();
 
-        checkIndex(indexes, "foo, bar", "foo, bar");
-        checkIndex(indexes, "foo, bar", "foo , bar");
-        checkIndex(indexes, "foo, bar", "this.foo, bar");
-        checkIndex(indexes, "this, __key", "this,__key");
-        checkIndex(indexes, "foo, bar.this.baz", "foo, bar.this.baz");
-        checkIndex(indexes, "foo, bar.baz", "this.foo, this.bar.baz");
-        checkIndex(indexes, "foo.bar, baz", "foo.bar, baz");
-        checkIndex(indexes, "foo, bar, __key.baz", "foo, this.bar, __key.baz");
+        checkIndex(indexes, new String[]{"foo", "bar"}, new String[]{"foo", "bar"});
+        checkIndex(indexes, new String[]{"this.foo", "bar"}, new String[]{"foo", "bar"});
+        checkIndex(indexes, new String[]{"this", "__key"}, new String[]{"this", "__key"});
+        checkIndex(indexes, new String[]{"foo", "bar.this.baz"}, new String[]{"foo", "bar.this.baz"});
+        checkIndex(indexes, new String[]{"this.foo", "bar.this.baz"}, new String[]{"foo", "bar.this.baz"});
+        checkIndex(indexes, new String[]{"foo.bar", "baz"}, new String[]{"foo.bar", "baz"});
+        checkIndex(indexes, new String[]{"foo", "this.bar", "__key.baz"}, new String[]{"foo", "bar", "__key.baz"});
     }
 
-    private static void checkIndex(Indexes indexes, String expected, String name) {
-        indexes.destroyIndexes();
-        assertFalse(indexes.haveAtLeastOneIndex());
+    private void checkIndex(Indexes indexes, String attribute, String expAttribute) {
+        checkIndex(indexes, new String[]{attribute}, new String[]{expAttribute});
+    }
 
-        InternalIndex index = indexes.addOrGetIndex(name, false);
-        assertEquals(expected, index.getName());
+    private void checkIndex(Indexes indexes, String[] attributes, String[] expAttributes) {
+        checkIndex(indexes, IndexType.HASH, attributes, expAttributes);
+        checkIndex(indexes, IndexType.SORTED, attributes, expAttributes);
+    }
 
-        assertNotNull(indexes.getIndex(expected));
+    private void checkIndex(Indexes indexes, IndexType indexType, String[] attributes, String[] expAttributes) {
+        IndexConfig config = new IndexConfig().setType(indexType);
+
+        for (String attribute : attributes) {
+            config.addAttribute(attribute);
+        }
+
+        IndexConfig normalizedConfig = IndexUtils.validateAndNormalize("map", config);
+
+        StringBuilder expName = new StringBuilder("map");
+
+        if (indexType == IndexType.SORTED) {
+            expName.append("_sorted");
+        } else {
+            expName.append("_hash");
+        }
+
+        for (int i = 0; i < expAttributes.length; i++) {
+            String expAttribute = expAttributes[i];
+            String attribute = normalizedConfig.getAttributes().get(i);
+
+            assertEquals(expAttribute, attribute);
+
+            expName.append("_").append(expAttribute);
+        }
+
+        assertEquals(expName.toString(), normalizedConfig.getName());
+
+        InternalIndex index = indexes.addOrGetIndex(normalizedConfig);
+        assertEquals(normalizedConfig.getName(), index.getName());
+
+        assertNotNull(indexes.getIndex(normalizedConfig.getName()));
     }
 
     private static class TestPredicate extends AbstractPredicate {
 
-        public TestPredicate(String attribute) {
+        TestPredicate(String attribute) {
             super(attribute);
         }
 
         @Override
-        public int getId() {
+        public int getClassId() {
             return 0;
         }
 

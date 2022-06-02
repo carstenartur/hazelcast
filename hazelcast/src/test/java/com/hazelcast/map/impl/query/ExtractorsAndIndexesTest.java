@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,22 @@
 
 package com.hazelcast.map.impl.query;
 
+import com.hazelcast.config.AttributeConfig;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.InMemoryFormat;
-import com.hazelcast.config.MapAttributeConfig;
-import com.hazelcast.config.MapIndexConfig;
+import com.hazelcast.config.IndexConfig;
+import com.hazelcast.config.IndexType;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
+import com.hazelcast.map.IMap;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.Predicates;
 import com.hazelcast.query.extractor.ValueCollector;
 import com.hazelcast.query.extractor.ValueExtractor;
-import com.hazelcast.spi.properties.GroupProperty;
+import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.test.HazelcastParallelParametersRunnerFactory;
+import com.hazelcast.test.HazelcastParametrizedRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -42,10 +44,11 @@ import java.util.Collection;
 import static com.hazelcast.query.Predicates.equal;
 import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
+import static org.junit.runners.Parameterized.UseParametersRunnerFactory;
 
-@RunWith(Parameterized.class)
-@Parameterized.UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
-@Category({QuickTest.class, ParallelTest.class})
+@RunWith(HazelcastParametrizedRunner.class)
+@UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class ExtractorsAndIndexesTest extends HazelcastTestSupport {
 
     @Parameterized.Parameters(name = "format:{0}")
@@ -61,11 +64,13 @@ public class ExtractorsAndIndexesTest extends HazelcastTestSupport {
         String mapName = randomMapName();
 
         Config config = new Config();
-        config.getMapConfig(mapName).setInMemoryFormat(inMemoryFormat).addMapIndexConfig(new MapIndexConfig("last", true))
-              .addMapAttributeConfig(new MapAttributeConfig("generated", Extractor.class.getName()));
+        config.getMapConfig(mapName).setInMemoryFormat(inMemoryFormat)
+            .addIndexConfig(new IndexConfig(IndexType.SORTED, "last"))
+            .addAttributeConfig(new AttributeConfig("generated", Extractor.class.getName()));
         config.getNativeMemoryConfig().setEnabled(true);
 
-        config.setProperty(GroupProperty.PARTITION_COUNT.getName(), "1");
+        config.setProperty(ClusterProperty.PARTITION_COUNT.getName(), "1");
+        config.setProperty(QueryEngineImpl.DISABLE_MIGRATION_FALLBACK.getName(), "true");
         HazelcastInstance instance = createHazelcastInstance(config);
 
         IMap<Integer, Person> map = instance.getMap(mapName);
@@ -89,7 +94,7 @@ public class ExtractorsAndIndexesTest extends HazelcastTestSupport {
         public String last;
     }
 
-    public static class Extractor extends ValueExtractor<Person, Void> {
+    public static class Extractor implements ValueExtractor<Person, Void> {
         @SuppressWarnings("unchecked")
         @Override
         public void extract(Person person, Void aVoid, ValueCollector valueCollector) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,27 @@
 
 package com.hazelcast.instance;
 
+import com.hazelcast.auditlog.impl.NoOpAuditlogService;
 import com.hazelcast.cache.impl.ICacheService;
-import com.hazelcast.cluster.Joiner;
-import com.hazelcast.internal.networking.ServerSocketRegistry;
+import com.hazelcast.cluster.Address;
+import com.hazelcast.cp.internal.persistence.NopCPPersistenceService;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.instance.impl.NodeContext;
+import com.hazelcast.instance.impl.NodeExtension;
+import com.hazelcast.internal.cluster.Joiner;
+import com.hazelcast.internal.dynamicconfig.ClusterWideConfigurationService;
+import com.hazelcast.internal.dynamicconfig.DynamicConfigListener;
+import com.hazelcast.internal.server.tcp.LocalAddressRegistry;
+import com.hazelcast.internal.server.tcp.ServerSocketRegistry;
+import com.hazelcast.internal.memory.DefaultMemoryStats;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
+import com.hazelcast.internal.server.Server;
+import com.hazelcast.internal.server.ServerConnectionManager;
+import com.hazelcast.internal.util.UuidUtil;
 import com.hazelcast.map.impl.MapService;
-import com.hazelcast.memory.DefaultMemoryStats;
-import com.hazelcast.nio.Address;
-import com.hazelcast.nio.EndpointManager;
-import com.hazelcast.nio.NetworkingService;
+import com.hazelcast.spi.impl.NodeEngine;
 import com.hazelcast.version.Version;
-import com.hazelcast.wan.WanReplicationService;
+import com.hazelcast.wan.impl.WanReplicationService;
 import org.mockito.ArgumentMatchers;
 
 import java.net.UnknownHostException;
@@ -34,6 +44,7 @@ import java.nio.channels.ServerSocketChannel;
 import java.util.Collections;
 import java.util.Map;
 
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Matchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -42,19 +53,19 @@ public class TestNodeContext implements NodeContext {
 
     private final Address address;
     private final NodeExtension nodeExtension = mock(NodeExtension.class);
-    private final NetworkingService networkingService;
+    private final Server server;
 
     public TestNodeContext() throws UnknownHostException {
-        this(mockNs());
+        this(mockServer());
     }
 
-    public TestNodeContext(NetworkingService networkingService) throws UnknownHostException {
-        this(new Address("127.0.0.1", 5000), networkingService);
+    public TestNodeContext(Server server) throws UnknownHostException {
+        this(new Address("127.0.0.1", 5000), server);
     }
 
-    public TestNodeContext(Address address, NetworkingService networkingService) {
+    public TestNodeContext(Address address, Server server) {
         this.address = address;
-        this.networkingService = networkingService;
+        this.server = server;
     }
 
     public NodeExtension getNodeExtension() {
@@ -66,10 +77,20 @@ public class TestNodeContext implements NodeContext {
         when(nodeExtension.createService(MapService.class)).thenReturn(mock(MapService.class));
         when(nodeExtension.createService(ICacheService.class)).thenReturn(mock(ICacheService.class));
         when(nodeExtension.createService(WanReplicationService.class)).thenReturn(mock(WanReplicationService.class));
+        when(nodeExtension.createService(eq(ClusterWideConfigurationService.class), any()))
+                .thenAnswer(
+                        invocation -> new ClusterWideConfigurationService(
+                                (NodeEngine) invocation.getArguments()[1],
+                                mock(DynamicConfigListener.class)
+                        )
+                );
         when(nodeExtension.createSerializationService()).thenReturn(new DefaultSerializationServiceBuilder().build());
         when(nodeExtension.isStartCompleted()).thenReturn(true);
         when(nodeExtension.isNodeVersionCompatibleWith(any(Version.class))).thenReturn(true);
         when(nodeExtension.getMemoryStats()).thenReturn(new DefaultMemoryStats());
+        when(nodeExtension.createMemberUuid()).thenReturn(UuidUtil.newUnsecureUUID());
+        when(nodeExtension.getCPPersistenceService()).thenReturn(new NopCPPersistenceService());
+        when(nodeExtension.getAuditlogService()).thenReturn(NoOpAuditlogService.INSTANCE);
         return nodeExtension;
     }
 
@@ -84,8 +105,8 @@ public class TestNodeContext implements NodeContext {
     }
 
     @Override
-    public NetworkingService createNetworkingService(Node node, ServerSocketRegistry registry) {
-        return networkingService;
+    public Server createServer(Node node, ServerSocketRegistry registry, LocalAddressRegistry addressRegistry) {
+        return server;
     }
 
     static class TestAddressPicker implements AddressPicker {
@@ -97,22 +118,7 @@ public class TestNodeContext implements NodeContext {
         }
 
         @Override
-        public void pickAddress() throws Exception {
-        }
-
-        @Override
-        public Address getBindAddress() {
-            return address;
-        }
-
-        @Override
-        public Address getPublicAddress() {
-            return address;
-        }
-
-        @Override
-        public ServerSocketChannel getServerSocketChannel() {
-            return null;
+        public void pickAddress() {
         }
 
         @Override
@@ -131,6 +137,11 @@ public class TestNodeContext implements NodeContext {
         }
 
         @Override
+        public Map<EndpointQualifier, Address> getBindAddressMap() {
+            return Collections.singletonMap(EndpointQualifier.MEMBER, address);
+        }
+
+        @Override
         public ServerSocketChannel getServerSocketChannel(EndpointQualifier qualifier) {
             return null;
         }
@@ -141,9 +152,9 @@ public class TestNodeContext implements NodeContext {
         }
     }
 
-    private static NetworkingService mockNs() {
-        NetworkingService ns = mock(NetworkingService.class);
-        when(ns.getEndpointManager(ArgumentMatchers.<EndpointQualifier>any())).thenReturn(mock(EndpointManager.class));
-        return ns;
+    private static Server mockServer() {
+        Server server = mock(Server.class);
+        when(server.getConnectionManager(ArgumentMatchers.<EndpointQualifier>any())).thenReturn(mock(ServerConnectionManager.class));
+        return server;
     }
 }

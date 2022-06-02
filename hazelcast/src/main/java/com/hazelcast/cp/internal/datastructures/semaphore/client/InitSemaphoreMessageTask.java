@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,12 @@
 package com.hazelcast.cp.internal.datastructures.semaphore.client;
 
 import com.hazelcast.client.impl.protocol.ClientMessage;
-import com.hazelcast.client.impl.protocol.codec.CPSemaphoreInitCodec;
-import com.hazelcast.client.impl.protocol.task.AbstractMessageTask;
-import com.hazelcast.core.ExecutionCallback;
-import com.hazelcast.cp.internal.RaftService;
-import com.hazelcast.cp.internal.datastructures.semaphore.RaftSemaphoreService;
+import com.hazelcast.client.impl.protocol.codec.SemaphoreInitCodec;
+import com.hazelcast.cp.internal.client.AbstractCPMessageTask;
+import com.hazelcast.cp.internal.datastructures.semaphore.SemaphoreService;
 import com.hazelcast.cp.internal.datastructures.semaphore.operation.InitSemaphoreOp;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
 import com.hazelcast.security.permission.ActionConstants;
 import com.hazelcast.security.permission.SemaphorePermission;
 
@@ -33,8 +31,7 @@ import java.security.Permission;
 /**
  * Client message task for {@link InitSemaphoreOp}
  */
-public class InitSemaphoreMessageTask extends AbstractMessageTask<CPSemaphoreInitCodec.RequestParameters>
-        implements ExecutionCallback<Boolean> {
+public class InitSemaphoreMessageTask extends AbstractCPMessageTask<SemaphoreInitCodec.RequestParameters> {
 
     public InitSemaphoreMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -42,25 +39,22 @@ public class InitSemaphoreMessageTask extends AbstractMessageTask<CPSemaphoreIni
 
     @Override
     protected void processMessage() {
-        RaftService service = nodeEngine.getService(RaftService.SERVICE_NAME);
-        service.getInvocationManager()
-               .<Boolean>invoke(parameters.groupId, new InitSemaphoreOp(parameters.name, parameters.permits))
-               .andThen(this);
+        invoke(parameters.groupId, new InitSemaphoreOp(parameters.name, parameters.permits));
     }
 
     @Override
-    protected CPSemaphoreInitCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
-        return CPSemaphoreInitCodec.decodeRequest(clientMessage);
+    protected SemaphoreInitCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+        return SemaphoreInitCodec.decodeRequest(clientMessage);
     }
 
     @Override
     protected ClientMessage encodeResponse(Object response) {
-        return CPSemaphoreInitCodec.encodeResponse((Boolean) response);
+        return SemaphoreInitCodec.encodeResponse((Boolean) response);
     }
 
     @Override
     public String getServiceName() {
-        return RaftSemaphoreService.SERVICE_NAME;
+        return SemaphoreService.SERVICE_NAME;
     }
 
     @Override
@@ -81,15 +75,5 @@ public class InitSemaphoreMessageTask extends AbstractMessageTask<CPSemaphoreIni
     @Override
     public Object[] getParameters() {
         return new Object[]{parameters.permits};
-    }
-
-    @Override
-    public void onResponse(Boolean response) {
-        sendResponse(response);
-    }
-
-    @Override
-    public void onFailure(Throwable t) {
-        handleProcessingFailure(t);
     }
 }

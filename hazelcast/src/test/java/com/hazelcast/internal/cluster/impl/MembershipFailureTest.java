@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,25 @@
 
 package com.hazelcast.internal.cluster.impl;
 
+import com.hazelcast.cluster.Address;
+import com.hazelcast.cluster.ClusterState;
+import com.hazelcast.cluster.Member;
+import com.hazelcast.cluster.impl.MemberImpl;
 import com.hazelcast.config.Config;
+import com.hazelcast.config.ConfigAccessor;
+import com.hazelcast.config.ServiceConfig;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.LifecycleEvent;
 import com.hazelcast.core.LifecycleEvent.LifecycleState;
-import com.hazelcast.core.LifecycleListener;
-import com.hazelcast.instance.TestUtil;
 import com.hazelcast.internal.cluster.fd.ClusterFailureDetectorType;
-import com.hazelcast.nio.Address;
-import com.hazelcast.spi.properties.GroupProperty;
-import com.hazelcast.test.AssertTask;
+import com.hazelcast.spi.impl.operationservice.Operation;
+import com.hazelcast.spi.impl.operationservice.OperationService;
+import com.hazelcast.spi.impl.operationservice.UrgentSystemOperation;
+import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.test.HazelcastParallelParametersRunnerFactory;
+import com.hazelcast.test.HazelcastParametrizedRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
-import com.hazelcast.test.annotation.QuickTest;
+import com.hazelcast.test.annotation.SlowTest;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -42,10 +46,12 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
 
-import static com.hazelcast.instance.TestUtil.terminateInstance;
+import static com.hazelcast.instance.impl.TestUtil.terminateInstance;
+import static com.hazelcast.internal.cluster.impl.AdvancedClusterStateTest.changeClusterStateEventually;
 import static com.hazelcast.internal.cluster.impl.ClusterDataSerializerHook.EXPLICIT_SUSPICION;
 import static com.hazelcast.internal.cluster.impl.ClusterDataSerializerHook.FETCH_MEMBER_LIST_STATE;
 import static com.hazelcast.internal.cluster.impl.ClusterDataSerializerHook.F_ID;
@@ -55,11 +61,15 @@ import static com.hazelcast.internal.cluster.impl.ClusterDataSerializerHook.MEMB
 import static com.hazelcast.internal.cluster.impl.ClusterDataSerializerHook.SPLIT_BRAIN_MERGE_VALIDATION;
 import static com.hazelcast.internal.cluster.impl.MembershipUpdateTest.assertMemberViewsAreSame;
 import static com.hazelcast.internal.cluster.impl.MembershipUpdateTest.getMemberMap;
-import static com.hazelcast.spi.properties.GroupProperty.HEARTBEAT_INTERVAL_SECONDS;
-import static com.hazelcast.spi.properties.GroupProperty.MAX_NO_HEARTBEAT_SECONDS;
-import static com.hazelcast.spi.properties.GroupProperty.MEMBER_LIST_PUBLISH_INTERVAL_SECONDS;
-import static com.hazelcast.spi.properties.GroupProperty.MERGE_FIRST_RUN_DELAY_SECONDS;
-import static com.hazelcast.spi.properties.GroupProperty.MERGE_NEXT_RUN_DELAY_SECONDS;
+import static com.hazelcast.spi.properties.ClusterProperty.HEARTBEAT_INTERVAL_SECONDS;
+import static com.hazelcast.spi.properties.ClusterProperty.MAX_NO_HEARTBEAT_SECONDS;
+import static com.hazelcast.spi.properties.ClusterProperty.MEMBER_LIST_PUBLISH_INTERVAL_SECONDS;
+import static com.hazelcast.spi.properties.ClusterProperty.MERGE_FIRST_RUN_DELAY_SECONDS;
+import static com.hazelcast.spi.properties.ClusterProperty.MERGE_NEXT_RUN_DELAY_SECONDS;
+import static com.hazelcast.spi.properties.ClusterProperty.PARTIAL_MEMBER_DISCONNECTION_RESOLUTION_HEARTBEAT_COUNT;
+import static com.hazelcast.test.Accessors.getAddress;
+import static com.hazelcast.test.Accessors.getNode;
+import static com.hazelcast.test.Accessors.getOperationService;
 import static com.hazelcast.test.PacketFiltersUtil.dropOperationsBetween;
 import static com.hazelcast.test.PacketFiltersUtil.dropOperationsFrom;
 import static com.hazelcast.test.PacketFiltersUtil.rejectOperationsBetween;
@@ -71,10 +81,11 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
+import static org.junit.runners.Parameterized.UseParametersRunnerFactory;
 
-@RunWith(Parameterized.class)
-@Parameterized.UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
-@Category({QuickTest.class, ParallelTest.class})
+@RunWith(HazelcastParametrizedRunner.class)
+@UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
+@Category(SlowTest.class)
 public class MembershipFailureTest extends HazelcastTestSupport {
 
     @Parameterized.Parameters(name = "fd:{0}")
@@ -186,12 +197,7 @@ public class MembershipFailureTest extends HazelcastTestSupport {
     }
 
     private static void terminateInstanceAsync(final HazelcastInstance master) {
-        spawn(new Runnable() {
-            @Override
-            public void run() {
-                terminateInstance(master);
-            }
-        });
+        spawn(() -> terminateInstance(master));
     }
 
     @Test
@@ -209,13 +215,8 @@ public class MembershipFailureTest extends HazelcastTestSupport {
 
         terminateInstance(master);
 
-        final ClusterServiceImpl clusterService = getNode(masterCandidate).getClusterService();
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() throws Exception {
-                assertTrue(clusterService.getClusterJoinManager().isMastershipClaimInProgress());
-            }
-        });
+        ClusterServiceImpl clusterService = getNode(masterCandidate).getClusterService();
+        assertTrueEventually(() -> assertTrue(clusterService.getClusterJoinManager().isMastershipClaimInProgress()));
 
         sleepSeconds(3);
         terminateInstance(slave1);
@@ -242,13 +243,8 @@ public class MembershipFailureTest extends HazelcastTestSupport {
 
         terminateInstance(master);
 
-        final ClusterServiceImpl clusterService = getNode(masterCandidate).getClusterService();
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() throws Exception {
-                assertTrue(clusterService.getClusterJoinManager().isMastershipClaimInProgress());
-            }
-        });
+        ClusterServiceImpl clusterService = getNode(masterCandidate).getClusterService();
+        assertTrueEventually(() -> assertTrue(clusterService.getClusterJoinManager().isMastershipClaimInProgress()));
 
         sleepSeconds(3);
         terminateInstance(masterCandidate);
@@ -261,7 +257,7 @@ public class MembershipFailureTest extends HazelcastTestSupport {
 
     @Test
     public void slave_heartbeat_timeout() {
-        Config config = new Config().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
+        Config config = smallInstanceConfig().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
                 .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1");
         HazelcastInstance master = newHazelcastInstance(config);
         HazelcastInstance slave1 = newHazelcastInstance(config);
@@ -278,7 +274,7 @@ public class MembershipFailureTest extends HazelcastTestSupport {
 
     @Test
     public void master_heartbeat_timeout() {
-        Config config = new Config().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
+        Config config = smallInstanceConfig().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
                 .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1")
                 .setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "3");
         HazelcastInstance master = newHazelcastInstance(config);
@@ -298,7 +294,7 @@ public class MembershipFailureTest extends HazelcastTestSupport {
 
     @Test
     public void heartbeat_not_sent_to_suspected_member() {
-        Config config = new Config().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "10")
+        Config config = smallInstanceConfig().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
                 .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1");
         HazelcastInstance master = newHazelcastInstance(config);
         HazelcastInstance slave1 = newHazelcastInstance(config);
@@ -317,45 +313,43 @@ public class MembershipFailureTest extends HazelcastTestSupport {
 
     @Test
     public void slave_heartbeat_removes_suspicion() {
-        Config config = new Config().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "10")
+        Config config = smallInstanceConfig().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
                 .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1");
         HazelcastInstance master = newHazelcastInstance(config);
         HazelcastInstance slave1 = newHazelcastInstance(config);
-        final HazelcastInstance slave2 = newHazelcastInstance(config);
+        HazelcastInstance slave2 = newHazelcastInstance(config);
 
         assertClusterSize(3, master, slave2);
         assertClusterSizeEventually(3, slave1);
 
         dropOperationsBetween(slave2, slave1, F_ID, singletonList(HEARTBEAT));
 
-        final MembershipManager membershipManager = getNode(slave1).getClusterService().getMembershipManager();
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() throws Exception {
-                assertTrue(membershipManager.isMemberSuspected(getAddress(slave2)));
-            }
+        MembershipManager membershipManager = getNode(slave1).getClusterService().getMembershipManager();
+        assertTrueEventually(() -> {
+            Member localMember = slave2.getCluster().getLocalMember();
+            assertTrue(membershipManager.isMemberSuspected((MemberImpl) localMember));
         });
 
         resetPacketFiltersFrom(slave2);
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() throws Exception {
-                assertFalse(membershipManager.isMemberSuspected(getAddress(slave2)));
-            }
+        assertTrueEventually(() -> {
+            Member localMember = slave2.getCluster().getLocalMember();
+            assertFalse(membershipManager.isMemberSuspected((MemberImpl) localMember));
         });
     }
 
     @Test
-    public void slave_receives_member_list_from_non_master() {
+    public void slave_receives_member_list_from_non_master() throws InterruptedException {
         String infiniteTimeout = Integer.toString(Integer.MAX_VALUE);
-        Config config = new Config().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), infiniteTimeout)
+        Config config = smallInstanceConfig().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), infiniteTimeout)
                 .setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
+        CountDownLatch latchSlave2 = new CountDownLatch(2);
+        CountDownLatch latchSlave3 = new CountDownLatch(2);
 
         HazelcastInstance master = newHazelcastInstance(config);
         HazelcastInstance slave1 = newHazelcastInstance(config);
-        HazelcastInstance slave2 = newHazelcastInstance(config);
-        HazelcastInstance slave3 = newHazelcastInstance(config);
+        HazelcastInstance slave2 = newHazelcastInstance(getConfigWithLatchService(latchSlave2));
+        HazelcastInstance slave3 = newHazelcastInstance(getConfigWithLatchService(latchSlave3));
 
         assertClusterSize(4, master, slave3);
         assertClusterSizeEventually(4, slave1, slave2);
@@ -364,6 +358,26 @@ public class MembershipFailureTest extends HazelcastTestSupport {
         dropOperationsFrom(slave1, F_ID, singletonList(HEARTBEAT));
         dropOperationsFrom(slave2, F_ID, singletonList(HEARTBEAT));
         dropOperationsFrom(slave3, F_ID, singletonList(HEARTBEAT));
+
+        // Wait until the max possible retries of send task completes:
+        // Properties of packet send task are as follows:
+        // MAX_RETRY_COUNT = 5 and DELAY_FACTOR = 100; so we need to wait
+        // for 1500 ms (100 + 200 + 300 + 400 + 500) to make sure that
+        // there are no unfiltered packets that are trying to be sent
+        // remaining.
+        sleepMillis(1500);
+        // To make sure that there is not pending/remaining heartbeat operations left in slave2
+        // and slave3, we're sending new urgent operations to these members that will be processed
+        // after those remaining heartbeats and then waiting for them to be processed.
+        OperationService masterOperationService = getOperationService(master);
+        masterOperationService.send(new UrgentOperationAwaitOn(), getNode(slave2).address);
+        masterOperationService.send(new UrgentOperationAwaitOn(), getNode(slave3).address);
+        OperationService slave1OperationService = getOperationService(slave1);
+        slave1OperationService.send(new UrgentOperationAwaitOn(), getNode(slave2).address);
+        slave1OperationService.send(new UrgentOperationAwaitOn(), getNode(slave3).address);
+
+        latchSlave2.await();
+        latchSlave3.await();
 
         suspectMember(slave2, master);
         suspectMember(slave2, slave1);
@@ -381,7 +395,7 @@ public class MembershipFailureTest extends HazelcastTestSupport {
 
     @Test
     public void master_candidate_has_stale_member_list() {
-        Config config = new Config().setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
+        Config config = smallInstanceConfig().setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
         HazelcastInstance master = newHazelcastInstance(config);
         HazelcastInstance slave1 = newHazelcastInstance(config);
 
@@ -411,7 +425,7 @@ public class MembershipFailureTest extends HazelcastTestSupport {
 
     @Test
     public void master_candidate_discovers_member_list_recursively() {
-        Config config = new Config().setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
+        Config config = smallInstanceConfig().setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
         HazelcastInstance master = newHazelcastInstance(config);
         HazelcastInstance slave1 = newHazelcastInstance(config);
         HazelcastInstance slave2 = newHazelcastInstance(config);
@@ -458,7 +472,7 @@ public class MembershipFailureTest extends HazelcastTestSupport {
 
     @Test
     public void master_candidate_and_new_member_splits_on_master_failure() {
-        Config config = new Config().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
+        Config config = smallInstanceConfig().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
                 .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1")
                 .setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
         HazelcastInstance master = newHazelcastInstance(config);
@@ -484,23 +498,20 @@ public class MembershipFailureTest extends HazelcastTestSupport {
 
     @Test
     public void slave_splits_and_eventually_merges_back() {
-        Config config = new Config();
+        Config config = smallInstanceConfig();
         config.setProperty(MERGE_FIRST_RUN_DELAY_SECONDS.getName(), "5")
                 .setProperty(MERGE_NEXT_RUN_DELAY_SECONDS.getName(), "5");
-        final HazelcastInstance member1 = newHazelcastInstance(config);
-        final HazelcastInstance member2 = newHazelcastInstance(config);
-        final HazelcastInstance member3 = newHazelcastInstance(config);
+        HazelcastInstance member1 = newHazelcastInstance(config);
+        HazelcastInstance member2 = newHazelcastInstance(config);
+        HazelcastInstance member3 = newHazelcastInstance(config);
 
         assertClusterSize(3, member1, member3);
         assertClusterSizeEventually(3, member2);
 
-        final CountDownLatch mergeLatch = new CountDownLatch(1);
-        member3.getLifecycleService().addLifecycleListener(new LifecycleListener() {
-            @Override
-            public void stateChanged(LifecycleEvent event) {
-                if (event.getState() == LifecycleState.MERGED) {
-                    mergeLatch.countDown();
-                }
+        CountDownLatch mergeLatch = new CountDownLatch(1);
+        member3.getLifecycleService().addLifecycleListener(event -> {
+            if (event.getState() == LifecycleState.MERGED) {
+                mergeLatch.countDown();
             }
         });
 
@@ -519,12 +530,7 @@ public class MembershipFailureTest extends HazelcastTestSupport {
 
         assertMemberViewsAreSame(getMemberMap(member1), getMemberMap(member3));
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() {
-                assertMemberViewsAreSame(getMemberMap(member1), getMemberMap(member2));
-            }
-        });
+        assertTrueEventually(() -> assertMemberViewsAreSame(getMemberMap(member1), getMemberMap(member2)));
     }
 
     @Test
@@ -538,10 +544,10 @@ public class MembershipFailureTest extends HazelcastTestSupport {
     }
 
     private void masterCandidate_canGracefullyShutdown_whenMasterGoesDown(boolean terminate) throws Exception {
-        Config config = new Config();
+        Config config = smallInstanceConfig();
         // slow down the migrations
-        config.setProperty(GroupProperty.PARTITION_MIGRATION_INTERVAL.getName(), "1");
-        config.setProperty(GroupProperty.PARTITION_COUNT.getName(), "12");
+        config.setProperty(ClusterProperty.PARTITION_MIGRATION_INTERVAL.getName(), "1");
+        config.setProperty(ClusterProperty.PARTITION_COUNT.getName(), "12");
 
         HazelcastInstance master = factory.newHazelcastInstance(config);
         final HazelcastInstance masterCandidate = factory.newHazelcastInstance(config);
@@ -549,12 +555,7 @@ public class MembershipFailureTest extends HazelcastTestSupport {
 
         warmUpPartitions(master, masterCandidate, slave);
 
-        Future shutdownF = spawn(new Runnable() {
-            @Override
-            public void run() {
-                masterCandidate.shutdown();
-            }
-        });
+        Future shutdownF = spawn(masterCandidate::shutdown);
 
         sleepSeconds(2);
         if (terminate) {
@@ -569,14 +570,14 @@ public class MembershipFailureTest extends HazelcastTestSupport {
 
     @Test
     public void secondMastershipClaimByYounger_shouldRetry_when_firstMastershipClaimByElder_accepted() {
-        Config config = new Config();
-        config.setProperty(GroupProperty.MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
+        Config config = smallInstanceConfig();
+        config.setProperty(ClusterProperty.MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
 
         HazelcastInstance member1 = newHazelcastInstance(config);
-        final HazelcastInstance member2 = newHazelcastInstance(config);
-        HazelcastInstance member3 = newHazelcastInstance(new Config()
-                .setProperty(GroupProperty.MASTERSHIP_CLAIM_TIMEOUT_SECONDS.getName(), "10"));
-        final HazelcastInstance member4 = newHazelcastInstance(config);
+        HazelcastInstance member2 = newHazelcastInstance(config);
+        HazelcastInstance member3 = newHazelcastInstance(smallInstanceConfig()
+                .setProperty(ClusterProperty.MASTERSHIP_CLAIM_TIMEOUT_SECONDS.getName(), "10"));
+        HazelcastInstance member4 = newHazelcastInstance(config);
 
         assertClusterSize(4, member1, member4);
         assertClusterSizeEventually(4, member2, member3);
@@ -616,13 +617,13 @@ public class MembershipFailureTest extends HazelcastTestSupport {
 
     @Test
     public void secondMastershipClaimByElder_shouldFail_when_firstMastershipClaimByYounger_accepted() {
-        Config config = new Config();
-        config.setProperty(GroupProperty.MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
+        Config config = smallInstanceConfig();
+        config.setProperty(ClusterProperty.MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
 
         HazelcastInstance member1 = newHazelcastInstance(config);
-        final HazelcastInstance member2 = newHazelcastInstance(config);
-        final HazelcastInstance member3 = newHazelcastInstance(config);
-        final HazelcastInstance member4 = newHazelcastInstance(config);
+        HazelcastInstance member2 = newHazelcastInstance(config);
+        HazelcastInstance member3 = newHazelcastInstance(config);
+        HazelcastInstance member4 = newHazelcastInstance(config);
 
         assertClusterSize(4, member1, member4);
         assertClusterSizeEventually(4, member2, member3);
@@ -675,21 +676,228 @@ public class MembershipFailureTest extends HazelcastTestSupport {
         }
     }
 
+    @Test
+    public void test_twoSlavesDisconnected() {
+        Config config = smallInstanceConfig().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
+                                             .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1")
+                                             .setProperty(PARTIAL_MEMBER_DISCONNECTION_RESOLUTION_HEARTBEAT_COUNT.getName(), "5")
+                                             .setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
+        HazelcastInstance instance1 = newHazelcastInstance(config);
+        HazelcastInstance instance2 = newHazelcastInstance(config);
+        HazelcastInstance instance3 = newHazelcastInstance(config);
+
+        assertClusterSizeEventually(3, instance2);
+
+        Member member2 = instance2.getCluster().getLocalMember();
+        Member member3 = instance3.getCluster().getLocalMember();
+
+
+        dropOperationsBetween(instance2, instance3, F_ID, singletonList(HEARTBEAT));
+
+
+        assertClusterSizeEventually(2, instance1);
+        Set<Member> members = instance1.getCluster().getMembers();
+        assertTrue("cluster members: " + members, members.contains(member2) ^ members.contains(member3));
+    }
+
+    @Test
+    public void test_twoSlavesDisconnectedFromOneSlave() {
+        Config config = smallInstanceConfig().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
+                                             .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1")
+                                             .setProperty(PARTIAL_MEMBER_DISCONNECTION_RESOLUTION_HEARTBEAT_COUNT.getName(), "5")
+                                             .setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
+        HazelcastInstance instance1 = newHazelcastInstance(config);
+        HazelcastInstance instance2 = newHazelcastInstance(config);
+        HazelcastInstance instance3 = newHazelcastInstance(config);
+        HazelcastInstance instance4 = newHazelcastInstance(config);
+
+        assertClusterSizeEventually(4, instance2, instance3);
+
+        Member member2 = instance2.getCluster().getLocalMember();
+        Member member3 = instance3.getCluster().getLocalMember();
+        Member member4 = instance4.getCluster().getLocalMember();
+
+
+        dropOperationsBetween(instance2, instance4, F_ID, singletonList(HEARTBEAT));
+        dropOperationsBetween(instance3, instance4, F_ID, singletonList(HEARTBEAT));
+
+
+        assertClusterSizeEventually(3, instance1);
+        Set<Member> members = instance1.getCluster().getMembers();
+        assertTrue("cluster members: " + members, members.contains(member2));
+        assertTrue("cluster members: " + members, members.contains(member3));
+        assertFalse("cluster members: " + members, members.contains(member4));
+    }
+
+    @Test
+    public void test_oneSlaveDisconnectedFromTwoSlaves() {
+        Config config = smallInstanceConfig().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
+                                             .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1")
+                                             .setProperty(PARTIAL_MEMBER_DISCONNECTION_RESOLUTION_HEARTBEAT_COUNT.getName(), "5")
+                                             .setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
+        HazelcastInstance instance1 = newHazelcastInstance(config);
+        HazelcastInstance instance2 = newHazelcastInstance(config);
+        HazelcastInstance instance3 = newHazelcastInstance(config);
+        HazelcastInstance instance4 = newHazelcastInstance(config);
+
+        assertClusterSizeEventually(4, instance2, instance3);
+
+        Member member2 = instance2.getCluster().getLocalMember();
+        Member member3 = instance3.getCluster().getLocalMember();
+        Member member4 = instance4.getCluster().getLocalMember();
+
+
+        dropOperationsBetween(instance4, Arrays.asList(instance2, instance3), F_ID, singletonList(HEARTBEAT));
+
+
+        assertClusterSizeEventually(3, instance1);
+        Set<Member> members = instance1.getCluster().getMembers();
+        assertTrue("cluster members: " + members, members.contains(member2));
+        assertTrue("cluster members: " + members, members.contains(member3));
+        assertFalse("cluster members: " + members, members.contains(member4));
+    }
+
+    @Test
+    public void test_threeSlavesDisconnectedFromTwoSlaves() {
+        Config config = smallInstanceConfig().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
+                                             .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1")
+                                             .setProperty(PARTIAL_MEMBER_DISCONNECTION_RESOLUTION_HEARTBEAT_COUNT.getName(), "5")
+                                             .setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
+        HazelcastInstance instance1 = newHazelcastInstance(config);
+        HazelcastInstance instance2 = newHazelcastInstance(config);
+        HazelcastInstance instance3 = newHazelcastInstance(config);
+        HazelcastInstance instance4 = newHazelcastInstance(config);
+        HazelcastInstance instance5 = newHazelcastInstance(config);
+        HazelcastInstance instance6 = newHazelcastInstance(config);
+        HazelcastInstance instance7 = newHazelcastInstance(config);
+
+        assertClusterSizeEventually(7, instance2, instance3, instance4, instance5, instance6, instance7);
+
+        Member member5 = instance5.getCluster().getLocalMember();
+        Member member6 = instance6.getCluster().getLocalMember();
+
+
+        dropOperationsBetween(instance2, Arrays.asList(instance5, instance6), F_ID, singletonList(HEARTBEAT));
+        dropOperationsBetween(instance3, Arrays.asList(instance5, instance6), F_ID, singletonList(HEARTBEAT));
+        dropOperationsBetween(instance4, Arrays.asList(instance5, instance6), F_ID, singletonList(HEARTBEAT));
+
+
+        assertClusterSizeEventually(5, instance1, instance2, instance3, instance4, instance7);
+        Set<Member> members = instance1.getCluster().getMembers();
+        assertFalse("cluster members: " + members, members.contains(member5));
+        assertFalse("cluster members: " + members, members.contains(member6));
+    }
+
+    @Test
+    public void test_twoSlavesDisconnectedFromThreeSlaves() {
+        Config config = smallInstanceConfig().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
+                                             .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1")
+                                             .setProperty(PARTIAL_MEMBER_DISCONNECTION_RESOLUTION_HEARTBEAT_COUNT.getName(), "5")
+                                             .setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
+        HazelcastInstance instance1 = newHazelcastInstance(config);
+        HazelcastInstance instance2 = newHazelcastInstance(config);
+        HazelcastInstance instance3 = newHazelcastInstance(config);
+        HazelcastInstance instance4 = newHazelcastInstance(config);
+        HazelcastInstance instance5 = newHazelcastInstance(config);
+        HazelcastInstance instance6 = newHazelcastInstance(config);
+        HazelcastInstance instance7 = newHazelcastInstance(config);
+
+        assertClusterSizeEventually(7, instance2, instance3, instance4, instance5, instance6, instance7);
+
+        Member member5 = instance5.getCluster().getLocalMember();
+        Member member6 = instance6.getCluster().getLocalMember();
+
+
+        dropOperationsBetween(instance5, Arrays.asList(instance2, instance3, instance4), F_ID, singletonList(HEARTBEAT));
+        dropOperationsBetween(instance6, Arrays.asList(instance2, instance3, instance4), F_ID, singletonList(HEARTBEAT));
+
+
+        assertClusterSizeEventually(5, instance1, instance2, instance3, instance4, instance7);
+        Set<Member> members = instance1.getCluster().getMembers();
+        assertFalse("cluster members: " + members, members.contains(member5));
+        assertFalse("cluster members: " + members, members.contains(member6));
+    }
+
+    @Test
+    public void test_multipleDisconnections() {
+        Config config = smallInstanceConfig().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
+                                             .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1")
+                                             .setProperty(PARTIAL_MEMBER_DISCONNECTION_RESOLUTION_HEARTBEAT_COUNT.getName(), "5")
+                                             .setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
+        HazelcastInstance instance1 = newHazelcastInstance(config);
+        HazelcastInstance instance2 = newHazelcastInstance(config);
+        HazelcastInstance instance3 = newHazelcastInstance(config);
+        HazelcastInstance instance4 = newHazelcastInstance(config);
+        HazelcastInstance instance5 = newHazelcastInstance(config);
+
+        assertClusterSizeEventually(5, instance2, instance3, instance4, instance5);
+
+        Member member3 = instance3.getCluster().getLocalMember();
+
+
+        dropOperationsBetween(instance2, instance3, F_ID, singletonList(HEARTBEAT));
+        dropOperationsBetween(instance3, Arrays.asList(instance4, instance5), F_ID, singletonList(HEARTBEAT));
+
+
+        assertClusterSizeEventually(4, instance1, instance2, instance4, instance5);
+        Set<Member> members = instance1.getCluster().getMembers();
+        assertFalse("cluster members: " + members, members.contains(member3));
+    }
+
+    @Test
+    public void test_twoSlavesDisconnectedFromOneSlave_when_clusterState_FROZEN() {
+        test_twoSlavesDisconnectedFromOneSlave(ClusterState.FROZEN);
+    }
+
+    @Test
+    public void test_twoSlavesDisconnectedFromOneSlave_when_clusterState_PASSIVE() {
+        test_twoSlavesDisconnectedFromOneSlave(ClusterState.PASSIVE);
+    }
+
+    @Test
+    public void test_twoSlavesDisconnectedFromOneSlave_when_clusterState_NO_MIGRATON() {
+        test_twoSlavesDisconnectedFromOneSlave(ClusterState.NO_MIGRATION);
+    }
+
+    private void test_twoSlavesDisconnectedFromOneSlave(ClusterState clusterState) {
+        Config config = smallInstanceConfig().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), "15")
+                                             .setProperty(HEARTBEAT_INTERVAL_SECONDS.getName(), "1")
+                                             .setProperty(PARTIAL_MEMBER_DISCONNECTION_RESOLUTION_HEARTBEAT_COUNT.getName(), "5")
+                                             .setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
+        HazelcastInstance instance1 = newHazelcastInstance(config);
+        HazelcastInstance instance2 = newHazelcastInstance(config);
+        HazelcastInstance instance3 = newHazelcastInstance(config);
+        HazelcastInstance instance4 = newHazelcastInstance(config);
+
+        assertClusterSizeEventually(4, instance2, instance3, instance4);
+
+        Member member4 = instance4.getCluster().getLocalMember();
+
+        changeClusterStateEventually(instance1, clusterState);
+
+
+        dropOperationsBetween(instance2, instance4, F_ID, singletonList(HEARTBEAT));
+        dropOperationsBetween(instance3, instance4, F_ID, singletonList(HEARTBEAT));
+
+
+        assertClusterSizeEventually(3, instance1);
+        Set<Member> members = instance1.getCluster().getMembers();
+        assertFalse("cluster members: " + members, members.contains(member4));
+    }
+
     private void startInstancesConcurrently(int count) {
         final CountDownLatch latch = new CountDownLatch(count);
         for (int i = 0; i < count; i++) {
-            new Thread() {
-                public void run() {
-                    newHazelcastInstance();
-                    latch.countDown();
-                }
-            }.start();
+            new Thread(() -> {
+                newHazelcastInstance();
+                latch.countDown();
+            }).start();
         }
         assertOpenEventually(latch);
     }
 
     private void terminateRandomInstancesConcurrently(int count) {
-        List<HazelcastInstance> instances = new ArrayList<HazelcastInstance>(getAllHazelcastInstances());
+        List<HazelcastInstance> instances = new ArrayList<>(getAllHazelcastInstances());
         assertThat(instances.size(), greaterThanOrEqualTo(count));
 
         Collections.shuffle(instances);
@@ -697,26 +905,66 @@ public class MembershipFailureTest extends HazelcastTestSupport {
 
         final CountDownLatch latch = new CountDownLatch(count);
         for (final HazelcastInstance hz : instances) {
-            new Thread() {
-                public void run() {
-                    TestUtil.terminateInstance(hz);
-                    latch.countDown();
-                }
-            }.start();
+            new Thread(() -> {
+                terminateInstance(hz);
+                latch.countDown();
+            }).start();
         }
         assertOpenEventually(latch);
     }
 
     HazelcastInstance newHazelcastInstance() {
-        return newHazelcastInstance(new Config());
+        return newHazelcastInstance(smallInstanceConfig());
     }
 
     HazelcastInstance newHazelcastInstance(Config config) {
-        config.setProperty(GroupProperty.HEARTBEAT_FAILURE_DETECTOR_TYPE.getName(), failureDetectorType.toString());
+        config.setProperty(ClusterProperty.HEARTBEAT_FAILURE_DETECTOR_TYPE.getName(), failureDetectorType.toString());
         return factory.newHazelcastInstance(config);
     }
 
     Collection<HazelcastInstance> getAllHazelcastInstances() {
         return factory.getAllHazelcastInstances();
+    }
+
+    private static class LatchService {
+        static final String SERVICE_NAME = "latch-service";
+
+        final CountDownLatch latch;
+
+        private LatchService(CountDownLatch latch) {
+            this.latch = latch;
+        }
+    }
+
+    private static class UrgentOperationAwaitOn extends Operation implements UrgentSystemOperation {
+        @Override
+        public void run() throws Exception {
+            LatchService service = getService();
+            service.latch.countDown();
+            getLogger().info("Count down on latch");
+        }
+
+        @Override
+        public String getServiceName() {
+            return LatchService.SERVICE_NAME;
+        }
+
+        @Override
+        public boolean returnsResponse() {
+            return false;
+        }
+    }
+
+    private Config getConfigWithLatchService(CountDownLatch latch) {
+        String infiniteTimeout = Integer.toString(Integer.MAX_VALUE);
+        Config config = smallInstanceConfig().setProperty(MAX_NO_HEARTBEAT_SECONDS.getName(), infiniteTimeout)
+                .setProperty(ClusterProperty.GENERIC_OPERATION_THREAD_COUNT.getName(), "1")
+                .setProperty(ClusterProperty.PRIORITY_GENERIC_OPERATION_THREAD_COUNT.getName(), "0")
+                .setProperty(MEMBER_LIST_PUBLISH_INTERVAL_SECONDS.getName(), "5");
+        LatchService latchService = new LatchService(latch);
+        ServiceConfig serviceConfig = new ServiceConfig().setEnabled(true)
+                .setName(LatchService.SERVICE_NAME).setImplementation(latchService);
+        ConfigAccessor.getServicesConfig(config).addServiceConfig(serviceConfig);
+        return config;
     }
 }

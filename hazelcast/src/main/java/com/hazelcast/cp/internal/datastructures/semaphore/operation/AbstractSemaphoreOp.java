@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,8 @@
 package com.hazelcast.cp.internal.datastructures.semaphore.operation;
 
 import com.hazelcast.cp.internal.RaftOp;
-import com.hazelcast.cp.internal.datastructures.semaphore.RaftSemaphoreDataSerializerHook;
-import com.hazelcast.cp.internal.datastructures.semaphore.RaftSemaphoreService;
+import com.hazelcast.cp.internal.datastructures.semaphore.SemaphoreDataSerializerHook;
+import com.hazelcast.cp.internal.datastructures.semaphore.SemaphoreService;
 import com.hazelcast.cp.internal.datastructures.semaphore.SemaphoreEndpoint;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -27,8 +27,8 @@ import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import java.io.IOException;
 import java.util.UUID;
 
-import static com.hazelcast.cp.internal.util.UUIDSerializationUtil.readUUID;
-import static com.hazelcast.cp.internal.util.UUIDSerializationUtil.writeUUID;
+import static com.hazelcast.internal.util.UUIDSerializationUtil.readUUID;
+import static com.hazelcast.internal.util.UUIDSerializationUtil.writeUUID;
 
 /**
  * Base class for operations of Raft-based semaphore
@@ -40,7 +40,7 @@ abstract class AbstractSemaphoreOp extends RaftOp implements IdentifiedDataSeria
     protected long threadId;
     protected UUID invocationUid;
 
-    public AbstractSemaphoreOp() {
+    AbstractSemaphoreOp() {
     }
 
     AbstractSemaphoreOp(String name, long sessionId, long threadId, UUID invocationUid) {
@@ -56,17 +56,17 @@ abstract class AbstractSemaphoreOp extends RaftOp implements IdentifiedDataSeria
 
     @Override
     protected String getServiceName() {
-        return RaftSemaphoreService.SERVICE_NAME;
+        return SemaphoreService.SERVICE_NAME;
     }
 
     @Override
     public int getFactoryId() {
-        return RaftSemaphoreDataSerializerHook.F_ID;
+        return SemaphoreDataSerializerHook.F_ID;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(name);
+        out.writeString(name);
         out.writeLong(sessionId);
         out.writeLong(threadId);
         writeUUID(out, invocationUid);
@@ -74,7 +74,7 @@ abstract class AbstractSemaphoreOp extends RaftOp implements IdentifiedDataSeria
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        name = in.readUTF();
+        name = in.readString();
         sessionId = in.readLong();
         threadId = in.readLong();
         invocationUid = readUUID(in);

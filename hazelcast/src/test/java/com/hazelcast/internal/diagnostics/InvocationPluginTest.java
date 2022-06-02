@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,8 @@ package com.hazelcast.internal.diagnostics;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.map.EntryBackupProcessor;
 import com.hazelcast.map.EntryProcessor;
 import com.hazelcast.map.impl.operation.EntryOperation;
-import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
@@ -31,24 +29,25 @@ import org.junit.runner.RunWith;
 
 import java.util.Map;
 
+import static com.hazelcast.test.Accessors.getNodeEngineImpl;
 import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(QuickTest.class)
 public class InvocationPluginTest extends AbstractDiagnosticsPluginTest {
 
-    private InvocationPlugin plugin;
+    private InvocationSamplePlugin plugin;
     private HazelcastInstance hz;
 
     @Before
     public void setup() {
         Config config = new Config()
-                .setProperty(InvocationPlugin.SAMPLE_PERIOD_SECONDS.getName(), "1")
-                .setProperty(InvocationPlugin.SLOW_THRESHOLD_SECONDS.getName(), "5");
+                .setProperty(InvocationSamplePlugin.SAMPLE_PERIOD_SECONDS.getName(), "1")
+                .setProperty(InvocationSamplePlugin.SLOW_THRESHOLD_SECONDS.getName(), "5");
 
         hz = createHazelcastInstance(config);
 
-        plugin = new InvocationPlugin(getNodeEngineImpl(hz));
+        plugin = new InvocationSamplePlugin(getNodeEngineImpl(hz));
         plugin.onStart();
     }
 
@@ -59,20 +58,14 @@ public class InvocationPluginTest extends AbstractDiagnosticsPluginTest {
 
     @Test
     public void testRun() {
-        spawn(new Runnable() {
-            @Override
-            public void run() {
-                hz.getMap("foo").executeOnKey(randomString(), new SlowEntryProcessor());
-            }
+        spawn(() -> {
+            hz.getMap("foo").executeOnKey(randomString(), new SlowEntryProcessor());
         });
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() {
-                plugin.run(logWriter);
+        assertTrueEventually(() -> {
+            plugin.run(logWriter);
 
-                assertContains(EntryOperation.class.getName());
-            }
+            assertContains(EntryOperation.class.getName());
         });
     }
 
@@ -87,7 +80,7 @@ public class InvocationPluginTest extends AbstractDiagnosticsPluginTest {
         }
 
         @Override
-        public EntryBackupProcessor getBackupProcessor() {
+        public EntryProcessor getBackupProcessor() {
             return null;
         }
     }

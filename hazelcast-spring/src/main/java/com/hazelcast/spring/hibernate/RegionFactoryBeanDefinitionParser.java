@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 package com.hazelcast.spring.hibernate;
 
-import com.hazelcast.nio.ClassLoaderUtil;
-import com.hazelcast.util.ExceptionUtil;
+import com.hazelcast.internal.nio.ClassLoaderUtil;
+import com.hazelcast.internal.util.ExceptionUtil;
 import org.springframework.beans.factory.support.AbstractBeanDefinition;
 import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.xml.AbstractBeanDefinitionParser;
@@ -44,13 +44,13 @@ public class RegionFactoryBeanDefinitionParser extends AbstractBeanDefinitionPar
 
     @Override
     protected AbstractBeanDefinition parseInternal(Element element, ParserContext parserContext) {
-         NamedNodeMap attributes = element.getAttributes();
+        NamedNodeMap attributes = element.getAttributes();
         String instanceRefName = "instance";
         String mode = "DISTRIBUTED";
         if (attributes != null) {
             for (int a = 0; a < attributes.getLength(); a++) {
-                 Node att = attributes.item(a);
-                 String name = att.getNodeName();
+                Node att = attributes.item(a);
+                String name = att.getNodeName();
                 if ("instance-ref".equals(name)) {
                     instanceRefName = att.getTextContent();
                 } else if ("mode".equals(name)) {

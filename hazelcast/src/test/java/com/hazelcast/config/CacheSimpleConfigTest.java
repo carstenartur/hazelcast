@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.hazelcast.config;
 
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import nl.jqno.equalsverifier.EqualsVerifier;
 import nl.jqno.equalsverifier.Warning;
@@ -28,15 +28,22 @@ import org.junit.experimental.categories.Category;
 import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
 
-import static com.hazelcast.config.EvictionConfig.MaxSizePolicy.ENTRY_COUNT;
-import static com.hazelcast.config.EvictionConfig.MaxSizePolicy.USED_NATIVE_MEMORY_PERCENTAGE;
+import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class CacheSimpleConfigTest extends HazelcastTestSupport {
 
     @Rule
     public ExpectedException expectedException = ExpectedException.none();
+
+    @Test
+    public void testNameInConstructor() {
+        String name = randomMapName();
+        CacheSimpleConfig config = new CacheSimpleConfig(name);
+
+        assertEquals(name, config.getName());
+    }
 
     @Test
     public void givenCacheLoaderIsConfigured_whenConfigureCacheLoaderFactory_thenThrowIllegalStateException() {
@@ -75,18 +82,32 @@ public class CacheSimpleConfigTest extends HazelcastTestSupport {
     }
 
     @Test
+    public void givenNullMerkleTreeConfig_throws_NPE() {
+        expectedException.expect(NullPointerException.class);
+
+        new CacheSimpleConfig()
+                .setMerkleTreeConfig(null);
+    }
+
+    @Test
     public void testEqualsAndHashCode() {
         assumeDifferentHashCodes();
+
         CacheSimpleEntryListenerConfig redEntryListenerConfig = new CacheSimpleEntryListenerConfig();
         redEntryListenerConfig.setCacheEntryListenerFactory("red");
+
         CacheSimpleEntryListenerConfig blackEntryListenerConfig = new CacheSimpleEntryListenerConfig();
         blackEntryListenerConfig.setCacheEntryListenerFactory("black");
+
         EqualsVerifier.forClass(CacheSimpleConfig.class)
-                .allFieldsShouldBeUsedExcept("readOnly")
                 .suppress(Warning.NONFINAL_FIELDS, Warning.NULL_FIELDS)
                 .withPrefabValues(EvictionConfig.class,
-                        new EvictionConfig(1000, ENTRY_COUNT, EvictionPolicy.LFU),
-                        new EvictionConfig(300, USED_NATIVE_MEMORY_PERCENTAGE, EvictionPolicy.LRU))
+                        new EvictionConfig().setSize(1000)
+                                .setMaxSizePolicy(MaxSizePolicy.ENTRY_COUNT)
+                                .setEvictionPolicy(EvictionPolicy.LFU),
+                        new EvictionConfig().setSize(300)
+                                .setMaxSizePolicy(MaxSizePolicy.USED_NATIVE_MEMORY_PERCENTAGE)
+                                .setEvictionPolicy(EvictionPolicy.LRU))
                 .withPrefabValues(WanReplicationRef.class,
                         new WanReplicationRef("red", null, null, false),
                         new WanReplicationRef("black", null, null, true))
@@ -99,6 +120,9 @@ public class CacheSimpleConfigTest extends HazelcastTestSupport {
                 .withPrefabValues(CachePartitionLostListenerConfig.class,
                         new CachePartitionLostListenerConfig("red"),
                         new CachePartitionLostListenerConfig("black"))
+                .withPrefabValues(MergePolicyConfig.class,
+                        new MergePolicyConfig("policy1", 1),
+                        new MergePolicyConfig("policy2", 2))
                 .verify();
     }
 }

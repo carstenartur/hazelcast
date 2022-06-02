@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,18 +19,18 @@ package com.hazelcast.internal.partition;
 import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.instance.Node;
+import com.hazelcast.instance.impl.Node;
 import com.hazelcast.internal.cluster.impl.ClusterDataSerializerHook;
-import com.hazelcast.internal.partition.impl.InternalMigrationListener;
 import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
-import com.hazelcast.spi.properties.GroupProperty;
+import com.hazelcast.internal.partition.impl.MigrationInterceptor;
+import com.hazelcast.internal.util.RandomPicker;
+import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.util.RandomPicker;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -44,11 +44,14 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static com.hazelcast.instance.TestUtil.terminateInstance;
+import static com.hazelcast.instance.impl.TestUtil.terminateInstance;
 import static com.hazelcast.internal.cluster.impl.AdvancedClusterStateTest.changeClusterStateEventually;
 import static com.hazelcast.internal.partition.AbstractPartitionAssignmentsCorrectnessTest.assertPartitionAssignments;
 import static com.hazelcast.internal.partition.AbstractPartitionAssignmentsCorrectnessTest.assertPartitionAssignmentsEventually;
 import static com.hazelcast.internal.partition.InternalPartition.MAX_REPLICA_COUNT;
+import static com.hazelcast.test.Accessors.getAddress;
+import static com.hazelcast.test.Accessors.getNode;
+import static com.hazelcast.test.Accessors.getPartitionService;
 import static com.hazelcast.test.PacketFiltersUtil.dropOperationsFrom;
 import static com.hazelcast.test.PacketFiltersUtil.resetPacketFiltersFrom;
 import static java.util.Collections.singletonList;
@@ -63,9 +66,9 @@ import static org.junit.Assert.assertTrue;
  * and 800 daemon threads). As comparison the BasicMapTest creates about 700 threads and 25 daemon threads.
  * This regularly results in test failures when multiple PR builders run in parallel due to a resource starvation.
  *
- * Countermeasures are to remove the ParallelTest annotation or to use the HazelcastSerialClassRunner.
+ * Countermeasures are to remove the ParallelJVMTest annotation or to use the HazelcastSerialClassRunner.
  *
- * Without ParallelTest we'll add the whole test duration to the PR builder time (about 25 seconds) and still create the
+ * Without ParallelJVMTest we'll add the whole test duration to the PR builder time (about 25 seconds) and still create the
  * resource usage peak, which may have a negative impact on parallel PR builder runs on the same host machine.
  *
  * With HazelcastSerialClassRunner the test takes over 3 minutes, but with a maximum of 200 threads and 160 daemon threads.
@@ -73,7 +76,7 @@ import static org.junit.Assert.assertTrue;
  * in parallel to others).
  */
 @RunWith(HazelcastSerialClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class GracefulShutdownTest extends HazelcastTestSupport {
 
     private TestHazelcastInstanceFactory factory;
@@ -127,8 +130,8 @@ public class GracefulShutdownTest extends HazelcastTestSupport {
     @SuppressWarnings("unused")
     public void shutdownSlaveMember_whilePartitionsMigrating() {
         Config config = new Config()
-                .setProperty(GroupProperty.PARTITION_COUNT.getName(), "12")
-                .setProperty(GroupProperty.PARTITION_MIGRATION_INTERVAL.getName(), "1");
+                .setProperty(ClusterProperty.PARTITION_COUNT.getName(), "12")
+                .setProperty(ClusterProperty.PARTITION_MIGRATION_INTERVAL.getName(), "1");
 
         HazelcastInstance hz1 = factory.newHazelcastInstance(config);
         warmUpPartitions(hz1);
@@ -496,7 +499,7 @@ public class GracefulShutdownTest extends HazelcastTestSupport {
         Config config = new Config();
         // setting a very graceful shutdown high timeout value
         // to guarantee instance.shutdown() not to timeout
-        config.setProperty(GroupProperty.GRACEFUL_SHUTDOWN_MAX_WAIT.getName(), "99999999999");
+        config.setProperty(ClusterProperty.GRACEFUL_SHUTDOWN_MAX_WAIT.getName(), "99999999999");
 
         final HazelcastInstance[] instances = factory.newInstances(config, 4);
         assertClusterSizeEventually(4, instances);
@@ -507,14 +510,14 @@ public class GracefulShutdownTest extends HazelcastTestSupport {
 
         final InternalPartitionServiceImpl partitionService = (InternalPartitionServiceImpl) getPartitionService(instances[1]);
         final AtomicReference<MigrationInfo> startedMigration = new AtomicReference<MigrationInfo>();
-        partitionService.setInternalMigrationListener(new InternalMigrationListener() {
+        partitionService.setMigrationInterceptor(new MigrationInterceptor() {
             @Override
             public void onMigrationStart(MigrationParticipant participant, MigrationInfo migrationInfo) {
                 startedMigration.set(migrationInfo);
             }
         });
 
-        final int partitionStateVersion = partitionService.getPartitionStateVersion();
+        final long partitionStateStamp = partitionService.getPartitionStateStamp();
 
         instances[0].getLifecycleService().terminate();
 
@@ -541,7 +544,7 @@ public class GracefulShutdownTest extends HazelcastTestSupport {
                 assertNotEquals(getAddress(instances[1]), getNode(instances[3]).getMasterAddress());
 
                 // no partition state version change
-                assertEquals(partitionStateVersion, partitionService.getPartitionStateVersion());
+                assertEquals(partitionStateStamp, partitionService.getPartitionStateStamp());
 
                 // no migrations has been submitted yet
                 assertNull(startedMigration.get());
@@ -576,12 +579,12 @@ public class GracefulShutdownTest extends HazelcastTestSupport {
 
     private static InternalPartition[] getPartitionTable(HazelcastInstance instance) {
         InternalPartitionServiceImpl partitionService = getNode(instance).partitionService;
-        return partitionService.getPartitionStateManager().getPartitionsCopy();
+        return partitionService.getPartitionStateManager().getPartitionsCopy(true);
     }
 
     private static Config newConfig() {
         return new Config()
-                .setProperty(GroupProperty.PARTITION_COUNT.getName(), "6")
-                .setProperty(GroupProperty.PARTITION_MIGRATION_INTERVAL.getName(), "1");
+                .setProperty(ClusterProperty.PARTITION_COUNT.getName(), "6")
+                .setProperty(ClusterProperty.PARTITION_MIGRATION_INTERVAL.getName(), "1");
     }
 }

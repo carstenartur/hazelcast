@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,13 @@ package com.hazelcast.map.impl.journal;
 
 import com.hazelcast.core.EntryEventType;
 import com.hazelcast.internal.journal.DeserializingEntry;
-import com.hazelcast.map.journal.EventJournalMapEvent;
-import com.hazelcast.nio.serialization.SerializableByConvention;
-import com.hazelcast.util.function.Function;
-import com.hazelcast.util.function.Predicate;
+import com.hazelcast.internal.serialization.SerializableByConvention;
+import com.hazelcast.map.EventJournalMapEvent;
 
 import java.io.Serializable;
 import java.util.Map.Entry;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
  * Utility functions used from Jet. They are here so that they can be also used
@@ -35,11 +35,11 @@ public final class MapEventJournalFunctions {
     private MapEventJournalFunctions() { }
 
     public static <K, V> Predicate<EventJournalMapEvent<K, V>> mapPutEvents() {
-        return new MapPutEventsPredicate<K, V>();
+        return new MapPutEventsPredicate<>();
     }
 
     public static <K, V> Function<EventJournalMapEvent<K, V>, Entry<K, V>> mapEventToEntry() {
-        return new MapEventToEntryProjection<K, V>();
+        return new MapEventToEntryProjection<>();
     }
 
     @SuppressWarnings("unchecked")
@@ -65,7 +65,7 @@ public final class MapEventJournalFunctions {
         @Override
         public Entry<K, V> apply(EventJournalMapEvent<K, V> e) {
             DeserializingEventJournalMapEvent<K, V> casted = (DeserializingEventJournalMapEvent<K, V>) e;
-            return new DeserializingEntry<K, V>(casted.getDataKey(), casted.getDataNewValue());
+            return new DeserializingEntry<>(casted.getDataKey(), casted.getDataNewValue());
         }
     }
 

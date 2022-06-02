@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,6 +20,9 @@ import java.util.Collection;
 
 /**
  * Contains information about a CP group.
+ * <p>
+ * A CP group is a set of CP members that run the Raft consensus algorithm
+ * and contain CP data structure instances that are mapped to it.
  * <p>
  * There can be at most one active CP group with a given name.
  *

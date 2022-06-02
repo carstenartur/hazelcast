@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,17 @@
 
 package com.hazelcast.internal.diagnostics;
 
-import com.hazelcast.spi.NamedOperation;
+import com.hazelcast.spi.impl.operationservice.NamedOperation;
+import com.hazelcast.internal.util.concurrent.ConcurrentItemCounter;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.impl.operationexecutor.OperationExecutor;
 import com.hazelcast.spi.impl.operationexecutor.OperationRunner;
-import com.hazelcast.spi.impl.operationservice.InternalOperationService;
 import com.hazelcast.spi.impl.operationservice.impl.OperationServiceImpl;
 import com.hazelcast.spi.properties.HazelcastProperties;
 import com.hazelcast.spi.properties.HazelcastProperty;
-import com.hazelcast.util.ItemCounter;
 
 import java.util.concurrent.locks.LockSupport;
 
-import static com.hazelcast.internal.diagnostics.Diagnostics.PREFIX;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
@@ -53,7 +51,7 @@ public class OperationThreadSamplerPlugin extends DiagnosticsPlugin {
      * If set to 0, the plugin is disabled.
      */
     public static final HazelcastProperty PERIOD_SECONDS
-            = new HazelcastProperty(PREFIX + ".operationthreadsamples.period.seconds", 0, SECONDS);
+            = new HazelcastProperty("hazelcast.diagnostics.operationthreadsamples.period.seconds", 0, SECONDS);
 
     /**
      * The period in milliseconds between taking samples.
@@ -62,7 +60,7 @@ public class OperationThreadSamplerPlugin extends DiagnosticsPlugin {
      * precision.
      */
     public static final HazelcastProperty SAMPLER_PERIOD_MILLIS
-            = new HazelcastProperty(PREFIX + ".operationthreadsamples.sampler.period.millis", 100, MILLISECONDS);
+            = new HazelcastProperty("hazelcast.diagnostics.operationthreadsamples.sampler.period.millis", 100, MILLISECONDS);
 
     /**
      * If the name the data-structure the operation operates on should be included.
@@ -76,22 +74,22 @@ public class OperationThreadSamplerPlugin extends DiagnosticsPlugin {
      * it gets, the more litter is created.
      */
     public static final HazelcastProperty INCLUDE_NAME
-            = new HazelcastProperty(PREFIX + ".operationthreadsamples.includeName", false);
+            = new HazelcastProperty("hazelcast.diagnostics.operationthreadsamples.includeName", false);
     public static final float HUNDRED = 100f;
 
+    protected final long samplerPeriodMillis;
+    protected final ConcurrentItemCounter<String> partitionSpecificSamples = new ConcurrentItemCounter<String>();
+    protected final ConcurrentItemCounter<String> genericSamples = new ConcurrentItemCounter<String>();
+    protected final OperationExecutor executor;
+    protected final NodeEngineImpl nodeEngine;
+    protected final boolean includeName;
 
     private final long periodMillis;
-    private final long samplerPeriodMillis;
-    private final ItemCounter<String> partitionSpecificSamples = new ItemCounter<String>();
-    private final ItemCounter<String> genericSamples = new ItemCounter<String>();
-    private final OperationExecutor executor;
-    private final NodeEngineImpl nodeEngine;
-    private final boolean includeName;
 
     public OperationThreadSamplerPlugin(NodeEngineImpl nodeEngine) {
         super(nodeEngine.getLogger(OperationThreadSamplerPlugin.class));
         this.nodeEngine = nodeEngine;
-        InternalOperationService operationService = nodeEngine.getOperationService();
+        OperationServiceImpl operationService = nodeEngine.getOperationService();
         this.executor = ((OperationServiceImpl) operationService).getOperationExecutor();
         HazelcastProperties props = nodeEngine.getProperties();
         this.periodMillis = props.getMillis(PERIOD_SECONDS);
@@ -119,23 +117,24 @@ public class OperationThreadSamplerPlugin extends DiagnosticsPlugin {
         writer.endSection();
     }
 
-    private void write(DiagnosticsLogWriter writer, String text, ItemCounter<String> samples) {
+    private void write(DiagnosticsLogWriter writer, String text, ConcurrentItemCounter<String> samples) {
         writer.startSection(text);
         long total = samples.total();
-        for (String name : samples.descendingKeys()) {
+        for (String name : samples.keySet()) {
             long s = samples.get(name);
-            writer.writeKeyValueEntry(name, s + " " + (HUNDRED * s / total) + "%");
+            String entryStr = total == 0L ? String.valueOf(s) : (s + " " + (HUNDRED * s / total) + "%");
+            writer.writeKeyValueEntry(name, entryStr);
         }
         writer.endSection();
     }
 
-    private class SampleThread extends Thread {
+    protected class SampleThread extends Thread {
 
         @Override
         public void run() {
             long nextRunMillis = System.currentTimeMillis();
 
-            while (nodeEngine.isActive()) {
+            while (nodeEngine.isRunning()) {
                 LockSupport.parkUntil(nextRunMillis);
                 nextRunMillis = samplerPeriodMillis;
                 sample(executor.getPartitionOperationRunners(), partitionSpecificSamples);
@@ -143,7 +142,7 @@ public class OperationThreadSamplerPlugin extends DiagnosticsPlugin {
             }
         }
 
-        private void sample(OperationRunner[] runners, ItemCounter<String> samples) {
+        private void sample(OperationRunner[] runners, ConcurrentItemCounter<String> samples) {
             for (OperationRunner runner : runners) {
                 Object task = runner.currentTask();
                 if (task != null) {

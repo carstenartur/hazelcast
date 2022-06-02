@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,11 +20,11 @@ import com.hazelcast.config.Config;
 import com.hazelcast.config.ListenerConfig;
 import com.hazelcast.core.LifecycleEvent;
 import com.hazelcast.core.LifecycleListener;
-import com.hazelcast.spi.properties.GroupProperty;
+import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -35,7 +35,7 @@ import java.util.concurrent.CountDownLatch;
 import static org.junit.Assert.fail;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class NodeShutdownEventsTest extends HazelcastTestSupport {
 
     /**
@@ -50,10 +50,10 @@ public class NodeShutdownEventsTest extends HazelcastTestSupport {
 
         // Having different partition counts is cause of the join failure.
         Config config1 = new Config()
-                .setProperty(GroupProperty.PARTITION_COUNT.getName(), "111");
+                .setProperty(ClusterProperty.PARTITION_COUNT.getName(), "111");
 
         Config config2 = new Config()
-                .setProperty(GroupProperty.PARTITION_COUNT.getName(), "222");
+                .setProperty(ClusterProperty.PARTITION_COUNT.getName(), "222");
 
         final ListenerConfig listenerConfig = new ListenerConfig();
         listenerConfig.setImplementation(new LifecycleListener() {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,10 +25,13 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Properties;
 
-import static com.hazelcast.util.Preconditions.checkTrue;
+import static com.hazelcast.internal.util.Preconditions.checkTrue;
 
 /**
  * A {@link Config} which is loaded using some url pointing to a Hazelcast YAML file.
+ * <p>
+ * Unlike {@link Config#load()} and its variants, a configuration constructed via
+ * {@code UrlYamlConfig} does not apply overrides found in environment variables/system properties.
  */
 public class UrlYamlConfig extends Config {
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import com.hazelcast.cache.impl.PreJoinCacheConfig;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.operationservice.Operation;
 
 import java.io.IOException;
 
@@ -40,7 +40,6 @@ public class AddCacheConfigOperation extends Operation implements IdentifiedData
     @Override
     public void run() {
         ICacheService cacheService = getService();
-        cacheService.setTenantControl(cacheConfig);
         cacheService.putCacheConfigIfAbsent(cacheConfig);
     }
 
@@ -65,9 +64,7 @@ public class AddCacheConfigOperation extends Operation implements IdentifiedData
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return CacheDataSerializerHook.ADD_CACHE_CONFIG_OPERATION;
     }
-
-
 }

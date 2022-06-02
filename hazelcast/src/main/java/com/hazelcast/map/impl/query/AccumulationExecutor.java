@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,8 @@
 package com.hazelcast.map.impl.query;
 
 import com.hazelcast.aggregation.Aggregator;
+import com.hazelcast.internal.util.collection.PartitionIdSet;
 import com.hazelcast.query.impl.QueryableEntry;
-
-import java.util.Collection;
 
 /**
  * Executes the accumulation phase of the Aggregator.
@@ -34,6 +33,6 @@ public interface AccumulationExecutor {
      * @param partitionIds IDs of the partitions where the entries reside
      * @return AggregationResult encompassing the result aggregator
      */
-    AggregationResult execute(Aggregator aggregator, Collection<QueryableEntry> entries,
-                              Collection<Integer> partitionIds);
+    AggregationResult execute(Aggregator aggregator, Iterable<QueryableEntry> entries,
+                              PartitionIdSet partitionIds);
 }

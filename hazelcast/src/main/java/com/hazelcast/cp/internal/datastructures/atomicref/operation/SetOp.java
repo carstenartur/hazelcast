@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,13 @@
 
 package com.hazelcast.cp.internal.datastructures.atomicref.operation;
 
-import com.hazelcast.core.IAtomicReference;
-import com.hazelcast.cp.internal.datastructures.atomicref.RaftAtomicRef;
-import com.hazelcast.cp.internal.datastructures.atomicref.RaftAtomicReferenceDataSerializerHook;
+import com.hazelcast.cp.IAtomicReference;
+import com.hazelcast.cp.internal.datastructures.atomicref.AtomicRef;
+import com.hazelcast.cp.internal.datastructures.atomicref.AtomicRefDataSerializerHook;
+import com.hazelcast.internal.nio.IOUtil;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.cp.CPGroupId;
 
@@ -46,22 +47,22 @@ public class SetOp extends AbstractAtomicRefOp implements IdentifiedDataSerializ
 
     @Override
     public Object run(CPGroupId groupId, long commitIndex) {
-        RaftAtomicRef ref = getAtomicRef(groupId);
+        AtomicRef ref = getAtomicRef(groupId);
         Data oldValue = ref.get();
         ref.set(newValue);
         return returnOldValue ? oldValue : null;
     }
 
     @Override
-    public int getId() {
-        return RaftAtomicReferenceDataSerializerHook.SET_OP;
+    public int getClassId() {
+        return AtomicRefDataSerializerHook.SET_OP;
     }
 
     @Override
     public void writeData(ObjectDataOutput out)
             throws IOException {
         super.writeData(out);
-        out.writeData(newValue);
+        IOUtil.writeData(out, newValue);
         out.writeBoolean(returnOldValue);
     }
 
@@ -69,7 +70,7 @@ public class SetOp extends AbstractAtomicRefOp implements IdentifiedDataSerializ
     public void readData(ObjectDataInput in)
             throws IOException {
         super.readData(in);
-        newValue = in.readData();
+        newValue = IOUtil.readData(in);
         returnOldValue = in.readBoolean();
     }
 }

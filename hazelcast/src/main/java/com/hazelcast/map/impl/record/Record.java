@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,7 @@
 
 package com.hazelcast.map.impl.record;
 
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.query.Metadata;
+import com.hazelcast.internal.util.Clock;
 
 /**
  * @param <V> the type of value which is in the Record
@@ -26,25 +25,19 @@ import com.hazelcast.query.Metadata;
 public interface Record<V> {
 
     /**
-     * If not a {@link com.hazelcast.map.impl.record.CachedDataRecord}.
+     * Represents an unset value. This is the default
+     * value of ttl, max-idle or anything unavailable.
+     */
+    int UNSET = -1;
+
+    /**
+     * If not a {@link com.hazelcast.map.impl.record.CachedSimpleRecord}.
      */
     Object NOT_CACHED = new Object();
-
-    int NOT_AVAILABLE = -1;
-
-    Data getKey();
-
-    void setKey(Data key);
 
     V getValue();
 
     void setValue(V value);
-
-    void onAccess(long now);
-
-    void onUpdate(long now);
-
-    void onStore();
 
     /**
      * Returns heap cost of this record in bytes.
@@ -53,19 +46,22 @@ public interface Record<V> {
      */
     long getCost();
 
-    long getVersion();
+    int getVersion();
 
-    void setVersion(long version);
+    void setVersion(int version);
 
     /**
      * Get current cache value or null.
-     * <p/>
-     * Warning: Do not use this method directly as it might expose arbitrary objects acting as a lock.
+     * <p>
+     * Warning: Do not use this method directly as it
+     * might expose arbitrary objects acting as a lock.
      * Use {@link Records#getCachedValue(Record)} instead.
      *
      * @return current cached value or null or cached record mutex.
      */
-    Object getCachedValueUnsafe();
+    default Object getCachedValueUnsafe() {
+        return Record.NOT_CACHED;
+    }
 
     /**
      * Atomically sets the cached value to the given new value
@@ -73,59 +69,124 @@ public interface Record<V> {
      *
      * @param expectedValue the expected cached value
      * @param newValue      the new cached value
-     * @return {@code true} if successful. False return indicates that
-     * the actual cached value was not equal to the expected cached value.
+     * @return {@code true} if successful. False
+     * return indicates that the actual cached value
+     * was not equal to the expected cached value.
      */
-    boolean casCachedValue(Object expectedValue, Object newValue);
+    default boolean casCachedValue(Object expectedValue, Object newValue) {
+        assert getCachedValueUnsafe() != Record.NOT_CACHED;
+        return true;
+    }
 
-    long getTtl();
+    default long getLastAccessTime() {
+        return UNSET;
+    }
 
-    void setTtl(long ttl);
+    default void setLastAccessTime(long lastAccessTime) {
+    }
 
-    long getMaxIdle();
+    default long getLastUpdateTime() {
+        return UNSET;
+    }
 
-    void setMaxIdle(long maxIdle);
+    default void setLastUpdateTime(long lastUpdateTime) {
+    }
 
-    long getLastAccessTime();
+    default long getCreationTime() {
+        return UNSET;
+    }
 
-    void setLastAccessTime(long lastAccessTime);
+    default void setCreationTime(long creationTime) {
+    }
 
-    long getLastUpdateTime();
+    default int getHits() {
+        return UNSET;
+    }
 
-    void setLastUpdateTime(long lastUpdatedTime);
-
-    long getCreationTime();
-
-    void setCreationTime(long creationTime);
-
-    long getHits();
-
-    void setHits(long hits);
-
-    long getExpirationTime();
-
-    void setExpirationTime(long expirationTime);
-
-    long getLastStoredTime();
-
-    void setLastStoredTime(long lastStoredTime);
+    default void setHits(int hits) {
+    }
 
     /**
      * Only used for Hot Restart, HDRecord
      *
-     * @return
+     * @return current sequence number
      */
-    long getSequence();
+    default long getSequence() {
+        return UNSET;
+    }
 
     /**
      * Only used for Hot Restart, HDRecord
-     *
-     * @return
      */
-    void setSequence(long sequence);
+    default void setSequence(long sequence) {
+    }
 
-    void setMetadata(Metadata metadata);
+    default long getLastStoredTime() {
+        return UNSET;
+    }
 
-    Metadata getMetadata();
+    default void setLastStoredTime(long lastStoredTime) {
+    }
 
+    /**
+     * An implementation must be thread safe if the
+     * record might be accessed from multiple threads.
+     */
+    default void onAccess(long now) {
+        incrementHits();
+        setLastAccessTime(now);
+    }
+
+    default void incrementHits() {
+        int hits = getHits();
+        if (hits < Integer.MAX_VALUE) {
+            // protect against potential overflow
+            setHits(hits + 1);
+        }
+    }
+
+    default void onUpdate(long now) {
+        // We allow version overflow, versions can also be negative value.
+        setVersion(getVersion() + 1);
+        setLastUpdateTime(now);
+    }
+
+    default void onStore() {
+        setLastStoredTime(Clock.currentTimeMillis());
+    }
+
+    /**
+     * @return record reader writer to be used when
+     * serializing/de-serializing this record instance.
+     */
+    RecordReaderWriter getMatchingRecordReaderWriter();
+
+    /* Below `raw` methods are used during serialization of a record. */
+    default int getRawCreationTime() {
+        return UNSET;
+    }
+
+    default void setRawCreationTime(int creationTime) {
+    }
+
+    default int getRawLastAccessTime() {
+        return UNSET;
+    }
+
+    default void setRawLastAccessTime(int lastAccessTime) {
+    }
+
+    default int getRawLastUpdateTime() {
+        return UNSET;
+    }
+
+    default void setRawLastUpdateTime(int lastUpdateTime) {
+    }
+
+    default int getRawLastStoredTime() {
+        return UNSET;
+    }
+
+    default void setRawLastStoredTime(int lastStoredTime) {
+    }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
-import static com.hazelcast.util.Preconditions.checkTrue;
+import static com.hazelcast.internal.util.Preconditions.checkTrue;
 
 /**
  * Contains all wait keys for an invocation uid within the same session,
@@ -60,7 +60,7 @@ public class WaitKeyContainer<W extends WaitKey> implements IdentifiedDataSerial
     }
 
     public Collection<W> retries() {
-        return keys != null ? keys.subList(1, keys.size()) : Collections.<W>emptyList();
+        return keys != null ? keys.subList(1, keys.size()) : Collections.emptyList();
     }
 
     public Collection<W> keyAndRetries() {
@@ -89,7 +89,7 @@ public class WaitKeyContainer<W extends WaitKey> implements IdentifiedDataSerial
                 + " has different invocation uids!");
 
         if (keys == null) {
-            keys = new ArrayList<W>(3);
+            keys = new ArrayList<>(3);
             keys.add(key);
         }
         keys.add(retry);
@@ -101,7 +101,7 @@ public class WaitKeyContainer<W extends WaitKey> implements IdentifiedDataSerial
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftDataServiceDataSerializerHook.WAIT_KEY_CONTAINER;
     }
 
@@ -120,7 +120,7 @@ public class WaitKeyContainer<W extends WaitKey> implements IdentifiedDataSerial
         key = in.readObject();
         int retryCount = in.readInt();
         if (retryCount > 0) {
-            keys = new ArrayList<W>(retryCount + 1);
+            keys = new ArrayList<>(retryCount + 1);
             keys.add(key);
             for (int i = 0; i < retryCount; i++) {
                 W retry = in.readObject();

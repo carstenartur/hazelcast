@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@
 
 package com.hazelcast.cp.internal.raftop;
 
-import com.hazelcast.core.Endpoint;
 import com.hazelcast.cp.CPGroupId;
 import com.hazelcast.cp.internal.IndeterminateOperationStateAware;
 import com.hazelcast.cp.internal.RaftNodeAware;
 import com.hazelcast.cp.internal.RaftOp;
 import com.hazelcast.cp.internal.RaftService;
 import com.hazelcast.cp.internal.RaftServiceDataSerializerHook;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 import com.hazelcast.cp.internal.raft.impl.RaftNode;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -32,7 +32,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 
-import static com.hazelcast.util.Preconditions.checkState;
+import static com.hazelcast.internal.util.Preconditions.checkState;
 
 /**
  * When a CP member is added to a Raft group, a new member list is committed to
@@ -42,7 +42,7 @@ import static com.hazelcast.util.Preconditions.checkState;
  * try to initialize its local {@link RaftNode} instance. In order to the
  * initialize itself, it can directly ask to the Raft group to verify if it is
  * a current member of the Raft group.
- * <p/>
+ * <p>
  * This operation is NOT committed to the Metadata group.
  * It is committed to the queried Raft group.
  */
@@ -50,15 +50,15 @@ public class GetInitialRaftGroupMembersIfCurrentGroupMemberOp extends RaftOp imp
                                                                                         IndeterminateOperationStateAware,
                                                                                         IdentifiedDataSerializable {
 
-    private Endpoint cpMember;
+    private RaftEndpoint endpoint;
 
     private RaftNode raftNode;
 
     public GetInitialRaftGroupMembersIfCurrentGroupMemberOp() {
     }
 
-    public GetInitialRaftGroupMembersIfCurrentGroupMemberOp(Endpoint cpMember) {
-        this.cpMember = cpMember;
+    public GetInitialRaftGroupMembersIfCurrentGroupMemberOp(RaftEndpoint endpoint) {
+        this.endpoint = endpoint;
     }
 
     @Override
@@ -69,10 +69,10 @@ public class GetInitialRaftGroupMembersIfCurrentGroupMemberOp extends RaftOp imp
     @Override
     public Object run(CPGroupId groupId, long commitIndex) {
         checkState(raftNode != null, "RaftNode is not injected in " + groupId);
-        Collection<Endpoint> members = raftNode.getAppliedMembers();
-        checkState(members.contains(cpMember), cpMember
+        Collection<RaftEndpoint> members = raftNode.getAppliedMembers();
+        checkState(members.contains(endpoint), endpoint
                 + " is not in the current committed member list: " + members + " of " + groupId);
-        return new ArrayList<Endpoint>(raftNode.getInitialMembers());
+        return new ArrayList<RaftEndpoint>(raftNode.getInitialMembers());
     }
 
     @Override
@@ -86,7 +86,7 @@ public class GetInitialRaftGroupMembersIfCurrentGroupMemberOp extends RaftOp imp
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftServiceDataSerializerHook.GET_INITIAL_RAFT_GROUP_MEMBERS_IF_CURRENT_GROUP_MEMBER_OP;
     }
 
@@ -97,11 +97,11 @@ public class GetInitialRaftGroupMembersIfCurrentGroupMemberOp extends RaftOp imp
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeObject(cpMember);
+        out.writeObject(endpoint);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        cpMember = in.readObject();
+        endpoint = in.readObject();
     }
 }

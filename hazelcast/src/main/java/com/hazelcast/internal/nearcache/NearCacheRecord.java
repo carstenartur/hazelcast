@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,11 +22,13 @@ import com.hazelcast.internal.eviction.Expirable;
 import java.util.UUID;
 
 /**
- * An expirable and evictable data object which represents a Near Cache entry.
- * <p>
+ * An expirable and evictable data object
+ * which represents a Near Cache entry.
+ *
  * Record of {@link NearCacheRecordStore}.
  *
- * @param <V> the type of the value stored by this {@link NearCacheRecord}
+ * @param <V> the type of the value
+ *            stored by this {@link NearCacheRecord}
  * @see com.hazelcast.internal.eviction.Expirable
  * @see com.hazelcast.internal.eviction.Evictable
  */
@@ -35,9 +37,8 @@ public interface NearCacheRecord<V> extends Expirable, Evictable<V> {
     int TIME_NOT_SET = -1;
 
     long NOT_RESERVED = -1;
-    long RESERVED = -2;
-    long UPDATE_STARTED = -3;
-    long READ_PERMITTED = -4;
+
+    long READ_PERMITTED = -2;
 
     /**
      * Sets the value of this {@link NearCacheRecord}.
@@ -58,47 +59,37 @@ public interface NearCacheRecord<V> extends Expirable, Evictable<V> {
      *
      * @param time the latest access time of this {@link Evictable} in milliseconds
      */
-    void setAccessTime(long time);
+    void setLastAccessTime(long time);
 
     /**
      * Sets the access hit count of this {@link Evictable}.
      *
      * @param hit the access hit count for this {@link Evictable}
      */
-    void setAccessHit(int hit);
+    void setHits(int hit);
 
     /**
      * Increases the access hit count of this {@link Evictable} by {@code 1}.
      */
-    void incrementAccessHit();
+    void incrementHits();
 
     /**
-     * Resets the access hit count of this {@link Evictable} to {@code 0}.
-     */
-    void resetAccessHit();
-
-    /**
-     * Checks whether the maximum idle time is passed with respect to the provided time
-     * without any access during this time period as {@code maxIdleSeconds}.
+     * It can have 2 different value:
      *
-     * @param maxIdleMilliSeconds maximum idle time in milliseconds
-     * @param now                 current time in milliseconds
-     * @return {@code true} if exceeds max idle seconds, otherwise {@code false}
+     * 1. {@link #READ_PERMITTED} if no
+     * update is happening on this record.
+     *
+     * 2. A `long` reservation id to indicate
+     * an update is happening on this record now.
+     *
+     * @return reservation that this record has.
      */
-    boolean isIdleAt(long maxIdleMilliSeconds, long now);
+    long getReservationId();
 
     /**
-     * @return current state of this record.
+     * @param reservationId net reservation id to set.
      */
-    long getRecordState();
-
-    /**
-     * @param expect expected value
-     * @param update updated value
-     * @return {@code true} if successful. False return indicates that
-     * the actual value was not equal to the expected value.
-     */
-    boolean casRecordState(long expect, long update);
+    void setReservationId(long reservationId);
 
     /**
      * @return the partition ID of this record
@@ -111,23 +102,56 @@ public interface NearCacheRecord<V> extends Expirable, Evictable<V> {
     void setPartitionId(int partitionId);
 
     /**
-     * @return last known invalidation sequence at time of this records' creation
+     * @return last known invalidation sequence
+     * at time of this records' creation
      */
     long getInvalidationSequence();
 
     /**
-     * @param sequence last known invalidation sequence at time of this records' creation
+     * @param sequence last known invalidation
+     *                 sequence at time of this records' creation
      */
     void setInvalidationSequence(long sequence);
 
     /**
-     * @param uuid last known UUID of invalidation source at time of this records' creation
+     * @param uuid last known UUID of invalidation
+     *             source at time of this records' creation
      */
     void setUuid(UUID uuid);
 
     /**
-     * @return {@code true} if supplied UUID equals existing one, otherwise and when one of supplied
+     * @return {@code true} if supplied UUID equals
+     * existing one, otherwise and when one of supplied
      * or existing is null returns {@code false}
      */
     boolean hasSameUuid(UUID uuid);
+
+    boolean isCachedAsNull();
+
+    void setCachedAsNull(boolean valueCachedAsNull);
+
+    default boolean isExpiredAt(long now) {
+        long expirationTime = getExpirationTime();
+        return (expirationTime > 0L) && (expirationTime <= now);
+    }
+
+    /**
+     * Checks whether the maximum idle time is passed with
+     * respect to the provided time without any access
+     * during this time period as {@code maxIdleSeconds}.
+     *
+     * @param maxIdleMilliSeconds maximum idle time in milliseconds
+     * @param now                 current time in milliseconds @return
+     *                            {@code true} if exceeds max idle seconds, otherwise {@code false}
+     */
+    default boolean isIdleAt(long maxIdleMilliSeconds, long now) {
+        if (maxIdleMilliSeconds <= 0) {
+            return false;
+        }
+
+        long lastAccessTime = getLastAccessTime();
+        return lastAccessTime > 0L
+                ? lastAccessTime + maxIdleMilliSeconds < now
+                : getCreationTime() + maxIdleMilliSeconds < now;
+    }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,12 @@
 package com.hazelcast.config;
 
 import com.hazelcast.nio.serialization.Serializer;
+
+import javax.annotation.Nonnull;
+import java.util.Objects;
+
+import static com.hazelcast.internal.util.Preconditions.checkHasText;
+import static com.hazelcast.internal.util.Preconditions.checkNotNull;
 
 /**
  * Contains the serialization configuration for a particular class.
@@ -57,8 +63,10 @@ public class SerializerConfig {
      * @return SerializerConfig
      */
     public SerializerConfig setClass(final Class<? extends Serializer> clazz) {
-        String className = clazz == null ? null : clazz.getName();
-        return setClassName(className);
+        if (clazz != null) {
+            setClassName(clazz.getName());
+        }
+        return this;
     }
 
     /**
@@ -67,8 +75,9 @@ public class SerializerConfig {
      * @param className the class name of the serializer implementation
      * @return SerializationConfig
      */
-    public SerializerConfig setClassName(final String className) {
-        this.className = className;
+    public SerializerConfig setClassName(final @Nonnull String className) {
+        this.className = checkHasText(className, "Serializer class name must contain text");
+        this.implementation = null;
         return this;
     }
 
@@ -76,7 +85,7 @@ public class SerializerConfig {
      * Returns the implementation of the serializer class.
      *
      * @return the implementation of the serializer class
-     * @see {@link com.hazelcast.config.SerializerConfig#setImplementation(com.hazelcast.nio.serialization.Serializer)}
+     * @see com.hazelcast.config.SerializerConfig#setImplementation(com.hazelcast.nio.serialization.Serializer)
      */
     public Serializer getImplementation() {
         return implementation;
@@ -84,15 +93,16 @@ public class SerializerConfig {
 
     /**
      * Sets the serializer implementation instance.
-     * <br/>
+     * <br>
      * Serializer must be instance of either {@link com.hazelcast.nio.serialization.StreamSerializer}
      * or {@link com.hazelcast.nio.serialization.ByteArraySerializer}.
      *
      * @param implementation the serializer instance
      * @return SerializerConfig
      */
-    public SerializerConfig setImplementation(final Serializer implementation) {
-        this.implementation = implementation;
+    public SerializerConfig setImplementation(final @Nonnull Serializer implementation) {
+        this.implementation = checkNotNull(implementation, "Serializer cannot be null");
+        this.className = null;
         return this;
     }
 
@@ -100,7 +110,7 @@ public class SerializerConfig {
      * Gets the type of the class that will be serialized via this implementation.
      *
      * @return typeClass type of the class that will be serialized via this implementation
-     * @see {@link com.hazelcast.config.SerializerConfig#setTypeClass(Class)}
+     * @see com.hazelcast.config.SerializerConfig#setTypeClass(Class)
      */
     public Class getTypeClass() {
         return typeClass;
@@ -112,8 +122,9 @@ public class SerializerConfig {
      * @param typeClass type of the class that will be serialized via this implementation
      * @return SerializerConfig
      */
-    public SerializerConfig setTypeClass(final Class typeClass) {
-        this.typeClass = typeClass;
+    public SerializerConfig setTypeClass(final @Nonnull Class typeClass) {
+        this.typeClass = checkNotNull(typeClass, "Serializer type class cannot be null!");
+        this.typeClassName = null;
         return this;
     }
 
@@ -121,7 +132,7 @@ public class SerializerConfig {
      * Gets the name of the class that will be serialized via this implementation.
      *
      * @return typeClassName name of the class that will be serialized via this implementation
-     * @see {@link com.hazelcast.config.SerializerConfig#setTypeClassName(String)}
+     * @see com.hazelcast.config.SerializerConfig#setTypeClassName(String)
      */
     public String getTypeClassName() {
         return typeClassName;
@@ -134,13 +145,13 @@ public class SerializerConfig {
      * @param typeClassName name of the class that will be serialized via this implementation
      * @return SerializerConfig
      */
-    public SerializerConfig setTypeClassName(final String typeClassName) {
-        this.typeClassName = typeClassName;
+    public SerializerConfig setTypeClassName(final @Nonnull String typeClassName) {
+        this.typeClassName = checkHasText(typeClassName, "Serializer type class name must contain text");
+        this.typeClass = null;
         return this;
     }
 
     @Override
-    @SuppressWarnings({"checkstyle:cyclomaticcomplexity", "checkstyle:npathcomplexity"})
     public final boolean equals(Object o) {
         if (this == o) {
             return true;
@@ -151,25 +162,15 @@ public class SerializerConfig {
 
         SerializerConfig that = (SerializerConfig) o;
 
-        if (className != null ? !className.equals(that.className) : that.className != null) {
-            return false;
-        }
-        if (implementation != null ? !implementation.equals(that.implementation) : that.implementation != null) {
-            return false;
-        }
-        if (typeClass != null ? !typeClass.equals(that.typeClass) : that.typeClass != null) {
-            return false;
-        }
-        return typeClassName != null ? typeClassName.equals(that.typeClassName) : that.typeClassName == null;
+        return Objects.equals(implementation, that.implementation)
+            && Objects.equals(className, that.className)
+            && Objects.equals(typeClass, that.typeClass)
+            && Objects.equals(typeClassName, that.typeClassName);
     }
 
     @Override
     public final int hashCode() {
-        int result = className != null ? className.hashCode() : 0;
-        result = 31 * result + (implementation != null ? implementation.hashCode() : 0);
-        result = 31 * result + (typeClass != null ? typeClass.hashCode() : 0);
-        result = 31 * result + (typeClassName != null ? typeClassName.hashCode() : 0);
-        return result;
+        return Objects.hash(typeClass, typeClassName, implementation, className);
     }
 
     @Override

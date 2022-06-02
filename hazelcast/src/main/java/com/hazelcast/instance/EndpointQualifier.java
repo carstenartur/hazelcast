@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,18 +23,18 @@ import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 
 import java.io.IOException;
 
-import static com.hazelcast.util.Preconditions.checkNotNull;
+import static com.hazelcast.internal.util.Preconditions.checkNotNull;
 
 /**
  * An {@code EndpointQualifier} is a {@code (ProtocolType, String)} tuple that uniquely identifies groups
  * of network connections sharing a common {@link ProtocolType} and the same network settings, when Hazelcast
  * is configured with {@link com.hazelcast.config.AdvancedNetworkConfig} enabled.
- * <p/>
+ * <p>
  * In some cases, just the {@link ProtocolType} is enough (eg since there can be only a single
  * {@link ProtocolType#MEMBER MEMBER} server socket, there can be only one instance of
  * {@link com.hazelcast.config.ServerSocketEndpointConfig ServerSocketEndpointConfig} network
  * configuration for {@code MEMBER} connections).
- * <p/>
+ * <p>
  * When just the {@link ProtocolType} is not enough (for example when configuring outgoing WAN
  * connections to 2 different target clusters), a {@code String identifier} is used to uniquely
  * identify the network configuration.
@@ -85,10 +85,6 @@ public final class EndpointQualifier
             return false;
         }
 
-        // Single instance types - identifier doesn't matter
-        if (type.getServerSocketCardinality() == 1) {
-            return true;
-        }
         return identifier != null ? identifier.equals(that.identifier) : that.identifier == null;
     }
 
@@ -113,13 +109,13 @@ public final class EndpointQualifier
     @Override
     public void readData(ObjectDataInput in) throws IOException {
         type = ProtocolType.valueOf(in.readInt());
-        identifier = in.readUTF();
+        identifier = in.readString();
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
         out.writeInt(type.ordinal());
-        out.writeUTF(identifier);
+        out.writeString(identifier);
     }
 
     @Override
@@ -128,7 +124,7 @@ public final class EndpointQualifier
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return ClusterDataSerializerHook.ENDPOINT_QUALIFIER;
     }
 
@@ -140,18 +136,28 @@ public final class EndpointQualifier
                 + '\'' + '}';
     }
 
-    public static EndpointQualifier resolve(ProtocolType protocolType, String name) {
+    /**
+     * @return resolved endpoint qualifier when it is passed from the user via configuration
+     */
+    public static EndpointQualifier resolveForConfig(ProtocolType protocolType, String identifier) {
+        if (ProtocolType.CLIENT.equals(protocolType)) {
+            return CLIENT;
+        }
+        return resolve(protocolType, identifier);
+    }
+
+    public static EndpointQualifier resolve(ProtocolType protocolType, String identifier) {
         switch (protocolType) {
             case MEMBER:
                 return MEMBER;
             case CLIENT:
-                return CLIENT;
+                return new EndpointQualifier(ProtocolType.CLIENT, identifier);
             case MEMCACHE:
                 return MEMCACHE;
             case REST:
                 return REST;
             case WAN:
-                return new EndpointQualifier(ProtocolType.WAN, name);
+                return new EndpointQualifier(ProtocolType.WAN, identifier);
             default:
                 throw new IllegalArgumentException("Cannot resolve EndpointQualifier for protocol type " + protocolType);
         }

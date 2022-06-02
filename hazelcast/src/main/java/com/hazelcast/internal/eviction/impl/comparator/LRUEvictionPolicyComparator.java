@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,35 +16,44 @@
 
 package com.hazelcast.internal.eviction.impl.comparator;
 
-import com.hazelcast.internal.eviction.EvictableEntryView;
-import com.hazelcast.internal.eviction.EvictionPolicyComparator;
-import com.hazelcast.nio.serialization.SerializableByConvention;
+import com.hazelcast.internal.serialization.SerializableByConvention;
+import com.hazelcast.spi.eviction.EvictableEntryView;
+import com.hazelcast.spi.eviction.EvictionPolicyComparator;
 
 /**
- * {@link com.hazelcast.config.EvictionPolicy#LRU} policy based {@link EvictionPolicyComparator}.
+ * {@link com.hazelcast.config.EvictionPolicy#LRU}
+ * policy based {@link EvictionPolicyComparator}.
  */
 @SerializableByConvention
-public class LRUEvictionPolicyComparator extends EvictionPolicyComparator {
+public class LRUEvictionPolicyComparator
+        implements EvictionPolicyComparator<Object, Object, EvictableEntryView<Object, Object>> {
+
+    public static final LRUEvictionPolicyComparator INSTANCE
+            = new LRUEvictionPolicyComparator();
 
     @Override
     public int compare(EvictableEntryView e1, EvictableEntryView e2) {
-        long accessTime1 = e1.getLastAccessTime();
-        long accessTime2 = e2.getLastAccessTime();
-        if (accessTime2 < accessTime1) {
-            return SECOND_ENTRY_HAS_HIGHER_PRIORITY_TO_BE_EVICTED;
-        } else if (accessTime1 < accessTime2) {
-            return FIRST_ENTRY_HAS_HIGHER_PRIORITY_TO_BE_EVICTED;
-        } else {
-            long creationTime1 = e1.getCreationTime();
-            long creationTime2 = e2.getCreationTime();
-            // if access times are same, we select the oldest entry to evict
-            if (creationTime2 < creationTime1) {
-                return SECOND_ENTRY_HAS_HIGHER_PRIORITY_TO_BE_EVICTED;
-            } else if (creationTime2 > creationTime1) {
-                return FIRST_ENTRY_HAS_HIGHER_PRIORITY_TO_BE_EVICTED;
-            } else {
-                return BOTH_OF_ENTRIES_HAVE_SAME_PRIORITY_TO_BE_EVICTED;
-            }
+        long time1 = Math.max(e1.getCreationTime(), e1.getLastAccessTime());
+        long time2 = Math.max(e2.getCreationTime(), e2.getLastAccessTime());
+
+        return Long.compare(time1, time2);
+    }
+
+    @Override
+    public String toString() {
+        return "LRUEvictionPolicyComparator{" + super.toString() + "} ";
+    }
+
+    @Override
+    public final boolean equals(Object o) {
+        if (o == null) {
+            return false;
         }
+        return getClass().equals(o.getClass());
+    }
+
+    @Override
+    public final int hashCode() {
+        return getClass().hashCode();
     }
 }

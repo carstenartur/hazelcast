@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,12 @@
 
 package com.hazelcast.cp.internal.datastructures.atomiclong.operation;
 
-import com.hazelcast.core.IAtomicLong;
+import com.hazelcast.cp.IAtomicLong;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.cp.CPGroupId;
-import com.hazelcast.cp.internal.datastructures.atomiclong.RaftAtomicLongDataSerializerHook;
-import com.hazelcast.cp.internal.datastructures.atomiclong.RaftAtomicLong;
+import com.hazelcast.cp.internal.datastructures.atomiclong.AtomicLongDataSerializerHook;
+import com.hazelcast.cp.internal.datastructures.atomiclong.AtomicLong;
 
 import java.io.IOException;
 
@@ -44,7 +44,7 @@ public class CompareAndSetOp extends AbstractAtomicLongOp {
 
     @Override
     public Object run(CPGroupId groupId, long commitIndex) {
-        RaftAtomicLong atomic = getAtomicLong(groupId);
+        AtomicLong atomic = getAtomicLong(groupId);
         return atomic.compareAndSet(currentValue, newValue);
     }
 
@@ -63,8 +63,8 @@ public class CompareAndSetOp extends AbstractAtomicLongOp {
     }
 
     @Override
-    public int getId() {
-        return RaftAtomicLongDataSerializerHook.COMPARE_AND_SET_OP;
+    public int getClassId() {
+        return AtomicLongDataSerializerHook.COMPARE_AND_SET_OP;
     }
 
     @Override

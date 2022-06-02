@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,19 +19,31 @@ package com.hazelcast.security;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.SecurityConfig;
 import com.hazelcast.config.SymmetricEncryptionConfig;
-import com.hazelcast.test.HazelcastSerialClassRunner;
+import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.internal.serialization.SerializationService;
+import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
+import org.junit.rules.ExpectedException;
 import org.junit.runner.RunWith;
 
-@RunWith(HazelcastSerialClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+import static com.hazelcast.test.Accessors.getSerializationService;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+
+import org.junit.Rule;
+
+@RunWith(HazelcastParallelClassRunner.class)
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class SecurityWithoutEnterpriseTest extends HazelcastTestSupport {
 
-    @Test(expected = IllegalStateException.class)
+    @Rule
+    public ExpectedException expected = ExpectedException.none();
+
+    @Test
     public void test() {
         SecurityConfig securityConfig = new SecurityConfig()
                 .setEnabled(true);
@@ -39,15 +51,42 @@ public class SecurityWithoutEnterpriseTest extends HazelcastTestSupport {
         Config config = new Config()
                 .setSecurityConfig(securityConfig);
 
+        expected.expect(IllegalStateException.class);
         createHazelcastInstance(config);
     }
 
-    @Test(expected = IllegalStateException.class)
+    @Test
     public void testSymmetricEncryption() {
         SymmetricEncryptionConfig symmetricEncryptionConfig = new SymmetricEncryptionConfig()
                 .setEnabled(true);
         Config config = new Config();
         config.getNetworkConfig().setSymmetricEncryptionConfig(symmetricEncryptionConfig);
+        expected.expect(IllegalStateException.class);
         createHazelcastInstance(config);
     }
+
+    @Test
+    public void testAuditlog() {
+        Config config = new Config();
+        config.getAuditlogConfig().setEnabled(true);
+        expected.expect(IllegalStateException.class);
+        createHazelcastInstance(config);
+    }
+
+    @Test
+    public void testCredentialsSerialization() {
+        HazelcastInstance hz = createHazelcastInstance(smallInstanceConfig());
+        SerializationService serializationService = getSerializationService(hz);
+
+        UsernamePasswordCredentials upc = new UsernamePasswordCredentials("admin", "secret");
+        UsernamePasswordCredentials upc2 = serializationService.toObject(serializationService.toData(upc));
+        assertEquals(upc.getName(), upc2.getName());
+        assertEquals(upc.getPassword(), upc2.getPassword());
+
+        SimpleTokenCredentials stc = new SimpleTokenCredentials(new byte[] { 1, 2, 3 });
+        SimpleTokenCredentials stc2 = serializationService.toObject(serializationService.toData(stc));
+        assertEquals(stc.getName(), stc2.getName());
+        assertArrayEquals(stc.getToken(), stc2.getToken());
+    }
+
 }

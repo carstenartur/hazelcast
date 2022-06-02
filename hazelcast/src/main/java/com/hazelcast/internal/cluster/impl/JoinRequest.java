@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,10 @@
 
 package com.hazelcast.internal.cluster.impl;
 
+import com.hazelcast.internal.util.UUIDSerializationUtil;
 import com.hazelcast.instance.EndpointQualifier;
 import com.hazelcast.internal.cluster.MemberInfo;
-import com.hazelcast.nio.Address;
+import com.hazelcast.cluster.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.security.Credentials;
@@ -29,20 +30,20 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
-import static com.hazelcast.internal.cluster.Versions.V3_12;
 import static com.hazelcast.internal.serialization.impl.SerializationUtil.readMap;
 import static com.hazelcast.internal.serialization.impl.SerializationUtil.writeMap;
-import static com.hazelcast.util.MapUtil.createHashMap;
-import static com.hazelcast.util.SetUtil.createHashSet;
+import static com.hazelcast.internal.util.MapUtil.createHashMap;
+import static com.hazelcast.internal.util.SetUtil.createHashSet;
 import static java.util.Collections.unmodifiableSet;
 
 public class JoinRequest extends JoinMessage {
 
     private Credentials credentials;
     private int tryCount;
-    private Map<String, Object> attributes;
-    private Set<String> excludedMemberUuids = Collections.emptySet();
+    private Map<String, String> attributes;
+    private Set<UUID> excludedMemberUuids = Collections.emptySet();
     // see Member.getAddressMap
     private Map<EndpointQualifier, Address> addresses;
 
@@ -50,14 +51,14 @@ public class JoinRequest extends JoinMessage {
     }
 
     @SuppressWarnings("checkstyle:parameternumber")
-    public JoinRequest(byte packetVersion, int buildNumber, MemberVersion version, Address address, String uuid,
-                       boolean liteMember, ConfigCheck config, Credentials credentials, Map<String, Object> attributes,
-                       Set<String> excludedMemberUuids, Map<EndpointQualifier, Address> addresses) {
+    public JoinRequest(byte packetVersion, int buildNumber, MemberVersion version, Address address, UUID uuid,
+                       boolean liteMember, ConfigCheck config, Credentials credentials, Map<String, String> attributes,
+                       Set<UUID> excludedMemberUuids, Map<EndpointQualifier, Address> addresses) {
         super(packetVersion, buildNumber, version, address, uuid, liteMember, config);
         this.credentials = credentials;
         this.attributes = attributes;
         if (excludedMemberUuids != null) {
-            this.excludedMemberUuids = unmodifiableSet(new HashSet<String>(excludedMemberUuids));
+            this.excludedMemberUuids = unmodifiableSet(new HashSet<>(excludedMemberUuids));
         }
         this.addresses = addresses;
     }
@@ -74,11 +75,11 @@ public class JoinRequest extends JoinMessage {
         this.tryCount = tryCount;
     }
 
-    public Map<String, Object> getAttributes() {
+    public Map<String, String> getAttributes() {
         return attributes;
     }
 
-    public Set<String> getExcludedMemberUuids() {
+    public Set<UUID> getExcludedMemberUuids() {
         return excludedMemberUuids;
     }
 
@@ -90,29 +91,22 @@ public class JoinRequest extends JoinMessage {
     public void readData(ObjectDataInput in) throws IOException {
         super.readData(in);
         credentials = in.readObject();
-        if (credentials != null) {
-            credentials.setEndpoint(getAddress().getHost());
-        }
         tryCount = in.readInt();
         int size = in.readInt();
         attributes = createHashMap(size);
         for (int i = 0; i < size; i++) {
-            String key = in.readUTF();
-            Object value = in.readObject();
+            String key = in.readString();
+            String value = in.readString();
             attributes.put(key, value);
         }
         size = in.readInt();
-        Set<String> excludedMemberUuids = createHashSet(size);
+        Set<UUID> excludedMemberUuids = createHashSet(size);
         for (int i = 0; i < size; i++) {
-            excludedMemberUuids.add(in.readUTF());
+            excludedMemberUuids.add(UUIDSerializationUtil.readUUID(in));
         }
 
         this.excludedMemberUuids = unmodifiableSet(excludedMemberUuids);
-
-        // starting with 3.12 member version, address map is part of the serialized form of JoinRequest
-        if (memberVersion.asVersion().isGreaterOrEqual(V3_12)) {
-            this.addresses = readMap(in);
-        }
+        this.addresses = readMap(in);
     }
 
     @Override
@@ -121,13 +115,13 @@ public class JoinRequest extends JoinMessage {
         out.writeObject(credentials);
         out.writeInt(tryCount);
         out.writeInt(attributes.size());
-        for (Map.Entry<String, Object> entry : attributes.entrySet()) {
-            out.writeUTF(entry.getKey());
-            out.writeObject(entry.getValue());
+        for (Map.Entry<String, String> entry : attributes.entrySet()) {
+            out.writeString(entry.getKey());
+            out.writeString(entry.getValue());
         }
         out.writeInt(excludedMemberUuids.size());
-        for (String uuid : excludedMemberUuids) {
-            out.writeUTF(uuid);
+        for (UUID uuid : excludedMemberUuids) {
+            UUIDSerializationUtil.writeUUID(out, uuid);
         }
         writeMap(addresses, out);
     }
@@ -149,7 +143,7 @@ public class JoinRequest extends JoinMessage {
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return ClusterDataSerializerHook.JOIN_REQUEST;
     }
 }

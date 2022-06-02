@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,17 @@
 package com.hazelcast.internal.networking.nio;
 
 import com.hazelcast.config.Config;
+import com.hazelcast.config.JoinConfig;
 import com.hazelcast.config.RestServerEndpointConfig;
 import com.hazelcast.config.ServerSocketEndpointConfig;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.spi.properties.ClusterProperty;
+import org.junit.After;
+
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import org.junit.After;
 
 import static com.hazelcast.test.HazelcastTestSupport.smallInstanceConfig;
 
@@ -89,6 +92,20 @@ public abstract class AbstractAdvancedNetworkIntegrationTest {
         }
         serverSocketConfig.enableAllGroups();
         return serverSocketConfig;
+    }
+
+    void configureTcpIpConfig(Config config) {
+        JoinConfig join = config.getAdvancedNetworkConfig().getJoin();
+        join.getTcpIpConfig().addMember("127.0.0.1:" + NOT_OPENED_PORT).setEnabled(true);
+    }
+
+    Config prepareJoinConfigForSecondMember(int port) {
+        Config config = smallInstanceConfig();
+        config.getAdvancedNetworkConfig().setEnabled(true);
+        JoinConfig join = config.getAdvancedNetworkConfig().getJoin();
+        join.getTcpIpConfig().addMember("127.0.0.1:" + port).setEnabled(true);
+        config.setProperty(ClusterProperty.MAX_JOIN_SECONDS.getName(), "3");
+        return config;
     }
 
 }

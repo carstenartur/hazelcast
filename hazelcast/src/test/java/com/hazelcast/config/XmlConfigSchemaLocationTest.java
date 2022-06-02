@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.config;
 
-import com.hazelcast.nio.IOUtil;
+import com.hazelcast.internal.nio.IOUtil;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.SlowTest;
@@ -41,6 +41,8 @@ import org.w3c.dom.Element;
 import javax.net.ssl.SSLContext;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+
 import java.io.InputStream;
 import java.net.URL;
 import java.security.NoSuchAlgorithmException;
@@ -48,6 +50,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import static com.hazelcast.internal.util.XmlUtil.getNsAwareDocumentBuilderFactory;
 import static com.hazelcast.test.TestCollectionUtils.setOf;
 import static org.junit.Assert.assertEquals;
 
@@ -56,11 +59,7 @@ import static org.junit.Assert.assertEquals;
 public class XmlConfigSchemaLocationTest extends HazelcastTestSupport {
 
     // list of schema location URLs which we do not want to check
-    private static final Set<String> WHITELIST = setOf(
-            "hazelcast-sample-service.xsd"// ServiceConfigTest has example of a custom Hazelcast service.
-                                          // The example defines own schema, but the schema is not available anywhere
-                                          // on the internet. It's just an example after all -> the test has to skip it.
-    );
+    private static final Set<String> WHITELIST = setOf();
 
     private static final String XML_SCHEMA_NAMESPACE = "http://www.w3.org/2001/XMLSchema-instance";
     private static final String XML_SCHEMA_LOCATION_ATTRIBUTE = "schemaLocation";
@@ -73,10 +72,9 @@ public class XmlConfigSchemaLocationTest extends HazelcastTestSupport {
     public TestName testName = new TestName();
 
     @Before
-    public void setUp() {
+    public void setUp() throws ParserConfigurationException {
         httpClient = HttpClients.createDefault();
-        documentBuilderFactory = DocumentBuilderFactory.newInstance();
-        documentBuilderFactory.setNamespaceAware(true);
+        documentBuilderFactory = getNsAwareDocumentBuilderFactory();
         validUrlsCache = new HashSet<String>();
     }
 
@@ -94,6 +92,7 @@ public class XmlConfigSchemaLocationTest extends HazelcastTestSupport {
         Set<String> resources = reflections.getResources(Pattern.compile(".*\\.xml"));
         ClassLoader classLoader = getClass().getClassLoader();
         for (String resource : resources) {
+            System.out.println(resource);
             URL resourceUrl = classLoader.getResource(resource);
             String protocol = resourceUrl.getProtocol();
 
@@ -122,7 +121,6 @@ public class XmlConfigSchemaLocationTest extends HazelcastTestSupport {
             if (shouldSkipValidation(nameSpaceUrl)) {
                 continue;
             }
-            System.out.println("Validating " + nameSpaceUrl);
             int responseCode;
             try {
                 responseCode = getResponseCode(nameSpaceUrl);

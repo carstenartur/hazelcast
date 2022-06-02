@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,14 @@
 
 package com.hazelcast.query.impl;
 
+import com.hazelcast.config.IndexConfig;
 import com.hazelcast.core.TypeConverter;
-import com.hazelcast.monitor.impl.PerIndexStats;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.monitor.impl.PerIndexStats;
+import com.hazelcast.query.Predicate;
+import com.hazelcast.query.impl.GlobalIndexPartitionTracker.PartitionStamp;
 
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -28,7 +31,6 @@ import java.util.concurrent.ConcurrentMap;
 import static com.hazelcast.query.impl.AbstractIndex.NULL;
 import static com.hazelcast.query.impl.Comparison.GREATER;
 import static com.hazelcast.query.impl.Comparison.GREATER_OR_EQUAL;
-import static com.hazelcast.query.impl.Comparison.LESS;
 import static com.hazelcast.query.impl.CompositeValue.NEGATIVE_INFINITY;
 import static com.hazelcast.query.impl.CompositeValue.POSITIVE_INFINITY;
 import static java.util.Collections.emptySet;
@@ -41,7 +43,7 @@ import static java.util.Collections.emptySet;
  */
 public class AttributeIndexRegistry {
 
-    private final ConcurrentMap<String, Record> registry = new ConcurrentHashMap<String, Record>();
+    private final ConcurrentMap<String, Record> registry = new ConcurrentHashMap<>();
 
     /**
      * Registers the given index in this registry.
@@ -54,7 +56,7 @@ public class AttributeIndexRegistry {
      */
     public void register(InternalIndex index) {
         String[] components = index.getComponents();
-        String attribute = components == null ? index.getName() : components[0];
+        String attribute = components[0];
 
         Record record = registry.get(attribute);
         if (record == null) {
@@ -64,7 +66,7 @@ public class AttributeIndexRegistry {
 
         if (index.isOrdered()) {
             if (record.orderedWorseThan(index)) {
-                record.ordered = components == null ? index : new FirstComponentDecorator(index);
+                record.ordered = components.length == 1 ? index : new FirstComponentDecorator(index);
             }
         } else {
             if (record.unorderedWorseThan(index)) {
@@ -124,8 +126,9 @@ public class AttributeIndexRegistry {
 
         public boolean unorderedWorseThan(InternalIndex candidate) {
             assert !candidate.isOrdered();
+
             // we have no index and the unordered candidate is not composite
-            return unordered == null && candidate.getComponents() == null;
+            return unordered == null && candidate.getComponents().length == 1;
         }
 
         public boolean orderedWorseThan(InternalIndex candidate) {
@@ -141,7 +144,7 @@ public class AttributeIndexRegistry {
                 // the current index is composite
 
                 String[] candidateComponents = candidate.getComponents();
-                if (candidateComponents != null) {
+                if (candidateComponents.length > 1) {
                     // if the current index has more components, replace it
                     FirstComponentDecorator currentDecorator = (FirstComponentDecorator) current;
                     return currentDecorator.width > candidateComponents.length;
@@ -162,6 +165,7 @@ public class AttributeIndexRegistry {
      * <p>
      * Exposed as a package-private class only for testing purposes.
      */
+    @SuppressWarnings({"rawtypes", "checkstyle:MethodCount"})
     static final class FirstComponentDecorator implements InternalIndex {
 
         // See CompositeValue docs for more details on what is going on in the
@@ -171,12 +175,15 @@ public class AttributeIndexRegistry {
         final InternalIndex delegate;
 
         private final int width;
+        private final String[] components;
 
-        public FirstComponentDecorator(InternalIndex delegate) {
-            assert delegate.getComponents() != null;
+        FirstComponentDecorator(InternalIndex delegate) {
+            assert delegate.getComponents().length > 1;
             assert delegate.isOrdered();
             this.delegate = delegate;
             this.width = delegate.getComponents().length;
+
+            components = new String[]{delegate.getComponents()[0]};
         }
 
         @Override
@@ -186,7 +193,12 @@ public class AttributeIndexRegistry {
 
         @Override
         public String[] getComponents() {
-            return null;
+            return components;
+        }
+
+        @Override
+        public IndexConfig getConfig() {
+            throw newUnsupportedException();
         }
 
         @Override
@@ -201,13 +213,85 @@ public class AttributeIndexRegistry {
         }
 
         @Override
-        public void putEntry(QueryableEntry entry, Object oldValue, OperationSource operationSource) {
+        public void putEntry(CachedQueryEntry newEntry, CachedQueryEntry oldEntry, QueryableEntry entryToStore,
+                             OperationSource operationSource) {
             throw newUnsupportedException();
         }
 
         @Override
-        public void removeEntry(Data key, Object value, OperationSource operationSource) {
+        public void removeEntry(CachedQueryEntry entry, OperationSource operationSource) {
             throw newUnsupportedException();
+        }
+
+        @Override
+        public boolean isEvaluateOnly() {
+            return delegate.isEvaluateOnly();
+        }
+
+        @Override
+        public boolean canEvaluate(Class<? extends Predicate> predicateClass) {
+            return delegate.canEvaluate(predicateClass);
+        }
+
+        @Override
+        public Set<QueryableEntry> evaluate(Predicate predicate) {
+            return delegate.evaluate(predicate);
+        }
+
+        @Override
+        public Iterator<QueryableEntry> getSqlRecordIterator(boolean descending) {
+            throw new UnsupportedOperationException("Should not be called");
+        }
+
+        @Override
+        public Iterator<QueryableEntry> getSqlRecordIterator(Comparable value) {
+            throw new UnsupportedOperationException("Should not be called");
+        }
+
+        @Override
+        public Iterator<QueryableEntry> getSqlRecordIterator(Comparison comparison, Comparable value, boolean descending) {
+            throw new UnsupportedOperationException("Should not be called");
+        }
+
+        @Override
+        public Iterator<QueryableEntry> getSqlRecordIterator(
+            Comparable from,
+            boolean fromInclusive,
+            Comparable to,
+            boolean toInclusive,
+            boolean descending
+        ) {
+            throw new UnsupportedOperationException("Should not be called");
+        }
+
+        @Override
+        public Iterator<IndexKeyEntries> getSqlRecordIteratorBatch(Comparable value) {
+            throw new UnsupportedOperationException("Should not be called");
+        }
+
+        @Override
+        public Iterator<IndexKeyEntries> getSqlRecordIteratorBatch(boolean descending) {
+            throw new UnsupportedOperationException("Should not be called");
+        }
+
+        @Override
+        public Iterator<IndexKeyEntries> getSqlRecordIteratorBatch(
+                Comparison comparison,
+                Comparable value,
+                boolean descending
+        ) {
+            throw new UnsupportedOperationException("Should not be called");
+        }
+
+        @Override
+        public Iterator<IndexKeyEntries> getSqlRecordIteratorBatch(
+                Comparable from,
+                boolean fromInclusive,
+                Comparable to,
+                boolean toInclusive,
+                boolean descending
+        ) {
+            throw new UnsupportedOperationException("Should not be called");
         }
 
         @Override
@@ -233,7 +317,7 @@ public class AttributeIndexRegistry {
                 return getRecords(values[0]);
             }
 
-            Set<Comparable> convertedValues = new HashSet<Comparable>();
+            Set<Comparable> convertedValues = new HashSet<>();
             for (Comparable value : values) {
                 Comparable converted = converter.convert(value);
                 convertedValues.add(canonicalizeQueryArgumentScalar(converted));
@@ -243,7 +327,7 @@ public class AttributeIndexRegistry {
                 return getRecords(convertedValues.iterator().next());
             }
 
-            Set<QueryableEntry> result = new HashSet<QueryableEntry>();
+            Set<QueryableEntry> result = new HashSet<>();
             for (Comparable value : convertedValues) {
                 result.addAll(getRecords(value));
             }
@@ -261,11 +345,6 @@ public class AttributeIndexRegistry {
         @Override
         public Set<QueryableEntry> getRecords(Comparison comparison, Comparable value) {
             switch (comparison) {
-                case NOT_EQUAL:
-                    Set<QueryableEntry> result = new HashSet<QueryableEntry>();
-                    result.addAll(delegate.getRecords(LESS, new CompositeValue(width, value, NEGATIVE_INFINITY)));
-                    result.addAll(delegate.getRecords(GREATER, new CompositeValue(width, value, POSITIVE_INFINITY)));
-                    return result;
                 case LESS:
                     CompositeValue lessFrom = new CompositeValue(width, NULL, POSITIVE_INFINITY);
                     CompositeValue lessTo = new CompositeValue(width, value, NEGATIVE_INFINITY);
@@ -304,6 +383,16 @@ public class AttributeIndexRegistry {
         }
 
         @Override
+        public boolean allPartitionsIndexed(int ownedPartitionCount) {
+            return delegate.allPartitionsIndexed(ownedPartitionCount);
+        }
+
+        @Override
+        public void beginPartitionUpdate() {
+            throw newUnsupportedException();
+        }
+
+        @Override
         public void markPartitionAsIndexed(int partitionId) {
             throw newUnsupportedException();
         }
@@ -316,6 +405,16 @@ public class AttributeIndexRegistry {
         @Override
         public PerIndexStats getPerIndexStats() {
             return delegate.getPerIndexStats();
+        }
+
+        @Override
+        public PartitionStamp getPartitionStamp() {
+            throw newUnsupportedException();
+        }
+
+        @Override
+        public boolean validatePartitionStamp(long stamp) {
+            throw newUnsupportedException();
         }
 
         private RuntimeException newUnsupportedException() {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,13 +22,15 @@ import com.hazelcast.config.InMemoryFormat;
 import com.hazelcast.config.MetadataPolicy;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastJsonValue;
-import com.hazelcast.core.IMap;
 import com.hazelcast.internal.json.Json;
+import com.hazelcast.internal.json.JsonArray;
 import com.hazelcast.internal.json.JsonObject;
-import com.hazelcast.test.HazelcastParametersRunnerFactory;
+import com.hazelcast.map.IMap;
+import com.hazelcast.test.HazelcastParallelParametersRunnerFactory;
+import com.hazelcast.test.HazelcastParametrizedRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -43,10 +45,11 @@ import java.util.Map;
 
 import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 
-@RunWith(Parameterized.class)
-@UseParametersRunnerFactory(HazelcastParametersRunnerFactory.class)
-@Category({QuickTest.class, ParallelTest.class})
+@RunWith(HazelcastParametrizedRunner.class)
+@UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class MapAggregationJsonTest extends HazelcastTestSupport {
 
     public static final int OBJECT_COUNT = 1000;
@@ -63,7 +66,7 @@ public class MapAggregationJsonTest extends HazelcastTestSupport {
 
     @Parameterized.Parameters(name = "inMemoryFormat: {0}, metadataPolicy: {1}")
     public static Collection<Object[]> parameters() {
-        return asList(new Object[][] {
+        return asList(new Object[][]{
                 {InMemoryFormat.BINARY, MetadataPolicy.OFF},
                 {InMemoryFormat.BINARY, MetadataPolicy.CREATE_ON_UPDATE},
                 {InMemoryFormat.OBJECT, MetadataPolicy.OFF},
@@ -104,7 +107,7 @@ public class MapAggregationJsonTest extends HazelcastTestSupport {
     @Test
     public void testStringField() {
         IMap<Integer, HazelcastJsonValue> map = getPreloadedMap();
-        String maxStringValue = map.aggregate(Aggregators.<Map.Entry<Integer, HazelcastJsonValue>, String>comparableMax("stringValue"));
+        String maxStringValue = map.aggregate(Aggregators.comparableMax("stringValue"));
         assertEquals(STRING_PREFIX + "999", maxStringValue);
     }
 
@@ -192,8 +195,79 @@ public class MapAggregationJsonTest extends HazelcastTestSupport {
         return new HazelcastJsonValue(createJsonString(stringValue, longValue, doubleValue, nestedLongValue));
     }
 
+    @Test
+    public void testArrayWithNestedField() {
+        IMap<Integer, HazelcastJsonValue> map = getPreloadedMap();
+        long maxLongValue = map.aggregate(Aggregators.longMax(
+                "nestedArray[any].nestedArrayObject.secondary.nestedObjectLongValue"));
+        assertEquals((OBJECT_COUNT - 1) * 10, maxLongValue);
+    }
+
+    @Test
+    public void testArrayWithNestedField_when_field_nonexist() {
+        IMap<Integer, HazelcastJsonValue> map = getPreloadedMap();
+        Long maxLongValue = map.aggregate(Aggregators.longMax(
+                "nestedArray[any].nestedArrayObject.secondary.nestedObjectLongValue.nonExistant"));
+        assertNull(maxLongValue);
+    }
+
+    @Test
+    public void testArrayWithNestedField_when_last_field_array() {
+        IMap<Integer, HazelcastJsonValue> map = getPreloadedMap();
+        Long maxLongValue = map.aggregate(Aggregators.longMax(
+                "nestedArray[any].nestedArrayObject.secondary"));
+        assertNull(maxLongValue);
+    }
+
+    @Test
+    public void testArrayWithNestedField_when_field_name_is_wrongly_written() {
+        IMap<Integer, HazelcastJsonValue> map = getPreloadedMap();
+        Long maxLongValue = map.aggregate(Aggregators.longMax("nestedArray[any].nestedArrayObject.secondary.xnestedObjectLongValue"));
+        assertNull(maxLongValue);
+    }
+
+    @Test
+    public void test_nested_json() {
+        IMap<Integer, HazelcastJsonValue> map = instance.getMap(randomMapName());
+        map.put(1, new HazelcastJsonValue(nestedJsonString()));
+        Long sum = map.aggregate(Aggregators.longSum("list[any].secondLevelItem.thirdLevelItem"));
+
+        assertEquals(6L, sum.longValue());
+    }
+
+    private static String nestedJsonString() {
+        return "{\n"
+                + "  \"list\": [\n"
+                + "    {\n"
+                + "      \"secondLevelItem\": {\n"
+                + "        \"thirdLevelItem\": 1\n"
+                + "      }\n"
+                + "    },\n"
+                + "    {\n"
+                + "      \"secondLevelItem\": {\n"
+                + "        \"thirdLevelItem\": 2\n"
+                + "      }\n"
+                + "    },\n"
+                + "    {\n"
+                + "      \"secondLevelItem\": {\n"
+                + "        \"thirdLevelItem\": 3\n"
+                + "      }\n"
+                + "    }\n"
+                + "  ]\n"
+                + "}";
+    }
+
     private String createJsonString(String stringValue, long longValue, double doubleValue, long nestedLongValue) {
         JsonObject object = Json.object();
+
+        JsonArray array = new JsonArray();
+        array.add(Json.object().add("nestedArrayObject",
+                Json.object().add("secondary",
+                        Json.object().add("nestedObjectLongValue", nestedLongValue))));
+
+
+        object.add("nestedArray", array);
+
         object.add("stringValue", stringValue)
                 .add("longValue", longValue)
                 .add("doubleValue", doubleValue)

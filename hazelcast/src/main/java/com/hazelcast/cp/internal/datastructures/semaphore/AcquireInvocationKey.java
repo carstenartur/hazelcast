@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.hazelcast.cp.internal.datastructures.semaphore;
 
 import com.hazelcast.cp.internal.datastructures.spi.blocking.WaitKey;
-import com.hazelcast.nio.Address;
+import com.hazelcast.cluster.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
@@ -25,8 +25,8 @@ import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import java.io.IOException;
 import java.util.UUID;
 
-import static com.hazelcast.util.Preconditions.checkNotNull;
-import static com.hazelcast.util.Preconditions.checkTrue;
+import static com.hazelcast.internal.util.Preconditions.checkNotNull;
+import static com.hazelcast.internal.util.Preconditions.checkTrue;
 
 /**
  * Represents acquire() invocation of a semaphore endpoint.
@@ -72,12 +72,12 @@ public class AcquireInvocationKey extends WaitKey implements IdentifiedDataSeria
 
     @Override
     public int getFactoryId() {
-        return RaftSemaphoreDataSerializerHook.F_ID;
+        return SemaphoreDataSerializerHook.F_ID;
     }
 
     @Override
-    public int getId() {
-        return RaftSemaphoreDataSerializerHook.ACQUIRE_INVOCATION_KEY;
+    public int getClassId() {
+        return SemaphoreDataSerializerHook.ACQUIRE_INVOCATION_KEY;
     }
 
     @Override

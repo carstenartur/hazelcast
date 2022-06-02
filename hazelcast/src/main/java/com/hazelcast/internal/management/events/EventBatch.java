@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import java.util.List;
 
 /**
  * Batch of events to be sent to Management Center.
- * <p/>
+ * <p>
  * Contains the cluster name, member address and list of events ordered by their occurrence time.
  * Serialized as JSON for sending to Management Center.
  */

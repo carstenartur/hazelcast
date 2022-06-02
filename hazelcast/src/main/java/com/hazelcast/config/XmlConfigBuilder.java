@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,18 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.internal.config.ConfigSections;
+import com.hazelcast.internal.config.MemberDomConfigProcessor;
+import com.hazelcast.internal.config.XmlConfigLocator;
+import com.hazelcast.internal.nio.IOUtil;
+import com.hazelcast.internal.util.ExceptionUtil;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
-import com.hazelcast.nio.IOUtil;
-import com.hazelcast.util.ExceptionUtil;
+import com.hazelcast.spi.annotation.PrivateApi;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 
 import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -33,13 +36,16 @@ import java.io.InputStream;
 import java.net.URL;
 import java.util.Properties;
 
-import static com.hazelcast.instance.BuildInfoProvider.HAZELCAST_INTERNAL_OVERRIDE_VERSION;
-import static com.hazelcast.util.Preconditions.checkNotNull;
-import static com.hazelcast.util.Preconditions.checkTrue;
-import static com.hazelcast.util.StringUtil.LINE_SEPARATOR;
+import static com.hazelcast.internal.util.Preconditions.checkNotNull;
+import static com.hazelcast.internal.util.Preconditions.checkTrue;
+import static com.hazelcast.internal.util.StringUtil.LINE_SEPARATOR;
+import static com.hazelcast.internal.util.XmlUtil.getNsAwareDocumentBuilderFactory;
 
 /**
  * A XML {@link ConfigBuilder} implementation.
+ * <p>
+ * Unlike {@link Config#load()} and its variants, a configuration constructed via
+ * {@code XmlConfigBuilder} does not apply overrides found in environment variables/system properties.
  */
 public class XmlConfigBuilder extends AbstractXmlConfigBuilder implements ConfigBuilder {
 
@@ -94,11 +100,11 @@ public class XmlConfigBuilder extends AbstractXmlConfigBuilder implements Config
     /**
      * Constructs a {@link XmlConfigBuilder} that loads the configuration
      * with the provided {@link XmlConfigLocator}.
-     * <p/>
+     * <p>
      * If the provided {@link XmlConfigLocator} is {@code null}, a new
      * instance is created and the config is located in every possible
      * places. For these places, please see {@link XmlConfigLocator}.
-     * <p/>
+     * <p>
      * If the provided {@link XmlConfigLocator} is not {@code null}, it
      * is expected that it already located the configuration XML to load
      * from. No further attempt to locate the configuration XML is made
@@ -106,6 +112,7 @@ public class XmlConfigBuilder extends AbstractXmlConfigBuilder implements Config
      *
      * @param locator the configured locator to use
      */
+    @PrivateApi
     public XmlConfigBuilder(XmlConfigLocator locator) {
         if (locator == null) {
             locator = new XmlConfigLocator();
@@ -169,24 +176,15 @@ public class XmlConfigBuilder extends AbstractXmlConfigBuilder implements Config
 
     private void checkRootElement(Element root) {
         String rootNodeName = root.getNodeName();
-        if (!ConfigSections.HAZELCAST.isEqual(rootNodeName)) {
+        if (!ConfigSections.HAZELCAST.getName().equals(rootNodeName)) {
             throw new InvalidConfigurationException("Invalid root element in xml configuration!"
-                    + " Expected: <" + ConfigSections.HAZELCAST.name + ">, Actual: <" + rootNodeName + ">.");
+                    + " Expected: <" + ConfigSections.HAZELCAST.getName() + ">, Actual: <" + rootNodeName + ">.");
         }
-    }
-
-    private boolean shouldValidateTheSchema() {
-        // in case of overridden Hazelcast version there may be no schema with that version
-        // (this feature is used only in Simulator testing)
-        return System.getProperty(HAZELCAST_INTERNAL_OVERRIDE_VERSION) == null;
     }
 
     @Override
     protected Document parse(InputStream is) throws Exception {
-        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-        dbf.setNamespaceAware(true);
-        dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-        DocumentBuilder builder = dbf.newDocumentBuilder();
+        DocumentBuilder builder = getNsAwareDocumentBuilderFactory().newDocumentBuilder();
         Document doc;
         try {
             doc = builder.parse(is);

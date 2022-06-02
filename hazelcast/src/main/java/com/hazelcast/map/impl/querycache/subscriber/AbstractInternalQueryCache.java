@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,37 +17,49 @@
 package com.hazelcast.map.impl.querycache.subscriber;
 
 import com.hazelcast.config.EvictionConfig;
-import com.hazelcast.config.MapIndexConfig;
+import com.hazelcast.config.InMemoryFormat;
+import com.hazelcast.config.IndexConfig;
+import com.hazelcast.config.MaxSizePolicy;
 import com.hazelcast.config.QueryCacheConfig;
-import com.hazelcast.core.IMap;
-import com.hazelcast.core.PartitioningStrategy;
 import com.hazelcast.internal.eviction.EvictionListener;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.internal.serialization.InternalSerializationService;
-import com.hazelcast.map.impl.LazyMapEntry;
+import com.hazelcast.map.IMap;
 import com.hazelcast.map.impl.proxy.MapProxyImpl;
 import com.hazelcast.map.impl.querycache.QueryCacheContext;
 import com.hazelcast.map.impl.querycache.QueryCacheEventService;
 import com.hazelcast.map.impl.querycache.subscriber.record.QueryCacheRecord;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.partition.PartitioningStrategy;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.impl.CachedQueryEntry;
+import com.hazelcast.query.impl.IndexUtils;
 import com.hazelcast.query.impl.Indexes;
+import com.hazelcast.query.impl.QueryableEntry;
 import com.hazelcast.query.impl.getters.Extractors;
+import com.hazelcast.query.impl.predicates.TruePredicate;
+import com.hazelcast.spi.impl.UnmodifiableLazySet;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.function.BiConsumer;
 
 import static com.hazelcast.core.EntryEventType.EVICTED;
 import static com.hazelcast.query.impl.IndexCopyBehavior.COPY_ON_READ;
+import static com.hazelcast.query.impl.Indexes.SKIP_PARTITIONS_COUNT_CHECK;
+import static java.util.Objects.requireNonNull;
 
 /**
- * Contains helper methods for {@link InternalQueryCache} main implementation.
+ * Contains helper methods for {@link
+ * InternalQueryCache} main implementation.
  *
  * @param <K> the key type for this {@link InternalQueryCache}
  * @param <V> the value type for this {@link InternalQueryCache}
  */
 abstract class AbstractInternalQueryCache<K, V> implements InternalQueryCache<K, V> {
+
     protected final boolean includeValue;
     protected final String mapName;
     protected final String cacheId;
@@ -58,34 +70,41 @@ abstract class AbstractInternalQueryCache<K, V> implements InternalQueryCache<K,
     protected final QueryCacheConfig queryCacheConfig;
     protected final QueryCacheRecordStore recordStore;
     protected final PartitioningStrategy partitioningStrategy;
-    protected final InternalSerializationService serializationService;
+    protected final InternalSerializationService ss;
     protected final Extractors extractors;
     /**
      * ID of registered listener on publisher side.
      */
-    protected volatile String publisherListenerId;
+    protected volatile UUID publisherListenerId;
 
-    public AbstractInternalQueryCache(String cacheId, String cacheName, QueryCacheConfig queryCacheConfig,
-                                      IMap delegate, QueryCacheContext context) {
+    AbstractInternalQueryCache(String cacheId, String cacheName, QueryCacheConfig queryCacheConfig,
+                               IMap delegate, QueryCacheContext context) {
         this.cacheId = cacheId;
         this.cacheName = cacheName;
         this.queryCacheConfig = queryCacheConfig;
         this.mapName = delegate.getName();
         this.delegate = delegate;
         this.context = context;
-        this.serializationService = context.getSerializationService();
+        this.ss = context.getSerializationService();
         // We are not using injected index provider since we're not supporting off-heap indexes in CQC due
         // to threading incompatibility. If we injected the IndexProvider from the MapServiceContext
         // the EE side would create HD indexes which is undesired.
-        this.indexes = Indexes.newBuilder(serializationService, COPY_ON_READ).build();
+        this.indexes = Indexes.newBuilder(ss, COPY_ON_READ, queryCacheConfig.getInMemoryFormat())
+                .partitionCount(context.getPartitionCount())
+                .build();
+
         this.includeValue = isIncludeValue();
         this.partitioningStrategy = getPartitioningStrategy();
-        this.extractors = Extractors.newBuilder(serializationService).build();
-        this.recordStore = new DefaultQueryCacheRecordStore(serializationService, indexes,
+        this.extractors = Extractors.newBuilder(ss).build();
+        this.recordStore = new DefaultQueryCacheRecordStore(ss, indexes,
                 queryCacheConfig, getEvictionListener(), extractors);
 
-        for (MapIndexConfig indexConfig : queryCacheConfig.getIndexConfigs()) {
-            indexes.addOrGetIndex(indexConfig.getAttribute(), indexConfig.isOrdered());
+        assert indexes.isGlobal();
+
+        for (IndexConfig indexConfig : queryCacheConfig.getIndexConfigs()) {
+            IndexConfig indexConfig0 = getNormalizedIndexConfig(indexConfig);
+
+            indexes.addOrGetIndex(indexConfig0);
         }
     }
 
@@ -94,13 +113,13 @@ abstract class AbstractInternalQueryCache<K, V> implements InternalQueryCache<K,
     }
 
     @Override
-    public String getPublisherListenerId() {
+    public UUID getPublisherListenerId() {
         return publisherListenerId;
     }
 
     @Override
-    public void setPublisherListenerId(String publisherListenerId) {
-        this.publisherListenerId = publisherListenerId;
+    public void setPublisherListenerId(UUID publisherListenerId) {
+        this.publisherListenerId = requireNonNull(publisherListenerId, "publisherListenerId cannot be null");
     }
 
     @Override
@@ -115,19 +134,15 @@ abstract class AbstractInternalQueryCache<K, V> implements InternalQueryCache<K,
     @Override
     public boolean reachedMaxCapacity() {
         EvictionConfig evictionConfig = queryCacheConfig.getEvictionConfig();
-        EvictionConfig.MaxSizePolicy maximumSizePolicy = evictionConfig.getMaximumSizePolicy();
-        return maximumSizePolicy == EvictionConfig.MaxSizePolicy.ENTRY_COUNT
+        MaxSizePolicy maximumSizePolicy = evictionConfig.getMaxSizePolicy();
+        return maximumSizePolicy == MaxSizePolicy.ENTRY_COUNT
                 && size() == evictionConfig.getSize();
     }
 
     private EvictionListener getEvictionListener() {
-        return new EvictionListener<Data, QueryCacheRecord>() {
-            @Override
-            public void onEvict(Data dataKey, QueryCacheRecord record, boolean wasExpired) {
-                EventPublisherHelper.publishEntryEvent(context, mapName, cacheId,
-                        dataKey, null, record, EVICTED, extractors);
-            }
-        };
+        return (EvictionListener<Object, QueryCacheRecord>) (queryCacheKey, record, wasExpired)
+                -> EventPublisherHelper.publishEntryEvent(context, mapName, cacheId,
+                queryCacheKey, null, record, EVICTED, extractors);
     }
 
     PartitioningStrategy getPartitioningStrategy() {
@@ -137,61 +152,125 @@ abstract class AbstractInternalQueryCache<K, V> implements InternalQueryCache<K,
         return null;
     }
 
-    protected void doFullKeyScan(Predicate predicate, Set<K> resultingSet) {
-        InternalSerializationService serializationService = this.serializationService;
+    protected Set scanAndGetResult(Predicate predicate, ResultType resultType) {
+        ResulCollector resulCollector = new ResulCollector(resultType);
 
-        CachedQueryEntry queryEntry = new CachedQueryEntry();
-        Set<Map.Entry<Data, QueryCacheRecord>> entries = recordStore.entrySet();
-        for (Map.Entry<Data, QueryCacheRecord> entry : entries) {
-            Data keyData = entry.getKey();
-            QueryCacheRecord record = entry.getValue();
-            Object value = record.getValue();
+        // 1. Optimization when predicate is true-predicate,
+        // in this case no need to scan indexes.
+        if (predicate == TruePredicate.INSTANCE) {
+            doFullScan(predicate, resulCollector);
+            return toImmutableLazySet(resulCollector.getResult());
+        }
 
-            queryEntry.init(serializationService, keyData, value, extractors);
+        // 2. Try to query over indexes
+        if (tryQueryOverIndexes(predicate, resulCollector)) {
+            return toImmutableLazySet(resulCollector.getResult());
+        }
 
-            boolean valid = predicate.apply(queryEntry);
-            if (valid) {
-                resultingSet.add((K) queryEntry.getKey());
+        // 3. If query can't be performed over indexes, scan full data set.
+        doFullScan(predicate, resulCollector);
+        return toImmutableLazySet(resulCollector.getResult());
+    }
+
+    private Set toImmutableLazySet(List resultSet) {
+        return new UnmodifiableLazySet(resultSet, ss);
+    }
+
+    /**
+     * Type of element that we expect to
+     * see in the resulting collection.
+     */
+    enum ResultType {
+        KEY, VALUE, ENTRY
+    }
+
+    private final class ResulCollector implements BiConsumer {
+
+        private final ResultType resultType;
+        private final List result = new ArrayList();
+
+        private ResulCollector(ResultType resultType) {
+            this.resultType = resultType;
+        }
+
+        @Override
+        public void accept(Object key, Object value) {
+            switch (resultType) {
+                case KEY:
+                    result.add(key);
+                    break;
+                case VALUE:
+                    result.add(value);
+                    break;
+                case ENTRY:
+                    result.add(new CachedQueryEntry<>(ss, key, value, extractors));
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unexpected type: " + resultType);
             }
+        }
+
+        public List getResult() {
+            return result;
         }
     }
 
-    protected void doFullEntryScan(Predicate predicate, Set<Map.Entry<K, V>> resultingSet) {
-        InternalSerializationService serializationService = this.serializationService;
+    private boolean tryQueryOverIndexes(Predicate predicate, BiConsumer biConsumer) {
+        Iterable<QueryableEntry> query = indexes.query(predicate, SKIP_PARTITIONS_COUNT_CHECK);
+        if (query == null) {
+            return false;
+        }
 
-        CachedQueryEntry queryEntry = new CachedQueryEntry();
-        Set<Map.Entry<Data, QueryCacheRecord>> entries = recordStore.entrySet();
-        for (Map.Entry<Data, QueryCacheRecord> entry : entries) {
-            Data keyData = entry.getKey();
-            QueryCacheRecord record = entry.getValue();
-            Object value = record.getValue();
-            queryEntry.init(serializationService, keyData, value, extractors);
+        for (QueryableEntry entry : query) {
+            biConsumer.accept(entry.getKeyData(), entry.getValueData());
+        }
+        return true;
+    }
 
-            boolean valid = predicate.apply(queryEntry);
-            if (valid) {
-                Map.Entry simpleEntry = new LazyMapEntry(queryEntry.getKeyData(), queryEntry.getValueData(),
-                        serializationService);
-                resultingSet.add(simpleEntry);
-            }
+    private void doFullScan(Predicate predicate, BiConsumer biConsumer) {
+        if (predicate == TruePredicate.INSTANCE) {
+            dumpAll(biConsumer);
+            return;
+        }
+
+        scanWithPredicate(predicate, biConsumer);
+    }
+
+    /**
+     * Add all key-value pairs to result.
+     */
+    private void dumpAll(BiConsumer consumer) {
+        Set<Map.Entry<Object, QueryCacheRecord>> entries = recordStore.entrySet();
+        for (Map.Entry<Object, QueryCacheRecord> entry : entries) {
+            consumer.accept(entry.getKey(), entry.getValue().getRawValue());
         }
     }
 
-    protected void doFullValueScan(Predicate predicate, List<Data> resultingSet) {
-        InternalSerializationService serializationService = this.serializationService;
+    /**
+     * Scan all key-value pairs and add matching ones with predicate to result.
+     */
+    private void scanWithPredicate(Predicate predicate, BiConsumer consumer) {
+        // needed for optimization where key and value are not an instance of Data type
+        final boolean areKeyValueObjectType = !queryCacheConfig.isSerializeKeys()
+                && InMemoryFormat.OBJECT == queryCacheConfig.getInMemoryFormat();
 
-        CachedQueryEntry queryEntry = new CachedQueryEntry();
-        Set<Map.Entry<Data, QueryCacheRecord>> entries = recordStore.entrySet();
-        for (Map.Entry<Data, QueryCacheRecord> entry : entries) {
-            Data keyData = entry.getKey();
-            QueryCacheRecord record = entry.getValue();
-            Object value = record.getValue();
+        CachedQueryEntry queryEntry = new CachedQueryEntry(ss, extractors);
+        Set<Map.Entry<Object, QueryCacheRecord>> entries = recordStore.entrySet();
+        for (Map.Entry<Object, QueryCacheRecord> entry : entries) {
+            Object queryCacheKey = entry.getKey();
+            Object rawValue = entry.getValue().getRawValue();
 
-            queryEntry.init(serializationService, keyData, value, extractors);
-
-            boolean valid = predicate.apply(queryEntry);
-            if (valid) {
-                resultingSet.add(queryEntry.getValueData());
+            if (areKeyValueObjectType) {
+                queryEntry.initWithObjectKeyValue(queryCacheKey, rawValue);
+            } else {
+                queryEntry.init(queryCacheKey, rawValue);
             }
+
+            if (!predicate.apply(queryEntry)) {
+                continue;
+            }
+
+            consumer.accept(queryCacheKey, queryEntry.getByPrioritizingObjectValue());
         }
     }
 
@@ -205,11 +284,11 @@ abstract class AbstractInternalQueryCache<K, V> implements InternalQueryCache<K,
     }
 
     protected <T> T toObject(Object valueInRecord) {
-        return serializationService.toObject(valueInRecord);
+        return ss.toObject(valueInRecord);
     }
 
     protected Data toData(Object key) {
-        return serializationService.toData(key, partitioningStrategy);
+        return ss.toData(key, partitioningStrategy);
     }
 
     @Override
@@ -219,7 +298,13 @@ abstract class AbstractInternalQueryCache<K, V> implements InternalQueryCache<K,
 
     @Override
     public void clear() {
-        recordStore.clear();
         indexes.destroyIndexes();
+        recordStore.clear();
+    }
+
+    protected IndexConfig getNormalizedIndexConfig(IndexConfig originalConfig) {
+        String name = delegate.getName() + "_" + cacheName;
+
+        return IndexUtils.validateAndNormalize(name, originalConfig);
     }
 }

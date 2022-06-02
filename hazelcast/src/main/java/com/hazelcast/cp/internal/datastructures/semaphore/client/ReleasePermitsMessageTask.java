@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,15 +17,13 @@
 package com.hazelcast.cp.internal.datastructures.semaphore.client;
 
 import com.hazelcast.client.impl.protocol.ClientMessage;
-import com.hazelcast.client.impl.protocol.codec.CPSemaphoreReleaseCodec;
-import com.hazelcast.client.impl.protocol.task.AbstractMessageTask;
-import com.hazelcast.core.ExecutionCallback;
+import com.hazelcast.client.impl.protocol.codec.SemaphoreReleaseCodec;
 import com.hazelcast.cp.internal.RaftOp;
-import com.hazelcast.cp.internal.RaftService;
-import com.hazelcast.cp.internal.datastructures.semaphore.RaftSemaphoreService;
+import com.hazelcast.cp.internal.client.AbstractCPMessageTask;
+import com.hazelcast.cp.internal.datastructures.semaphore.SemaphoreService;
 import com.hazelcast.cp.internal.datastructures.semaphore.operation.ReleasePermitsOp;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
 import com.hazelcast.security.permission.ActionConstants;
 import com.hazelcast.security.permission.SemaphorePermission;
 
@@ -34,8 +32,7 @@ import java.security.Permission;
 /**
  * Client message task for {@link ReleasePermitsOp}
  */
-public class ReleasePermitsMessageTask extends AbstractMessageTask<CPSemaphoreReleaseCodec.RequestParameters>
-        implements ExecutionCallback<Boolean> {
+public class ReleasePermitsMessageTask extends AbstractCPMessageTask<SemaphoreReleaseCodec.RequestParameters> {
 
     public ReleasePermitsMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -43,27 +40,24 @@ public class ReleasePermitsMessageTask extends AbstractMessageTask<CPSemaphoreRe
 
     @Override
     protected void processMessage() {
-        RaftService service = nodeEngine.getService(RaftService.SERVICE_NAME);
         RaftOp op = new ReleasePermitsOp(parameters.name, parameters.sessionId, parameters.threadId, parameters.invocationUid,
                 parameters.permits);
-        service.getInvocationManager()
-               .<Boolean>invoke(parameters.groupId, op)
-               .andThen(this);
+        invoke(parameters.groupId, op);
     }
 
     @Override
-    protected CPSemaphoreReleaseCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
-        return CPSemaphoreReleaseCodec.decodeRequest(clientMessage);
+    protected SemaphoreReleaseCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+        return SemaphoreReleaseCodec.decodeRequest(clientMessage);
     }
 
     @Override
     protected ClientMessage encodeResponse(Object response) {
-        return CPSemaphoreReleaseCodec.encodeResponse((Boolean) response);
+        return SemaphoreReleaseCodec.encodeResponse((Boolean) response);
     }
 
     @Override
     public String getServiceName() {
-        return RaftSemaphoreService.SERVICE_NAME;
+        return SemaphoreService.SERVICE_NAME;
     }
 
     @Override
@@ -84,15 +78,5 @@ public class ReleasePermitsMessageTask extends AbstractMessageTask<CPSemaphoreRe
     @Override
     public Object[] getParameters() {
         return new Object[]{parameters.permits};
-    }
-
-    @Override
-    public void onResponse(Boolean response) {
-        sendResponse(response);
-    }
-
-    @Override
-    public void onFailure(Throwable t) {
-        handleProcessingFailure(t);
     }
 }

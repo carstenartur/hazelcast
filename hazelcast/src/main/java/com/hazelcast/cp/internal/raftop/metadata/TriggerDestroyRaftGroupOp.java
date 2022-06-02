@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import java.io.IOException;
 
 /**
  * Initiates the destroy process for the given Raft group.
- * <p/>
+ * <p>
  * This operation is committed to the Metadata group.
  */
 public class TriggerDestroyRaftGroupOp extends MetadataRaftGroupOp implements IndeterminateOperationStateAware,
@@ -61,7 +61,7 @@ public class TriggerDestroyRaftGroupOp extends MetadataRaftGroupOp implements In
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftServiceDataSerializerHook.TRIGGER_DESTROY_RAFT_GROUP_OP;
     }
 

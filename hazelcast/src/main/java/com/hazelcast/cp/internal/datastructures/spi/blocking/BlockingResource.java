@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ public abstract class BlockingResource<W extends WaitKey> implements DataSeriali
     private CPGroupId groupId;
     private String name;
     // Should be an insertion ordered map to ensure fairness
-    private final Map<Object, WaitKeyContainer<W>> waitKeys = new LinkedHashMap<Object, WaitKeyContainer<W>>();
+    private final Map<Object, WaitKeyContainer<W>> waitKeys = new LinkedHashMap<>();
 
     protected BlockingResource() {
     }
@@ -85,7 +85,7 @@ public abstract class BlockingResource<W extends WaitKey> implements DataSeriali
         if (container != null) {
             container.addRetry(waitKey);
         } else {
-            waitKeys.put(waitKeyId, new WaitKeyContainer<W>(waitKey));
+            waitKeys.put(waitKeyId, new WaitKeyContainer<>(waitKey));
         }
     }
 
@@ -98,7 +98,7 @@ public abstract class BlockingResource<W extends WaitKey> implements DataSeriali
     }
 
     protected final Collection<W> getAllWaitKeys() {
-        List<W> all = new ArrayList<W>(waitKeys.size());
+        List<W> all = new ArrayList<>(waitKeys.size());
         for (WaitKeyContainer<W> container : waitKeys.values()) {
             all.addAll(container.keyAndRetries());
         }
@@ -111,12 +111,15 @@ public abstract class BlockingResource<W extends WaitKey> implements DataSeriali
         while (iter.hasNext()) {
             WaitKeyContainer<W> container = iter.next();
             if (container.invocationUid().equals(invocationUid)) {
-                expired.add(container.key());
-                expired.addAll(container.retries());
+                expired.addAll(container.keyAndRetries());
                 iter.remove();
+                onWaitKeyExpire(container.key());
                 return;
             }
         }
+    }
+
+    protected void onWaitKeyExpire(W waitKey) {
     }
 
     protected final Iterator<WaitKeyContainer<W>> waitKeyContainersIterator() {
@@ -132,8 +135,7 @@ public abstract class BlockingResource<W extends WaitKey> implements DataSeriali
         while (iter.hasNext()) {
             WaitKeyContainer<W> container = iter.next();
             if (container.sessionId() == sessionId) {
-                expiredWaitKeys.add(container.key().commitIndex());
-                for (W retry : container.retries()) {
+                for (W retry : container.keyAndRetries()) {
                     expiredWaitKeys.add(retry.commitIndex());
                 }
 
@@ -160,7 +162,7 @@ public abstract class BlockingResource<W extends WaitKey> implements DataSeriali
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
         out.writeObject(groupId);
-        out.writeUTF(name);
+        out.writeString(name);
         out.writeInt(waitKeys.size());
         for (Entry<Object, WaitKeyContainer<W>> e : waitKeys.entrySet()) {
             out.writeObject(e.getKey());
@@ -171,7 +173,7 @@ public abstract class BlockingResource<W extends WaitKey> implements DataSeriali
     @Override
     public void readData(ObjectDataInput in) throws IOException {
         groupId = in.readObject();
-        name = in.readUTF();
+        name = in.readString();
         int count = in.readInt();
         for (int i = 0; i < count; i++) {
             Object key = in.readObject();

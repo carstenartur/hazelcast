@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 
 package com.hazelcast.query.impl.predicates;
 
-import com.hazelcast.query.IndexAwarePredicate;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.impl.CompositeValue;
 import com.hazelcast.query.impl.Index;
@@ -36,7 +35,7 @@ import java.util.Set;
  * values.
  */
 @SuppressFBWarnings("SE_BAD_FIELD")
-public class CompositeEqualPredicate implements Predicate, IndexAwarePredicate {
+public class CompositeEqualPredicate implements IndexAwarePredicate {
 
     final String indexName;
     final String[] components;
@@ -83,6 +82,9 @@ public class CompositeEqualPredicate implements Predicate, IndexAwarePredicate {
     @Override
     public Set<QueryableEntry> filter(QueryContext queryContext) {
         Index index = queryContext.matchIndex(indexName, QueryContext.IndexMatchHint.EXACT_NAME);
+        if (index == null) {
+            return null;
+        }
         return index.getRecords(value);
     }
 

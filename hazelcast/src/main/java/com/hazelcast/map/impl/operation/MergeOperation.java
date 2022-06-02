@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,51 +16,66 @@
 
 package com.hazelcast.map.impl.operation;
 
+import com.hazelcast.config.InvalidConfigurationException;
+import com.hazelcast.internal.serialization.Data;
+import com.hazelcast.internal.util.Clock;
 import com.hazelcast.map.impl.MapDataSerializerHook;
-import com.hazelcast.map.impl.MapEntries;
 import com.hazelcast.map.impl.record.Record;
-import com.hazelcast.map.impl.record.RecordInfo;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.BackupAwareOperation;
-import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.PartitionAwareOperation;
+import com.hazelcast.query.impl.Indexes;
+import com.hazelcast.query.impl.InternalIndex;
+import com.hazelcast.spi.impl.operationservice.BackupAwareOperation;
+import com.hazelcast.spi.impl.operationservice.Operation;
+import com.hazelcast.spi.impl.operationservice.PartitionAwareOperation;
 import com.hazelcast.spi.merge.SplitBrainMergePolicy;
 import com.hazelcast.spi.merge.SplitBrainMergeTypes.MapMergeTypes;
 
+import javax.annotation.Nonnull;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.logging.Level;
 
 import static com.hazelcast.core.EntryEventType.MERGED;
-import static com.hazelcast.map.impl.record.Records.buildRecordInfo;
+import static com.hazelcast.internal.config.MergePolicyValidator.checkMapMergePolicy;
 
 /**
- * Contains multiple merge entries for split-brain healing with a {@link SplitBrainMergePolicy}.
+ * Contains multiple merge entries for split-brain
+ * healing with a {@link SplitBrainMergePolicy}.
  *
  * @since 3.10
  */
-public class MergeOperation extends MapOperation implements PartitionAwareOperation, BackupAwareOperation {
+public class MergeOperation extends MapOperation
+        implements PartitionAwareOperation, BackupAwareOperation {
 
-    private List<MapMergeTypes> mergingEntries;
-    private SplitBrainMergePolicy<Data, MapMergeTypes> mergePolicy;
+    private static final long MERGE_POLICY_CHECK_PERIOD = TimeUnit.MINUTES.toMillis(1);
 
+    private boolean disableWanReplicationEvent;
+    private List<MapMergeTypes<Object, Object>> mergingEntries;
+    private SplitBrainMergePolicy<Object, MapMergeTypes<Object, Object>, Object> mergePolicy;
+
+    private transient int currentIndex;
     private transient boolean hasMapListener;
     private transient boolean hasWanReplication;
     private transient boolean hasBackups;
     private transient boolean hasInvalidation;
 
-    private transient MapEntries mapEntries;
-    private transient List<RecordInfo> backupRecordInfos;
     private transient List<Data> invalidationKeys;
     private transient boolean hasMergedValues;
+
+    private List backupPairs;
 
     public MergeOperation() {
     }
 
-    MergeOperation(String name, List<MapMergeTypes> mergingEntries, SplitBrainMergePolicy<Data, MapMergeTypes> mergePolicy,
-                   boolean disableWanReplicationEvent) {
+    public MergeOperation(String name, List<MapMergeTypes<Object, Object>> mergingEntries,
+                          SplitBrainMergePolicy<Object, MapMergeTypes<Object, Object>, Object> mergePolicy,
+                          boolean disableWanReplicationEvent) {
         super(name);
         this.mergingEntries = mergingEntries;
         this.mergePolicy = mergePolicy;
@@ -68,49 +83,121 @@ public class MergeOperation extends MapOperation implements PartitionAwareOperat
     }
 
     @Override
-    public void run() {
+    protected boolean disableWanReplicationEvent() {
+        return disableWanReplicationEvent;
+    }
+
+    @Override
+    protected void runInternal() {
+        // Check once in a minute as earliest to avoid log bursts.
+        if (shouldCheckNow(mapContainer.getLastInvalidMergePolicyCheckTime())) {
+            try {
+                checkMapMergePolicy(mapContainer.getMapConfig(), mergePolicy.getClass().getName(),
+                        getNodeEngine().getSplitBrainMergePolicyProvider());
+            } catch (InvalidConfigurationException e) {
+                logger().log(Level.WARNING, e.getMessage(), e);
+            }
+        }
+
         hasMapListener = mapEventPublisher.hasEventListener(name);
-        hasWanReplication = mapContainer.isWanReplicationEnabled() && !disableWanReplicationEvent;
+        hasWanReplication = mapContainer.isWanReplicationEnabled()
+                && !disableWanReplicationEvent;
         hasBackups = mapContainer.getTotalBackupCount() > 0;
         hasInvalidation = mapContainer.hasInvalidationListener();
 
         if (hasBackups) {
-            mapEntries = new MapEntries(mergingEntries.size());
-            backupRecordInfos = new ArrayList<RecordInfo>(mergingEntries.size());
-        }
-        if (hasInvalidation) {
-            invalidationKeys = new ArrayList<Data>(mergingEntries.size());
+            backupPairs = new ArrayList(2 * mergingEntries.size());
         }
 
-        for (MapMergeTypes mergingEntry : mergingEntries) {
-            merge(mergingEntry);
+        if (hasInvalidation) {
+            invalidationKeys = new ArrayList<>(mergingEntries.size());
+        }
+
+        // This marking is needed because otherwise after split-brain heal, we can
+        // end up not marked partitions even they have indexed data.
+        //
+        // Problematic case definition:
+        // - you have two partitions 0,1
+        // - add index
+        // - do split (now each brain has its own partitions as 0,1 but also each
+        //   brain has one-not-indexed-partition 1 and 0 respectively)
+        // - heal split
+        // - merging starts and merging transfers data to un-marked partition 1.
+        // - since 1 is unmarked, it will not be available for indexed searches.
+        Queue<InternalIndex> notMarkedIndexes = beginIndexMarking();
+
+        // if currentIndex is not zero, this is a
+        // continuation of the operation after a NativeOOME
+        int size = mergingEntries.size();
+        while (currentIndex < size) {
+            merge(mergingEntries.get(currentIndex));
+            currentIndex++;
+        }
+
+        finishIndexMarking(notMarkedIndexes);
+    }
+
+    private void finishIndexMarking(Queue<InternalIndex> notIndexedPartitions) {
+        InternalIndex indexToMark;
+        while ((indexToMark = notIndexedPartitions.poll()) != null) {
+            indexToMark.markPartitionAsIndexed(getPartitionId());
         }
     }
 
-    private void merge(MapMergeTypes mergingEntry) {
-        Data dataKey = mergingEntry.getKey();
+    private Queue<InternalIndex> beginIndexMarking() {
+        int partitionId = getPartitionId();
+        Indexes indexes = mapContainer.getIndexes(partitionId);
+        InternalIndex[] indexesSnapshot = indexes.getIndexes();
+
+        Queue<InternalIndex> notIndexedPartitions = new LinkedList<>();
+        for (InternalIndex internalIndex : indexesSnapshot) {
+            if (!internalIndex.hasPartitionIndexed(partitionId)) {
+                internalIndex.beginPartitionUpdate();
+
+                notIndexedPartitions.add(internalIndex);
+            }
+        }
+        return notIndexedPartitions;
+    }
+
+    private static boolean shouldCheckNow(AtomicLong lastLogTime) {
+        long now = Clock.currentTimeMillis();
+        long lastLogged = lastLogTime.get();
+        if (now - lastLogged >= MERGE_POLICY_CHECK_PERIOD) {
+            return lastLogTime.compareAndSet(lastLogged, now);
+        }
+
+        return false;
+    }
+
+    private void merge(MapMergeTypes<Object, Object> mergingEntry) {
+        Data dataKey = getNodeEngine().toData(mergingEntry.getRawKey());
         Data oldValue = hasMapListener ? getValue(dataKey) : null;
 
-        //noinspection unchecked
         if (recordStore.merge(mergingEntry, mergePolicy, getCallerProvenance())) {
             hasMergedValues = true;
+
             Data dataValue = getValueOrPostProcessedValue(dataKey, getValue(dataKey));
-            mapServiceContext.interceptAfterPut(name, dataValue);
+            mapServiceContext.interceptAfterPut(mapContainer.getInterceptorRegistry(), dataValue);
 
             if (hasMapListener) {
                 mapEventPublisher.publishEvent(getCallerAddress(), name, MERGED, dataKey, oldValue, dataValue);
             }
+
             if (hasWanReplication) {
                 publishWanUpdate(dataKey, dataValue);
             }
-            if (hasBackups) {
-                mapEntries.add(dataKey, dataValue);
-                backupRecordInfos.add(buildRecordInfo(recordStore.getRecord(dataKey)));
-            }
-            evict(dataKey);
+
             if (hasInvalidation) {
                 invalidationKeys.add(dataKey);
             }
+
+            if (hasBackups) {
+                backupPairs.add(dataKey);
+                backupPairs.add(dataValue);
+            }
+
+            evict(dataKey);
         }
     }
 
@@ -137,7 +224,7 @@ public class MergeOperation extends MapOperation implements PartitionAwareOperat
 
     @Override
     public boolean shouldBackup() {
-        return hasBackups && !backupRecordInfos.isEmpty();
+        return hasBackups && !backupPairs.isEmpty();
     }
 
     @Override
@@ -151,20 +238,46 @@ public class MergeOperation extends MapOperation implements PartitionAwareOperat
     }
 
     @Override
-    public void afterRun() throws Exception {
+    protected void afterRunInternal() {
         invalidateNearCache(invalidationKeys);
 
-        super.afterRun();
+        super.afterRunInternal();
     }
 
     @Override
     public Operation getBackupOperation() {
-        return new PutAllBackupOperation(name, mapEntries, backupRecordInfos, disableWanReplicationEvent);
+        return new PutAllBackupOperation(name,
+                toBackupListByRemovingEvictedRecords(), disableWanReplicationEvent);
+    }
+
+    /**
+     * Since records may get evicted on NOOME after
+     * they have been merged. We are re-checking
+     * backup pair list to eliminate evicted entries.
+     *
+     * @return list of existing records which can
+     * safely be transferred to backup replica.
+     */
+    @Nonnull
+    private List toBackupListByRemovingEvictedRecords() {
+        List toBackupList = new ArrayList(backupPairs.size());
+        for (int i = 0; i < backupPairs.size(); i += 2) {
+            Data dataKey = ((Data) backupPairs.get(i));
+            Record record = recordStore.getRecord(dataKey);
+            if (record != null) {
+                toBackupList.add(dataKey);
+                toBackupList.add(backupPairs.get(i + 1));
+                toBackupList.add(record);
+                toBackupList.add(recordStore.getExpirySystem().getExpiryMetadata(dataKey));
+            }
+        }
+        return toBackupList;
     }
 
     @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         super.writeInternal(out);
+
         out.writeInt(mergingEntries.size());
         for (MapMergeTypes mergingEntry : mergingEntries) {
             out.writeObject(mergingEntry);
@@ -176,8 +289,9 @@ public class MergeOperation extends MapOperation implements PartitionAwareOperat
     @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
         super.readInternal(in);
+
         int size = in.readInt();
-        mergingEntries = new ArrayList<MapMergeTypes>(size);
+        mergingEntries = new ArrayList<>(size);
         for (int i = 0; i < size; i++) {
             MapMergeTypes mergingEntry = in.readObject();
             mergingEntries.add(mergingEntry);
@@ -187,7 +301,7 @@ public class MergeOperation extends MapOperation implements PartitionAwareOperat
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return MapDataSerializerHook.MERGE;
     }
 }

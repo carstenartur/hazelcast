@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package com.hazelcast.spi.impl.operationservice.impl;
 
+import com.hazelcast.cluster.Member;
 import com.hazelcast.core.IndeterminateOperationState;
 import com.hazelcast.core.LocalMemberResetException;
-import com.hazelcast.core.Member;
 import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.cp.CPGroupId;
 import com.hazelcast.cp.CPMember;
@@ -26,16 +26,16 @@ import com.hazelcast.cp.exception.LeaderDemotedException;
 import com.hazelcast.cp.exception.NotLeaderException;
 import com.hazelcast.cp.exception.StaleAppendRequestException;
 import com.hazelcast.cp.internal.IndeterminateOperationStateAware;
-import com.hazelcast.nio.Address;
-import com.hazelcast.spi.ExceptionAction;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.cluster.Address;
 import com.hazelcast.spi.exception.CallerNotMemberException;
 import com.hazelcast.spi.exception.TargetNotMemberException;
+import com.hazelcast.spi.impl.operationservice.ExceptionAction;
+import com.hazelcast.spi.impl.operationservice.Operation;
 import com.hazelcast.spi.impl.operationservice.impl.RaftInvocationContext.MemberCursor;
 
-import static com.hazelcast.spi.ExceptionAction.RETRY_INVOCATION;
-import static com.hazelcast.spi.ExceptionAction.THROW_EXCEPTION;
-import static com.hazelcast.spi.InvocationBuilder.DEFAULT_DESERIALIZE_RESULT;
+import static com.hazelcast.spi.impl.operationservice.ExceptionAction.RETRY_INVOCATION;
+import static com.hazelcast.spi.impl.operationservice.ExceptionAction.THROW_EXCEPTION;
+import static com.hazelcast.spi.impl.operationservice.InvocationBuilder.DEFAULT_DESERIALIZE_RESULT;
 
 /**
  * A {@link Invocation} implementation that realizes an operation invocation on the leader node of the given Raft group.
@@ -51,11 +51,17 @@ public class RaftInvocation extends Invocation<CPMember> {
 
     public RaftInvocation(Context context, RaftInvocationContext raftInvocationContext, CPGroupId groupId, Operation op,
                           int retryCount, long retryPauseMillis, long callTimeoutMillis) {
-        super(context, op, null, retryCount, retryPauseMillis, callTimeoutMillis, DEFAULT_DESERIALIZE_RESULT, null);
+        this(context, raftInvocationContext, groupId, op, retryCount, retryPauseMillis, callTimeoutMillis,
+                DEFAULT_DESERIALIZE_RESULT);
+    }
+
+    public RaftInvocation(Context context, RaftInvocationContext raftInvocationContext, CPGroupId groupId, Operation op,
+            int retryCount, long retryPauseMillis, long callTimeoutMillis, boolean deserializeResponse) {
+        super(context, op, null, retryCount, retryPauseMillis, callTimeoutMillis, deserializeResponse, null);
         this.raftInvocationContext = raftInvocationContext;
         this.groupId = groupId;
 
-        int partitionId = context.partitionService.getPartitionId(groupId.id());
+        int partitionId = raftInvocationContext.getCPGroupPartitionId(groupId);
         op.setPartitionId(partitionId);
     }
 
@@ -80,9 +86,7 @@ public class RaftInvocation extends Invocation<CPMember> {
 
     @Override
     void notifyNormalResponse(Object value, int expectedBackups) {
-        if (!(value instanceof IndeterminateOperationState) && indeterminateException != null && isRetryable(value)) {
-            value = indeterminateException;
-        }
+        assert !(value instanceof Throwable) : "Throwable value " + value + " not allowed";
 
         super.notifyNormalResponse(value, expectedBackups);
         // TODO [basri] maybe we should update known leader only if the result is not an exception?
@@ -97,6 +101,14 @@ public class RaftInvocation extends Invocation<CPMember> {
             return;
         }
         super.notifyError(error);
+    }
+
+    @Override
+    protected void notifyThrowable(Throwable cause, int expectedBackups) {
+        if (!(cause instanceof IndeterminateOperationState) && indeterminateException != null && isRetryable(cause)) {
+            cause = indeterminateException;
+        }
+        super.notifyThrowable(cause, expectedBackups);
     }
 
     @Override
@@ -142,7 +154,7 @@ public class RaftInvocation extends Invocation<CPMember> {
 
         MemberCursor cursor = memberCursor;
         if (cursor == null || !cursor.advance()) {
-            cursor = raftInvocationContext.newMemberCursor(groupId);
+            cursor = raftInvocationContext.newMemberCursor();
             if (!cursor.advance()) {
                 return null;
             }

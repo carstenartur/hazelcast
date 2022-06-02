@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,9 @@ package com.hazelcast.instance;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.config.MulticastConfig;
-import com.hazelcast.core.Cluster;
+import com.hazelcast.cluster.Cluster;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.instance.impl.HazelcastInstanceFactory;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.annotation.QuickTest;
@@ -48,7 +49,6 @@ import static org.junit.Assume.assumeFalse;
 @Category(QuickTest.class)
 public class MulticastLoopbackModeTest extends HazelcastTestSupport {
 
-    private String multicastGroup;
     private HazelcastInstance hz1;
     private HazelcastInstance hz2;
 
@@ -56,17 +56,11 @@ public class MulticastLoopbackModeTest extends HazelcastTestSupport {
     public void setUpTests() {
         assumeFalse("This test can be processed only if your host has no configured network interface.",
                 hasConfiguredNetworkInterface());
-        multicastGroup = System.clearProperty("hazelcast.multicast.group");
     }
 
     @After
     public void tearDownTests() {
         HazelcastInstanceFactory.terminateAll();
-        if (multicastGroup == null) {
-            System.clearProperty("hazelcast.multicast.group");
-        } else {
-            System.setProperty("hazelcast.multicast.group", multicastGroup);
-        }
     }
 
     private void createTestEnvironment(boolean loopbackMode) throws Exception {

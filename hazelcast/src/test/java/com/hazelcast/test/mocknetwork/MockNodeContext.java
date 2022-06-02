@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,20 @@
 
 package com.hazelcast.test.mocknetwork;
 
-import com.hazelcast.cluster.Joiner;
+import com.hazelcast.internal.cluster.Joiner;
 import com.hazelcast.instance.AddressPicker;
 import com.hazelcast.instance.BuildInfoProvider;
-import com.hazelcast.instance.DefaultNodeContext;
-import com.hazelcast.instance.Node;
-import com.hazelcast.instance.NodeContext;
-import com.hazelcast.instance.NodeExtension;
-import com.hazelcast.instance.NodeExtensionFactory;
-import com.hazelcast.internal.networking.ServerSocketRegistry;
-import com.hazelcast.nio.Address;
-import com.hazelcast.nio.NetworkingService;
-import com.hazelcast.nio.NodeIOService;
-import com.hazelcast.nio.tcp.FirewallingNetworkingService;
+import com.hazelcast.instance.impl.DefaultNodeContext;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.instance.impl.NodeContext;
+import com.hazelcast.instance.impl.NodeExtension;
+import com.hazelcast.instance.impl.NodeExtensionFactory;
+import com.hazelcast.internal.server.tcp.LocalAddressRegistry;
+import com.hazelcast.internal.server.tcp.ServerSocketRegistry;
+import com.hazelcast.cluster.Address;
+import com.hazelcast.internal.server.Server;
+import com.hazelcast.internal.server.tcp.TcpServerContext;
+import com.hazelcast.internal.server.FirewallingServer;
 import com.hazelcast.test.TestEnvironment;
 import com.hazelcast.test.compatibility.SamplingNodeExtension;
 
@@ -37,7 +38,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
-import static com.hazelcast.util.ExceptionUtil.rethrow;
+import static com.hazelcast.internal.util.ExceptionUtil.rethrow;
 
 public class MockNodeContext implements NodeContext {
 
@@ -78,10 +79,10 @@ public class MockNodeContext implements NodeContext {
     }
 
     @Override
-    public NetworkingService createNetworkingService(Node node, ServerSocketRegistry serverSocketRegistry) {
-        NodeIOService ioService = new NodeIOService(node, node.nodeEngine);
-        MockNetworkingService mockNetworkingService = new MockNetworkingService(ioService, node, registry);
-        return new FirewallingNetworkingService(mockNetworkingService, initiallyBlockedAddresses);
+    public Server createServer(Node node, ServerSocketRegistry serverSocketRegistry, LocalAddressRegistry addressRegistry) {
+        TcpServerContext serverContext = new TcpServerContext(node, node.nodeEngine);
+        MockServer mockNetworkingService = new MockServer(serverContext, node, registry);
+        return new FirewallingServer(mockNetworkingService, initiallyBlockedAddresses);
     }
 
     /**

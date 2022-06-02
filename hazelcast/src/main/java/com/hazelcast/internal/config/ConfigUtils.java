@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,18 +18,20 @@ package com.hazelcast.internal.config;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.config.ConfigPatternMatcher;
-import com.hazelcast.config.ConfigurationException;
+import com.hazelcast.config.InvalidConfigurationException;
 import com.hazelcast.config.NamedConfig;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
 import com.hazelcast.partition.strategy.StringPartitioningStrategy;
-import com.hazelcast.util.function.BiConsumer;
 
+import javax.annotation.Nonnull;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.util.Map;
+import java.util.function.BiConsumer;
 
 import static com.hazelcast.partition.strategy.StringPartitioningStrategy.getBaseName;
+import static java.lang.String.format;
 
 /**
  * Utility class to access configuration.
@@ -37,12 +39,7 @@ import static com.hazelcast.partition.strategy.StringPartitioningStrategy.getBas
 public final class ConfigUtils {
 
     private static final ILogger LOGGER = Logger.getLogger(Config.class);
-    private static final BiConsumer<NamedConfig, String> DEFAULT_NAME_SETTER = new BiConsumer<NamedConfig, String>() {
-        @Override
-        public void accept(NamedConfig namedConfig, String name) {
-            namedConfig.setName(name);
-        }
-    };
+    private static final BiConsumer<NamedConfig, String> DEFAULT_NAME_SETTER = NamedConfig::setName;
 
     private ConfigUtils() {
     }
@@ -85,10 +82,10 @@ public final class ConfigUtils {
      *
      * @param name name of the config
      * @return the configuration
-     * @throws ConfigurationException if ambiguous configurations are found
+     * @throws com.hazelcast.config.InvalidConfigurationException if ambiguous configurations are found
      * @see StringPartitioningStrategy#getBaseName(java.lang.String)
      * @see Config#setConfigPatternMatcher(ConfigPatternMatcher)
-     * @see Config##getConfigPatternMatcher()
+     * @see Config#getConfigPatternMatcher()
      */
     public static <T extends NamedConfig> T getConfig(ConfigPatternMatcher configPatternMatcher,
                                                       Map<String, T> configs, String name,
@@ -113,9 +110,7 @@ public final class ConfigUtils {
         T defConfig = configs.get("default");
         try {
             if (defConfig == null) {
-                Constructor constructor = clazz.getDeclaredConstructor();
-                constructor.setAccessible(true);
-                defConfig = (T) constructor.newInstance();
+                defConfig = (T) constructReflectively(clazz);
                 nameSetter.accept(defConfig, "default");
                 configs.put("default", defConfig);
             }
@@ -125,23 +120,60 @@ public final class ConfigUtils {
             nameSetter.accept(config, name);
             configs.put(name, config);
             return config;
-        } catch (NoSuchMethodException e) {
-            LOGGER.severe("Could not create class " + clazz.getName());
-            assert false;
-            return null;
-        } catch (InstantiationException e) {
-            LOGGER.severe("Could not create class " + clazz.getName());
-            assert false;
-            return null;
-        } catch (IllegalAccessException e) {
-            LOGGER.severe("Could not create class " + clazz.getName());
-            assert false;
-            return null;
-        } catch (InvocationTargetException e) {
+        } catch (NoSuchMethodException | InstantiationException
+                | IllegalAccessException | InvocationTargetException e) {
             LOGGER.severe("Could not create class " + clazz.getName());
             assert false;
             return null;
         }
     }
 
+    /**
+     * If {@code configs} contains an exact match for {@code name}, returns
+     * the matching config. Otherwise creates a new config with the given
+     * name, adds it to {@code configs} and returns it.
+     */
+    public static <T extends NamedConfig, S extends T> T getByNameOrNew(Map<String, T> configs, String name,
+                                      Class<S> clazz) {
+        T config = configs.get(name);
+        if (config != null) {
+            return config;
+        } else {
+            try {
+                config = constructReflectively(clazz);
+                config.setName(name);
+                configs.put(name, config);
+                return config;
+            } catch (NoSuchMethodException | InstantiationException
+                    | IllegalAccessException | InvocationTargetException e) {
+                LOGGER.severe("Could not create class " + clazz.getName());
+                assert false;
+                return null;
+            }
+        }
+    }
+
+    @Nonnull
+    private static <T> T constructReflectively(Class<T> clazz)
+            throws NoSuchMethodException, InstantiationException, IllegalAccessException, InvocationTargetException {
+        T config;
+        Constructor constructor = clazz.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        config = (T) constructor.newInstance();
+        return config;
+    }
+
+    public static InvalidConfigurationException createAmbiguousConfigurationException(
+      String itemName, String candidate, String duplicate) {
+        return new InvalidConfigurationException(
+          format("Found ambiguous configurations for item\"%s\": \"%s\" vs. \"%s\"%n"
+            + "Please specify your configuration.", itemName, candidate, duplicate));
+    }
+
+    public static boolean matches(String configName, String configName2) {
+        return configName != null
+          && configName2 != null
+          && configName.replace("-", "").equals(configName2.replace("-", ""));
+    }
 }
+

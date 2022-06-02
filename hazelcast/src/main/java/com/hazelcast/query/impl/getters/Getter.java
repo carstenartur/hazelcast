@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,12 +18,12 @@ package com.hazelcast.query.impl.getters;
 
 /**
  * Base class for extraction of values from object instances.
- * Each sub-class encapsulates extraction strategy.
+ * Each subclass encapsulates extraction strategy.
  */
 abstract class Getter {
     protected final Getter parent;
 
-    public Getter(final Getter parent) {
+    Getter(final Getter parent) {
         this.parent = parent;
     }
 

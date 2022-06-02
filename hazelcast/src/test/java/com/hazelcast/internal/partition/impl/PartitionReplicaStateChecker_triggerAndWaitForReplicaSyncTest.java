@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,17 +17,18 @@
 package com.hazelcast.internal.partition.impl;
 
 import com.hazelcast.cluster.ClusterState;
-import com.hazelcast.instance.Node;
+import com.hazelcast.instance.impl.Node;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
 import com.hazelcast.internal.partition.InternalPartition;
 import com.hazelcast.internal.partition.PartitionReplica;
+import com.hazelcast.internal.partition.ReadonlyInternalPartition;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.nio.Address;
+import com.hazelcast.cluster.Address;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.util.UuidUtil;
+import com.hazelcast.internal.util.UuidUtil;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -53,7 +54,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class PartitionReplicaStateChecker_triggerAndWaitForReplicaSyncTest extends HazelcastTestSupport {
 
     private List<InternalPartition> partitions = new ArrayList<InternalPartition>();
@@ -102,7 +103,8 @@ public class PartitionReplicaStateChecker_triggerAndWaitForReplicaSyncTest exten
         configureNeedsReplicaStateCheckResponse();
 
         Address address = new Address("127.0.0.1", 5701);
-        InternalPartition partition = new DummyInternalPartition(new PartitionReplica[]{new PartitionReplica(address, UuidUtil.newUnsecureUuidString())}, 1);
+        PartitionReplica replica = new PartitionReplica(address, UuidUtil.newUnsecureUUID());
+        InternalPartition partition = new ReadonlyInternalPartition(new PartitionReplica[]{replica}, 1, 0);
         partitions.add(partition);
 
         assertEquals(REPLICA_NOT_OWNED, replicaStateChecker.getPartitionServiceState());
@@ -113,7 +115,7 @@ public class PartitionReplicaStateChecker_triggerAndWaitForReplicaSyncTest exten
     public void whenHasMissingReplicaOwners_withoutAddress_thenWaitForMissingReplicaOwners() {
         configureNeedsReplicaStateCheckResponse();
 
-        InternalPartition partition = new DummyInternalPartition(new PartitionReplica[0], 1);
+        InternalPartition partition = new ReadonlyInternalPartition(new PartitionReplica[0], 1, 0);
         partitions.add(partition);
 
         assertEquals(REPLICA_NOT_OWNED, replicaStateChecker.getPartitionServiceState());
@@ -141,7 +143,7 @@ public class PartitionReplicaStateChecker_triggerAndWaitForReplicaSyncTest exten
     public void whenCheckAndTriggerReplicaSync() {
         configureNeedsReplicaStateCheckResponseOnEachSecondCall();
 
-        InternalPartition partition = new DummyInternalPartition(new PartitionReplica[]{null}, 1);
+        InternalPartition partition = new ReadonlyInternalPartition(new PartitionReplica[]{null}, 1, 0);
         partitions.add(partition);
 
         assertEquals(REPLICA_NOT_SYNC, replicaStateChecker.getPartitionServiceState());

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,9 @@
 
 package com.hazelcast.cp.internal.datastructures.countdownlatch;
 
-import com.hazelcast.core.ICountDownLatch;
+import com.hazelcast.cp.ICountDownLatch;
 import com.hazelcast.cp.internal.datastructures.spi.blocking.WaitKey;
-import com.hazelcast.nio.Address;
+import com.hazelcast.cluster.Address;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 
 import java.util.UUID;
@@ -45,12 +45,12 @@ public class AwaitInvocationKey extends WaitKey implements IdentifiedDataSeriali
 
     @Override
     public int getFactoryId() {
-        return RaftCountDownLatchDataSerializerHook.F_ID;
+        return CountDownLatchDataSerializerHook.F_ID;
     }
 
     @Override
-    public int getId() {
-        return RaftCountDownLatchDataSerializerHook.AWAIT_INVOCATION_KEY;
+    public int getClassId() {
+        return CountDownLatchDataSerializerHook.AWAIT_INVOCATION_KEY;
     }
 
     @Override

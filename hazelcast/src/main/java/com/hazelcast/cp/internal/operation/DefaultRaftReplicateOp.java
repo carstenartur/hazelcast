@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 
 package com.hazelcast.cp.internal.operation;
 
-import com.hazelcast.core.ICompletableFuture;
 import com.hazelcast.cp.CPGroupId;
 import com.hazelcast.cp.internal.CallerAware;
 import com.hazelcast.cp.internal.IndeterminateOperationStateAware;
@@ -26,6 +25,7 @@ import com.hazelcast.cp.internal.RaftServiceDataSerializerHook;
 import com.hazelcast.cp.internal.raft.impl.RaftNode;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
+import com.hazelcast.spi.impl.InternalCompletableFuture;
 
 import java.io.IOException;
 
@@ -48,7 +48,7 @@ public class DefaultRaftReplicateOp extends RaftReplicateOp implements Indetermi
     }
 
     @Override
-    protected ICompletableFuture replicate(RaftNode raftNode) {
+    protected InternalCompletableFuture replicate(RaftNode raftNode) {
         if (op instanceof CallerAware) {
             ((CallerAware) op).setCaller(getCallerAddress(), getCallId());
         }
@@ -71,7 +71,7 @@ public class DefaultRaftReplicateOp extends RaftReplicateOp implements Indetermi
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftServiceDataSerializerHook.DEFAULT_RAFT_GROUP_REPLICATE_OP;
     }
 

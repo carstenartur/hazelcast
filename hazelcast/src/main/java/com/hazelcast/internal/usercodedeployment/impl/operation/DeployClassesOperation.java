@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,12 +21,12 @@ import com.hazelcast.internal.usercodedeployment.impl.UserCodeDeploymentSerializ
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.operationservice.Operation;
 
 import java.io.IOException;
 import java.util.AbstractMap;
 import java.util.ArrayList;
-import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -34,9 +34,9 @@ import java.util.Map;
  */
 public class DeployClassesOperation extends Operation implements IdentifiedDataSerializable {
 
-    private Collection<Map.Entry<String, byte[]>> classDefinitions;
+    private List<Map.Entry<String, byte[]>> classDefinitions;
 
-    public DeployClassesOperation(Collection<Map.Entry<String, byte[]>> classDefinitions) {
+    public DeployClassesOperation(List<Map.Entry<String, byte[]>> classDefinitions) {
         this.classDefinitions = classDefinitions;
     }
 
@@ -46,9 +46,7 @@ public class DeployClassesOperation extends Operation implements IdentifiedDataS
     @Override
     public void run() throws Exception {
         UserCodeDeploymentService service = getService();
-        for (Map.Entry<String, byte[]> classDefinition : classDefinitions) {
-            service.defineClass(classDefinition.getKey(), classDefinition.getValue());
-        }
+        service.defineClasses(classDefinitions);
     }
 
     @Override
@@ -60,7 +58,7 @@ public class DeployClassesOperation extends Operation implements IdentifiedDataS
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         out.writeInt(classDefinitions.size());
         for (Map.Entry<String, byte[]> classDefinition : classDefinitions) {
-            out.writeUTF(classDefinition.getKey());
+            out.writeString(classDefinition.getKey());
             out.writeByteArray(classDefinition.getValue());
         }
     }
@@ -70,7 +68,7 @@ public class DeployClassesOperation extends Operation implements IdentifiedDataS
         int length = in.readInt();
         classDefinitions = new ArrayList<Map.Entry<String, byte[]>>(length);
         for (int i = 0; i < length; i++) {
-            String className = in.readUTF();
+            String className = in.readString();
             byte[] classDefinition = in.readByteArray();
             classDefinitions.add(new AbstractMap.SimpleEntry<String, byte[]>(className, classDefinition));
         }
@@ -82,7 +80,7 @@ public class DeployClassesOperation extends Operation implements IdentifiedDataS
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return UserCodeDeploymentSerializerHook.DEPLOY_CLASSES_OP;
     }
 }

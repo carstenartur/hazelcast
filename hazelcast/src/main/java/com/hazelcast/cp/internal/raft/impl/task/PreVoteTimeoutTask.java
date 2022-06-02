@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.hazelcast.cp.internal.raft.impl.task;
 
 import com.hazelcast.cp.internal.raft.impl.RaftNodeImpl;
+import com.hazelcast.cp.internal.raft.impl.state.RaftState;
 
 import static com.hazelcast.cp.internal.raft.impl.RaftRole.FOLLOWER;
 
@@ -36,10 +37,17 @@ public class PreVoteTimeoutTask extends RaftNodeStatusAwareTask implements Runna
 
     @Override
     protected void innerRun() {
-        if (raftNode.state().role() != FOLLOWER) {
+        RaftState state = raftNode.state();
+        // Remove previously set preCandidateState.
+        // Since it's now obsolete,
+        // either a new pre-vote round will begin
+        // or pre-vote phase will cease.
+        state.removePreCandidateState();
+
+        if (state.role() != FOLLOWER) {
             return;
         }
-        logger.fine("Pre-vote for term: " + raftNode.state().term() + " has timed out!");
+        logger.fine("Pre-vote for term: " + state.term() + " has timed out!");
         new PreVoteTask(raftNode, term).run();
     }
 }

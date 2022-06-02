@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,56 +16,60 @@
 
 package com.hazelcast.internal.cluster.impl;
 
+import com.hazelcast.cluster.Address;
+import com.hazelcast.cluster.Cluster;
 import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.internal.cluster.Versions;
 import com.hazelcast.internal.cluster.impl.operations.CommitClusterStateOp;
 import com.hazelcast.internal.cluster.impl.operations.LockClusterStateOp;
 import com.hazelcast.internal.cluster.impl.operations.RollbackClusterStateOp;
-import com.hazelcast.nio.Address;
+import com.hazelcast.internal.util.Preconditions;
+import com.hazelcast.internal.util.UUIDSerializationUtil;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.impl.Versioned;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.operationservice.Operation;
 import com.hazelcast.transaction.impl.TargetAwareTransactionLogRecord;
-import com.hazelcast.util.Preconditions;
 
 import java.io.IOException;
+import java.util.UUID;
 
 /**
  * TransactionLogRecord implementation to be used in {@code ClusterState} transactions.
  *
  * @see ClusterState
- * @see com.hazelcast.core.Cluster#changeClusterState(ClusterState, com.hazelcast.transaction.TransactionOptions)
+ * @see Cluster#changeClusterState(ClusterState, com.hazelcast.transaction.TransactionOptions)
  */
 public class ClusterStateTransactionLogRecord implements TargetAwareTransactionLogRecord, Versioned {
 
     ClusterStateChange stateChange;
     Address initiator;
     Address target;
-    String txnId;
+    UUID txnId;
     long leaseTime;
     int memberListVersion;
-    int partitionStateVersion;
+    long partitionStateStamp;
     boolean isTransient;
 
     public ClusterStateTransactionLogRecord() {
     }
 
     public ClusterStateTransactionLogRecord(ClusterStateChange stateChange, Address initiator, Address target,
-            String txnId, long leaseTime, int memberListVersion, int partitionStateVersion, boolean isTransient) {
+                                            UUID txnId, long leaseTime, int memberListVersion,
+                                            long partitionStateStamp, boolean isTransient) {
         this.memberListVersion = memberListVersion;
         Preconditions.checkNotNull(stateChange);
         Preconditions.checkNotNull(initiator);
         Preconditions.checkNotNull(target);
         Preconditions.checkNotNull(txnId);
-        Preconditions.checkPositive(leaseTime, "Lease time should be positive!");
+        Preconditions.checkPositive("leaseTime", leaseTime);
 
         this.stateChange = stateChange;
         this.initiator = initiator;
         this.target = target;
         this.txnId = txnId;
         this.leaseTime = leaseTime;
-        this.partitionStateVersion = partitionStateVersion;
+        this.partitionStateStamp = partitionStateStamp;
         this.isTransient = isTransient;
     }
 
@@ -76,7 +80,7 @@ public class ClusterStateTransactionLogRecord implements TargetAwareTransactionL
 
     @Override
     public Operation newPrepareOperation() {
-        return new LockClusterStateOp(stateChange, initiator, txnId, leaseTime, memberListVersion, partitionStateVersion);
+        return new LockClusterStateOp(stateChange, initiator, txnId, leaseTime, memberListVersion, partitionStateStamp);
     }
 
     @Override
@@ -99,14 +103,15 @@ public class ClusterStateTransactionLogRecord implements TargetAwareTransactionL
         out.writeObject(stateChange);
         out.writeObject(initiator);
         out.writeObject(target);
-        out.writeUTF(txnId);
+        UUIDSerializationUtil.writeUUID(out, txnId);
         out.writeLong(leaseTime);
-        out.writeInt(partitionStateVersion);
-        out.writeBoolean(isTransient);
-        // RU_COMPAT_V3_10
-        if (out.getVersion().isGreaterOrEqual(Versions.V3_11)) {
-            out.writeInt(memberListVersion);
+        if (out.getVersion().isGreaterOrEqual(Versions.V4_1)) {
+            out.writeLong(partitionStateStamp);
+        } else {
+            out.writeInt((int) partitionStateStamp);
         }
+        out.writeBoolean(isTransient);
+        out.writeInt(memberListVersion);
     }
 
     @Override
@@ -114,14 +119,15 @@ public class ClusterStateTransactionLogRecord implements TargetAwareTransactionL
         stateChange = in.readObject();
         initiator = in.readObject();
         target = in.readObject();
-        txnId = in.readUTF();
+        txnId = UUIDSerializationUtil.readUUID(in);
         leaseTime = in.readLong();
-        partitionStateVersion = in.readInt();
-        isTransient = in.readBoolean();
-        // RU_COMPAT_V3_10
-        if (in.getVersion().isGreaterOrEqual(Versions.V3_11)) {
-            memberListVersion = in.readInt();
+        if (in.getVersion().isGreaterOrEqual(Versions.V4_1)) {
+            partitionStateStamp = in.readLong();
+        } else {
+            partitionStateStamp = in.readInt();
         }
+        isTransient = in.readBoolean();
+        memberListVersion = in.readInt();
     }
 
     @Override
@@ -130,7 +136,7 @@ public class ClusterStateTransactionLogRecord implements TargetAwareTransactionL
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return ClusterDataSerializerHook.CLUSTER_STATE_TRANSACTION_LOG_RECORD;
     }
 }

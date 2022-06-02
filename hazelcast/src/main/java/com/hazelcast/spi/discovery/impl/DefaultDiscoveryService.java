@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,10 +27,11 @@ import com.hazelcast.spi.discovery.DiscoveryStrategyFactory;
 import com.hazelcast.spi.discovery.NodeFilter;
 import com.hazelcast.spi.discovery.integration.DiscoveryService;
 import com.hazelcast.spi.discovery.integration.DiscoveryServiceSettings;
-import com.hazelcast.util.ServiceLoader;
+import com.hazelcast.internal.util.ServiceLoader;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -38,7 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static com.hazelcast.util.CollectionUtil.nullToEmpty;
+import static com.hazelcast.internal.util.CollectionUtil.nullToEmpty;
 
 public class DefaultDiscoveryService
         implements DiscoveryService {
@@ -82,8 +83,8 @@ public class DefaultDiscoveryService
     }
 
     @Override
-    public Map<String, Object> discoverLocalMetadata() {
-        Map<String, Object> metadata = new HashMap<String, Object>();
+    public Map<String, String> discoverLocalMetadata() {
+        Map<String, String> metadata = new HashMap<>();
         for (DiscoveryStrategy discoveryStrategy : discoveryStrategies) {
             metadata.putAll(discoveryStrategy.discoverLocalMetadata());
         }
@@ -133,13 +134,24 @@ public class DefaultDiscoveryService
         try {
             Collection<DiscoveryStrategyConfig> discoveryStrategyConfigs = new ArrayList<DiscoveryStrategyConfig>(
                     settings.getAllDiscoveryConfigs());
-
             List<DiscoveryStrategyFactory> factories = collectFactories(discoveryStrategyConfigs, configClassLoader);
 
             List<DiscoveryStrategy> discoveryStrategies = new ArrayList<DiscoveryStrategy>();
             for (DiscoveryStrategyConfig config : discoveryStrategyConfigs) {
                 DiscoveryStrategy discoveryStrategy = buildDiscoveryStrategy(config, factories);
                 discoveryStrategies.add(discoveryStrategy);
+            }
+
+            if (discoveryStrategies.isEmpty() && settings.isAutoDetectionEnabled()) {
+                logger.fine("Discovery auto-detection enabled, looking for available discovery strategies");
+                DiscoveryStrategyFactory autoDetectedFactory = detectDiscoveryStrategyFactory(factories);
+                if (autoDetectedFactory != null) {
+                    logger.info(String.format("Auto-detection selected discovery strategy: %s", autoDetectedFactory.getClass()));
+                    discoveryStrategies
+                            .add(autoDetectedFactory.newDiscoveryStrategy(discoveryNode, logger, Collections.emptyMap()));
+                } else {
+                    logger.fine("No discovery strategy is applicable for auto-detection");
+                }
             }
             return discoveryStrategies;
         } catch (Exception e) {
@@ -186,6 +198,30 @@ public class DefaultDiscoveryService
         throw new ValidationException(
                 "There is no discovery strategy factory to create '" + config + "' Is it a typo in a strategy classname? "
                         + "Perhaps you forgot to include implementation on a classpath?");
+    }
+
+    private DiscoveryStrategyFactory detectDiscoveryStrategyFactory(List<DiscoveryStrategyFactory> factories) {
+        DiscoveryStrategyFactory highestPriorityFactory = null;
+        for (DiscoveryStrategyFactory factory : factories) {
+            try {
+                if (factory.isAutoDetectionApplicable()) {
+                    logger.fine(
+                            String.format("Discovery strategy factory '%s' is auto-applicable to the current runtime environment",
+                                    factory.getClass()));
+                    if (highestPriorityFactory == null || factory.discoveryStrategyLevel().getPriority()
+                            > highestPriorityFactory.discoveryStrategyLevel().getPriority()) {
+                        highestPriorityFactory = factory;
+                    }
+                } else {
+                    logger.fine(String.format("Discovery Factory '%s' is not auto-applicable to the current runtime environment",
+                            factory.getClass()));
+                }
+            } catch (Exception e) {
+                // exception in auto-detection should not prevent Hazelcast from starting
+                logger.finest(e);
+            }
+        }
+        return highestPriorityFactory;
     }
 
     private String getFactoryClassName(DiscoveryStrategyConfig config) {

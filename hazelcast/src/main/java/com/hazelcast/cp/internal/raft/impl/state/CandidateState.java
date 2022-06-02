@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,18 +16,18 @@
 
 package com.hazelcast.cp.internal.raft.impl.state;
 
-import com.hazelcast.core.Endpoint;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 
 import java.util.HashSet;
 import java.util.Set;
 
 /**
- * Mutable state maintained by each candidate during pre-voting & voting phases
+ * Mutable state maintained by each candidate during pre-voting &amp; voting phases
  */
 public class CandidateState {
 
     private final int majority;
-    private final Set<Endpoint> voters = new HashSet<Endpoint>();
+    private final Set<RaftEndpoint> voters = new HashSet<RaftEndpoint>();
 
     CandidateState(int majority) {
         this.majority = majority;
@@ -40,7 +40,7 @@ public class CandidateState {
      *
      * @return false if endpoint is already voted, true otherwise
      */
-    public boolean grantVote(Endpoint address) {
+    public boolean grantVote(RaftEndpoint address) {
         return voters.add(address);
     }
 

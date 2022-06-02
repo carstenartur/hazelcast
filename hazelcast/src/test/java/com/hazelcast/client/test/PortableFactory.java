@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,7 @@ public class PortableFactory implements com.hazelcast.nio.serialization.Portable
 
         private String name;
 
-        public SampleRunnableTask() {
+        SampleRunnableTask() {
         }
 
         public void run() {
@@ -52,11 +52,11 @@ public class PortableFactory implements com.hazelcast.nio.serialization.Portable
         }
 
         public void writePortable(PortableWriter writer) throws IOException {
-            writer.writeUTF("n", name);
+            writer.writeString("n", name);
         }
 
         public void readPortable(PortableReader reader) throws IOException {
-            name = reader.readUTF("n");
+            name = reader.readString("n");
         }
     }
 
@@ -110,8 +110,6 @@ public class PortableFactory implements com.hazelcast.nio.serialization.Portable
             return new Derived2Portable();
         } else if (classId == 6) {
             return new Student();
-        } else if (classId == 7) {
-            return new CustomCredentials();
         }
         return null;
     }

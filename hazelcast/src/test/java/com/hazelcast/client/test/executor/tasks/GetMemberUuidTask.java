@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,19 +24,20 @@ import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 
 import java.io.IOException;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 
 /**
  * This class is for Non-java clients as well. Please do not remove or modify.
  */
 public class GetMemberUuidTask
-        implements Callable<String>, IdentifiedDataSerializable, HazelcastInstanceAware {
+        implements Callable<UUID>, IdentifiedDataSerializable, HazelcastInstanceAware {
     public static final int CLASS_ID = 8;
 
     private HazelcastInstance node;
 
     @Override
-    public String call()
+    public UUID call()
             throws Exception {
         return node.getCluster().getLocalMember().getUuid();
     }
@@ -62,7 +63,7 @@ public class GetMemberUuidTask
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return CLASS_ID;
     }
 }

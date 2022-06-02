@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,12 @@
 
 package com.hazelcast.cp.internal.raftop.metadata;
 
-import com.hazelcast.cp.internal.CPMemberInfo;
 import com.hazelcast.cp.internal.IndeterminateOperationStateAware;
 import com.hazelcast.cp.internal.MetadataRaftGroupManager;
 import com.hazelcast.cp.internal.RaftInvocationManager;
 import com.hazelcast.cp.internal.RaftServiceDataSerializerHook;
 import com.hazelcast.cp.internal.exception.CannotCreateRaftGroupException;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
@@ -43,26 +43,28 @@ import java.util.Collection;
  * the operation fails with {@link CannotCreateRaftGroupException}.
  * This exception will be handled by {@link RaftInvocationManager} and another
  * attempt will be made with a new member list.
- * <p/>
+ * <p>
  * This operation is committed to the Metadata group.
  */
 public class CreateRaftGroupOp extends MetadataRaftGroupOp implements IndeterminateOperationStateAware,
                                                                       IdentifiedDataSerializable {
 
     private String groupName;
-    private Collection<CPMemberInfo> members;
+    private Collection<RaftEndpoint> members;
+    private long groupId;
 
     public CreateRaftGroupOp() {
     }
 
-    public CreateRaftGroupOp(String groupName, Collection<CPMemberInfo> members) {
+    public CreateRaftGroupOp(String groupName, Collection<RaftEndpoint> members, long groupId) {
         this.groupName = groupName;
         this.members = members;
+        this.groupId = groupId;
     }
 
     @Override
     public Object run(MetadataRaftGroupManager metadataGroupManager, long commitIndex) {
-        return metadataGroupManager.createRaftGroup(groupName, members, commitIndex);
+        return metadataGroupManager.createRaftGroup(groupName, members, groupId);
     }
 
     @Override
@@ -76,33 +78,36 @@ public class CreateRaftGroupOp extends MetadataRaftGroupOp implements Indetermin
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftServiceDataSerializerHook.CREATE_RAFT_GROUP_OP;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(groupName);
+        out.writeString(groupName);
         out.writeInt(members.size());
-        for (CPMemberInfo member : members) {
+        for (RaftEndpoint member : members) {
             out.writeObject(member);
         }
+        out.writeLong(groupId);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        groupName = in.readUTF();
+        groupName = in.readString();
         int len = in.readInt();
-        members = new ArrayList<CPMemberInfo>(len);
+        members = new ArrayList<>(len);
         for (int i = 0; i < len; i++) {
-            CPMemberInfo member = in.readObject();
+            RaftEndpoint member = in.readObject();
             members.add(member);
         }
+        groupId = in.readLong();
     }
 
     @Override
     protected void toString(StringBuilder sb) {
         sb.append(", groupName=").append(groupName)
-          .append(", members=").append(members);
+          .append(", members=").append(members)
+          .append(", groupIndex=").append(groupId);
     }
 }

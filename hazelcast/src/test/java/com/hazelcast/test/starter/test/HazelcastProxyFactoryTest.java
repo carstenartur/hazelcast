@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -64,8 +64,8 @@ public class HazelcastProxyFactoryTest {
 
     @Test
     public void testProxyHazelcastInstanceClasses_ofSameVersion_areSame() {
-        HazelcastInstance hz1 = HazelcastStarter.newHazelcastInstance("3.8");
-        HazelcastInstance hz2 = HazelcastStarter.newHazelcastInstance("3.8");
+        HazelcastInstance hz1 = HazelcastStarter.newHazelcastInstance("4.0");
+        HazelcastInstance hz2 = HazelcastStarter.newHazelcastInstance("4.0");
         try {
             assertEquals(hz1.getClass(), hz2.getClass());
         } finally {

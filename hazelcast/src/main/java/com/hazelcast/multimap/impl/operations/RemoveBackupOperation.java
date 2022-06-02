@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,33 +16,28 @@
 
 package com.hazelcast.multimap.impl.operations;
 
+import com.hazelcast.internal.nio.IOUtil;
 import com.hazelcast.multimap.impl.MultiMapContainer;
 import com.hazelcast.multimap.impl.MultiMapDataSerializerHook;
 import com.hazelcast.multimap.impl.MultiMapRecord;
 import com.hazelcast.multimap.impl.MultiMapValue;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.nio.serialization.impl.Versioned;
-import com.hazelcast.spi.BackupOperation;
+import com.hazelcast.internal.serialization.Data;
+import com.hazelcast.spi.impl.operationservice.BackupOperation;
 
 import java.io.IOException;
 import java.util.Collection;
-import java.util.Iterator;
 
-import static com.hazelcast.internal.cluster.Versions.V3_12;
+public class RemoveBackupOperation extends AbstractKeyBasedMultiMapOperation implements BackupOperation {
 
-public class RemoveBackupOperation extends AbstractKeyBasedMultiMapOperation implements BackupOperation, Versioned {
-
-    private long recordId;
     private Data value;
 
     public RemoveBackupOperation() {
     }
 
-    public RemoveBackupOperation(String name, Data dataKey, long recordId, Data value) {
+    public RemoveBackupOperation(String name, Data dataKey, Data value) {
         super(name, dataKey);
-        this.recordId = recordId;
         this.value = value;
     }
 
@@ -56,20 +51,8 @@ public class RemoveBackupOperation extends AbstractKeyBasedMultiMapOperation imp
         }
         Collection<MultiMapRecord> coll = multiMapValue.getCollection(false);
 
-        // RU_COMPAT_3_11
-        if (value != null) {
-            MultiMapRecord record = new MultiMapRecord(isBinary() ? value : toObject(value));
-            response = coll.remove(record);
-        } else {
-            Iterator<MultiMapRecord> iterator = coll.iterator();
-            while (iterator.hasNext()) {
-                if (iterator.next().getRecordId() == recordId) {
-                    iterator.remove();
-                    response = true;
-                    break;
-                }
-            }
-        }
+        MultiMapRecord record = new MultiMapRecord(isBinary() ? value : toObject(value));
+        response = coll.remove(record);
 
         if (coll.isEmpty()) {
             container.delete(dataKey);
@@ -79,25 +62,17 @@ public class RemoveBackupOperation extends AbstractKeyBasedMultiMapOperation imp
     @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         super.writeInternal(out);
-        out.writeLong(recordId);
-        // RU_COMPAT_3_11
-        if (out.getVersion().isGreaterOrEqual(V3_12)) {
-            out.writeData(value);
-        }
+        IOUtil.writeData(out, value);
     }
 
     @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
         super.readInternal(in);
-        recordId = in.readLong();
-        // RU_COMPAT_3_11
-        if (in.getVersion().isGreaterOrEqual(V3_12)) {
-            value = in.readData();
-        }
+        value = IOUtil.readData(in);
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return MultiMapDataSerializerHook.REMOVE_BACKUP;
     }
 }

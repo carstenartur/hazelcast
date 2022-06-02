@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,24 +16,26 @@
 
 package com.hazelcast.cp.internal.raft.impl;
 
-import com.hazelcast.core.Endpoint;
+import com.hazelcast.cp.CPGroupId;
+import com.hazelcast.cp.CPMember;
 import com.hazelcast.cp.internal.raft.impl.dto.AppendFailureResponse;
 import com.hazelcast.cp.internal.raft.impl.dto.AppendRequest;
 import com.hazelcast.cp.internal.raft.impl.dto.AppendSuccessResponse;
 import com.hazelcast.cp.internal.raft.impl.dto.InstallSnapshot;
 import com.hazelcast.cp.internal.raft.impl.dto.PreVoteRequest;
 import com.hazelcast.cp.internal.raft.impl.dto.PreVoteResponse;
+import com.hazelcast.cp.internal.raft.impl.dto.TriggerLeaderElection;
 import com.hazelcast.cp.internal.raft.impl.dto.VoteRequest;
 import com.hazelcast.cp.internal.raft.impl.dto.VoteResponse;
 import com.hazelcast.cp.internal.raft.impl.log.SnapshotEntry;
-import com.hazelcast.internal.util.SimpleCompletableFuture;
 import com.hazelcast.logging.ILogger;
+import com.hazelcast.spi.impl.InternalCompletableFuture;
 
 import java.util.concurrent.TimeUnit;
 
 /**
  * Integration abstraction between Raft state machine and the underlying
- * platform which is responsible for task/operation execution & scheduling,
+ * platform which is responsible for task/operation execution &amp; scheduling,
  * message transportation and failure detection.
  */
 public interface RaftIntegration {
@@ -61,79 +63,88 @@ public interface RaftIntegration {
      * @param endpoint endpoint
      * @return true if endpoint is reachable, false otherwise
      */
-    boolean isReachable(Endpoint endpoint);
+    boolean isReachable(RaftEndpoint endpoint);
 
     /**
-     * Sends the {@link PreVoteRequest} to target endpoint to be handled by
-     * its {@link RaftNode#handlePreVoteRequest(PreVoteRequest)}.
+     * Sends the given {@link PreVoteRequest} DTO to target endpoint
+     * to be handled by via {@link RaftNode#handlePreVoteRequest(PreVoteRequest)}.
      *
      * @return true if request is sent or scheduled to be sent to target,
      *         false otherwise
      */
-    boolean send(PreVoteRequest request, Endpoint target);
+    boolean send(PreVoteRequest request, RaftEndpoint target);
 
     /**
-     * Sends the {@link PreVoteResponse} to target endpoint to be handled by
-     * its {@link RaftNode#handlePreVoteResponse(PreVoteResponse)}.
+     * Sends the given {@link PreVoteResponse} DTO to target endpoint
+     * to be handled via {@link RaftNode#handlePreVoteResponse(PreVoteResponse)}.
      *
      * @return true if response is sent or scheduled to be sent to target,
      *         false otherwise
      */
-    boolean send(PreVoteResponse response, Endpoint target);
+    boolean send(PreVoteResponse response, RaftEndpoint target);
 
     /**
-     * Sends the {@link VoteRequest} to target endpoint to be handled by
-     * its {@link RaftNode#handleVoteRequest(VoteRequest)}.
+     * Sends the given {@link VoteRequest} DTO to target endpoint
+     * to be handled via {@link RaftNode#handleVoteRequest(VoteRequest)}.
      *
      * @return true if request is sent or scheduled to be sent to target,
      *         false otherwise
      */
-    boolean send(VoteRequest request, Endpoint target);
+    boolean send(VoteRequest request, RaftEndpoint target);
 
     /**
-     * Sends the {@link VoteResponse} to target endpoint to be handled by
-     * its {@link RaftNode#handleVoteResponse(VoteResponse)}.
+     * Sends the given {@link VoteResponse} DTO to target endpoint
+     * to be handled via {@link RaftNode#handleVoteResponse(VoteResponse)}.
      *
      * @return true if response is sent or scheduled to be sent to target,
      *         false otherwise
      */
-    boolean send(VoteResponse response, Endpoint target);
+    boolean send(VoteResponse response, RaftEndpoint target);
 
     /**
-     * Sends the {@link AppendRequest} to target endpoint to be handled by
-     * its {@link RaftNode#handleAppendRequest(AppendRequest)}.
+     * Sends the given {@link AppendRequest} DTO to target endpoint
+     * to be handled via {@link RaftNode#handleAppendRequest(AppendRequest)}.
      *
      * @return true if request is sent or scheduled to be sent to target,
      *         false otherwise
      */
-    boolean send(AppendRequest request, Endpoint target);
+    boolean send(AppendRequest request, RaftEndpoint target);
 
     /**
-     * Sends the {@link AppendSuccessResponse} to target endpoint to be handled
-     * by its {@link RaftNode#handleAppendResponse(AppendSuccessResponse)}.
+     * Sends the given {@link AppendSuccessResponse} DTO to target endpoint
+     * to be handled via {@link RaftNode#handleAppendResponse(AppendSuccessResponse)}.
      *
      * @return true if response is sent or scheduled to be sent to target,
      *         false otherwise
      */
-    boolean send(AppendSuccessResponse response, Endpoint target);
+    boolean send(AppendSuccessResponse response, RaftEndpoint target);
 
     /**
-     * Sends the {@link AppendFailureResponse} to target endpoint to be handled
-     * by its {@link RaftNode#handleAppendResponse(AppendFailureResponse)}.
+     * Sends the given {@link AppendFailureResponse} DTO to target endpoint
+     * to be handled via {@link RaftNode#handleAppendResponse(AppendFailureResponse)}.
      *
      * @return true if response is sent or scheduled to be sent to target,
      *         false otherwise
      */
-    boolean send(AppendFailureResponse response, Endpoint target);
+    boolean send(AppendFailureResponse response, RaftEndpoint target);
 
     /**
-     * Sends the {@link InstallSnapshot} to target endpoint to be handled by
-     * its {@link RaftNode#handleInstallSnapshot(InstallSnapshot)}.
+     * Sends the given {@link InstallSnapshot} DTO to target endpoint
+     * to be handled via {@link RaftNode#handleInstallSnapshot(InstallSnapshot)}.
      *
      * @return true if request is sent or scheduled to be sent to target,
      *         false otherwise
      */
-    boolean send(InstallSnapshot request, Endpoint target);
+    boolean send(InstallSnapshot request, RaftEndpoint target);
+
+    /**
+     * Sends the given {@link TriggerLeaderElection} DTO to target endpoint
+     * to be handled via {@link RaftNode#handleTriggerLeaderElection(TriggerLeaderElection)}.
+     *
+     * @return true if request is sent or scheduled to be sent to target,
+     *         false otherwise
+     */
+    boolean send(TriggerLeaderElection request, RaftEndpoint target);
 
     /**
      * Executes the operation on underlying operation execution mechanism
@@ -164,26 +175,50 @@ public interface RaftIntegration {
     void restoreSnapshot(Object operation, long commitIndex);
 
     /**
-     * Executes the task on underlying task execution mechanism.
+     * Executes the given task on the underlying task execution mechanism.
+     * <p>
+     * Please note that all tasks of a single Raft node must be executed
+     * in a single-threaded manner and the happens-before relationship
+     * must be maintained between given tasks of the Raft node.
+     * <p>
+     * The underlying platform is free to execute the given task immediately
+     * if it fits to the defined guarantees.
      *
-     * @param task the task
+     * @param task the task to be executed.
      */
     void execute(Runnable task);
 
     /**
-     * Schedules the task on underlying scheduling mechanism.
+     * Submits the given task for execution.
+     * <p>
+     * If the caller is already on the thread that runs the Raft node,
+     * the given task cannot be executed immediately and it must be put into
+     * the internal task queue for execution in future.
      *
-     * @param task  the task
-     * @param delay the time from now to delay execution
+     * @param task to be executed later.
+     */
+    void submit(Runnable task);
+
+    /**
+     * Schedules the task on the underlying platform to be executed after
+     * the given delay.
+     * <p>
+     * Please note that even though the scheduling can be offloaded to another
+     * thread, the given task must be executed in a single-threaded manner and
+     * the happens-before relationship must be maintained between given tasks
+     * of the Raft node.
+     *
+     * @param task     the task to be executed in future
+     * @param delay    the time from now to delay execution
      * @param timeUnit the time unit of the delay
      */
     void schedule(Runnable task, long delay, TimeUnit timeUnit);
 
     /**
-     * Creates a new instance of {@link SimpleCompletableFuture}.
+     * Creates a new instance of {@link InternalCompletableFuture}.
      * @return a new future
      */
-    SimpleCompletableFuture newCompletableFuture();
+    InternalCompletableFuture newCompletableFuture();
 
     /**
      * Returns the entry to be appended if the no-op entry append on leader
@@ -195,8 +230,27 @@ public interface RaftIntegration {
     Object getAppendedEntryOnLeaderElection();
 
     /**
+     * Returns true if the linearizable read optimization is enabled.
+     * <p>
+     * See Section 6.4 of the Raft Dissertation for more information about
+     * the linearizable read optimization.
+     */
+    boolean isLinearizableReadOptimizationEnabled();
+
+    /**
+     * Returns the CP member instance of the given Raft endpoint
+     */
+    CPMember getCPMember(RaftEndpoint target);
+
+    /**
      * Called when RaftNode status changes.
      * @param status new status
      */
     void onNodeStatusChange(RaftNodeStatus status);
+
+    /**
+     * Called when CP group is destroyed.
+     * @param groupId id of CP group
+     */
+    void onGroupDestroyed(CPGroupId groupId);
 }

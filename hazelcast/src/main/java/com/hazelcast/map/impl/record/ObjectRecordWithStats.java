@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,14 @@
 
 package com.hazelcast.map.impl.record;
 
-class ObjectRecordWithStats extends AbstractRecordWithStats<Object> {
-
+class ObjectRecordWithStats extends AbstractRecord<Object> {
     private volatile Object value;
 
     ObjectRecordWithStats() {
     }
 
     ObjectRecordWithStats(Object value) {
-        super();
-        this.value = value;
+        setValue(value);
     }
 
     @Override
@@ -50,7 +48,6 @@ class ObjectRecordWithStats extends AbstractRecordWithStats<Object> {
         }
 
         ObjectRecordWithStats that = (ObjectRecordWithStats) o;
-
         return value.equals(that.value);
     }
 
@@ -59,5 +56,13 @@ class ObjectRecordWithStats extends AbstractRecordWithStats<Object> {
         int result = super.hashCode();
         result = 31 * result + value.hashCode();
         return result;
+    }
+
+    @Override
+    public String toString() {
+        return "ObjectRecordWithStats{"
+                + "value=" + value
+                + ", " + super.toString()
+                + "} ";
     }
 }

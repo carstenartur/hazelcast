@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,28 +21,25 @@ import com.hazelcast.cardinality.impl.CardinalityEstimatorService;
 import com.hazelcast.collection.impl.list.ListService;
 import com.hazelcast.collection.impl.queue.QueueService;
 import com.hazelcast.collection.impl.set.SetService;
-import com.hazelcast.concurrent.atomiclong.AtomicLongService;
-import com.hazelcast.concurrent.atomicreference.AtomicReferenceService;
-import com.hazelcast.concurrent.countdownlatch.CountDownLatchService;
-import com.hazelcast.concurrent.idgen.IdGeneratorService;
-import com.hazelcast.concurrent.lock.LockService;
-import com.hazelcast.concurrent.semaphore.SemaphoreService;
-import com.hazelcast.cp.internal.datastructures.atomiclong.RaftAtomicLongService;
-import com.hazelcast.cp.internal.datastructures.atomicref.RaftAtomicRefService;
-import com.hazelcast.cp.internal.datastructures.countdownlatch.RaftCountDownLatchService;
-import com.hazelcast.cp.internal.datastructures.lock.RaftLockService;
-import com.hazelcast.cp.internal.datastructures.semaphore.RaftSemaphoreService;
-import com.hazelcast.crdt.pncounter.PNCounterService;
+import com.hazelcast.cp.internal.datastructures.atomiclong.AtomicLongService;
+import com.hazelcast.cp.internal.datastructures.atomicref.AtomicRefService;
+import com.hazelcast.cp.internal.datastructures.countdownlatch.CountDownLatchService;
+import com.hazelcast.cp.internal.datastructures.lock.LockService;
+import com.hazelcast.cp.internal.datastructures.semaphore.SemaphoreService;
 import com.hazelcast.durableexecutor.impl.DistributedDurableExecutorService;
 import com.hazelcast.executor.impl.DistributedExecutorService;
 import com.hazelcast.flakeidgen.impl.FlakeIdGeneratorService;
+import com.hazelcast.internal.crdt.pncounter.PNCounterService;
+import com.hazelcast.internal.locksupport.LockSupportService;
 import com.hazelcast.internal.usercodedeployment.UserCodeDeploymentService;
+import com.hazelcast.jet.impl.JetServiceBackend;
 import com.hazelcast.map.impl.MapService;
-import com.hazelcast.mapreduce.impl.MapReduceService;
 import com.hazelcast.multimap.impl.MultiMapService;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
 import com.hazelcast.ringbuffer.impl.RingbufferService;
+import com.hazelcast.sql.impl.SqlInternalService;
 import com.hazelcast.topic.impl.TopicService;
+import com.hazelcast.topic.impl.reliable.ReliableTopicService;
 
 import java.security.Permission;
 import java.util.HashMap;
@@ -70,175 +67,49 @@ public final class ActionConstants {
     public static final String ACTION_PROJECTION = "projection";
     public static final String ACTION_USER_CODE_DEPLOY = "deploy";
 
+    public static final String ACTION_SUBMIT = "submit";
+    public static final String ACTION_CANCEL = "cancel";
+    public static final String ACTION_RESTART = "restart";
+    public static final String ACTION_EXPORT_SNAPSHOT = "export-snapshot";
+    public static final String ACTION_ADD_RESOURCES = "add-resources";
+    public static final String ACTION_WRITE = "write";
+
     public static final String LISTENER_INSTANCE = "instance";
     public static final String LISTENER_MEMBER = "member";
     public static final String LISTENER_MIGRATION = "migration";
 
-    private static final Map<String, PermissionFactory> PERMISSION_FACTORY_MAP = new HashMap<String, PermissionFactory>();
+    // SQL-specific actions
+    public static final String ACTION_CREATE_VIEW = "create-view";
+    public static final String ACTION_DROP_VIEW = "drop-view";
+
+    private static final Map<String, PermissionFactory> PERMISSION_FACTORY_MAP = new HashMap<>();
 
     static {
-        PERMISSION_FACTORY_MAP.put(QueueService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new QueuePermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(MapService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new MapPermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(MultiMapService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new MultiMapPermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(ListService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new ListPermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(SetService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new SetPermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(AtomicLongService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new AtomicLongPermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(RaftAtomicLongService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new AtomicLongPermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(CountDownLatchService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new CountDownLatchPermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(RaftCountDownLatchService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new CountDownLatchPermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(SemaphoreService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new SemaphorePermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(RaftSemaphoreService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new SemaphorePermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(TopicService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new TopicPermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(LockService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new LockPermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(RaftLockService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new LockPermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(DistributedExecutorService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new ExecutorServicePermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(IdGeneratorService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new AtomicLongPermission(IdGeneratorService.ATOMIC_LONG_NAME + name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(FlakeIdGeneratorService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new FlakeIdGeneratorPermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(MapReduceService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new MapReducePermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(ReplicatedMapService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new ReplicatedMapPermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(AtomicReferenceService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new AtomicReferencePermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(RaftAtomicRefService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new AtomicReferencePermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(CacheService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new CachePermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(RingbufferService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new RingBufferPermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(DistributedDurableExecutorService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new DurableExecutorServicePermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(CardinalityEstimatorService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new CardinalityEstimatorPermission(name, actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(UserCodeDeploymentService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new UserCodeDeploymentPermission(actions);
-            }
-        });
-        PERMISSION_FACTORY_MAP.put(PNCounterService.SERVICE_NAME, new PermissionFactory() {
-            @Override
-            public Permission create(String name, String... actions) {
-                return new PNCounterPermission(name, actions);
-            }
-        });
+        PERMISSION_FACTORY_MAP.put(QueueService.SERVICE_NAME, QueuePermission::new);
+        PERMISSION_FACTORY_MAP.put(MapService.SERVICE_NAME, MapPermission::new);
+        PERMISSION_FACTORY_MAP.put(MultiMapService.SERVICE_NAME, MultiMapPermission::new);
+        PERMISSION_FACTORY_MAP.put(ListService.SERVICE_NAME, ListPermission::new);
+        PERMISSION_FACTORY_MAP.put(SetService.SERVICE_NAME, SetPermission::new);
+        PERMISSION_FACTORY_MAP.put(AtomicLongService.SERVICE_NAME, AtomicLongPermission::new);
+        PERMISSION_FACTORY_MAP.put(CountDownLatchService.SERVICE_NAME, CountDownLatchPermission::new);
+        PERMISSION_FACTORY_MAP.put(SemaphoreService.SERVICE_NAME, SemaphorePermission::new);
+        PERMISSION_FACTORY_MAP.put(TopicService.SERVICE_NAME, TopicPermission::new);
+        PERMISSION_FACTORY_MAP.put(LockSupportService.SERVICE_NAME, LockPermission::new);
+        PERMISSION_FACTORY_MAP.put(LockService.SERVICE_NAME, LockPermission::new);
+        PERMISSION_FACTORY_MAP.put(DistributedExecutorService.SERVICE_NAME, ExecutorServicePermission::new);
+        PERMISSION_FACTORY_MAP.put(FlakeIdGeneratorService.SERVICE_NAME, FlakeIdGeneratorPermission::new);
+        PERMISSION_FACTORY_MAP.put(ReplicatedMapService.SERVICE_NAME, ReplicatedMapPermission::new);
+        PERMISSION_FACTORY_MAP.put(AtomicRefService.SERVICE_NAME, AtomicReferencePermission::new);
+        PERMISSION_FACTORY_MAP.put(CacheService.SERVICE_NAME, CachePermission::new);
+        PERMISSION_FACTORY_MAP.put(RingbufferService.SERVICE_NAME, RingBufferPermission::new);
+        PERMISSION_FACTORY_MAP.put(DistributedDurableExecutorService.SERVICE_NAME, DurableExecutorServicePermission::new);
+        PERMISSION_FACTORY_MAP.put(CardinalityEstimatorService.SERVICE_NAME, CardinalityEstimatorPermission::new);
+        PERMISSION_FACTORY_MAP.put(UserCodeDeploymentService.SERVICE_NAME,
+                (name, actions) -> new UserCodeDeploymentPermission(actions));
+        PERMISSION_FACTORY_MAP.put(PNCounterService.SERVICE_NAME, PNCounterPermission::new);
+        PERMISSION_FACTORY_MAP.put(ReliableTopicService.SERVICE_NAME, ReliableTopicPermission::new);
+        PERMISSION_FACTORY_MAP.put(JetServiceBackend.SERVICE_NAME, (name, actions) -> new JobPermission(actions));
+        PERMISSION_FACTORY_MAP.put(SqlInternalService.SERVICE_NAME, SqlPermission::new);
     }
 
     private ActionConstants() {
@@ -251,9 +122,9 @@ public final class ActionConstants {
     /**
      * Creates a permission
      *
-     * @param name
-     * @param serviceName
-     * @param actions
+     * @param name        the permission name
+     * @param serviceName the service name
+     * @param actions     the actions
      * @return the created Permission
      * @throws java.lang.IllegalArgumentException if there is no service found with the given serviceName.
      */

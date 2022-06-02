@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import java.lang.reflect.Field;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 
 import static com.hazelcast.internal.memory.GlobalMemoryAccessorRegistry.MEM;
-import static com.hazelcast.util.EmptyStatement.ignore;
+import static com.hazelcast.internal.util.EmptyStatement.ignore;
 import static java.util.concurrent.atomic.AtomicLongFieldUpdater.newUpdater;
 
 /**
@@ -89,17 +89,16 @@ public abstract class SwCounter implements Counter {
             OFFSET = MEM.objectFieldOffset(field);
         }
 
-        private long localValue;
         private volatile long value;
 
-        protected UnsafeSwCounter(long initialValue) {
+        UnsafeSwCounter(long initialValue) {
             this.value = initialValue;
         }
 
         @Override
         @SuppressWarnings("checkstyle:innerassignment")
         public long inc() {
-            long newLocalValue = localValue += 1;
+            final long newLocalValue = value + 1;
             MEM.putOrderedLong(this, OFFSET, newLocalValue);
             return newLocalValue;
         }
@@ -107,7 +106,7 @@ public abstract class SwCounter implements Counter {
         @Override
         @SuppressWarnings("checkstyle:innerassignment")
         public long inc(long amount) {
-            long newLocalValue = localValue += amount;
+            final long newLocalValue = value + amount;
             MEM.putOrderedLong(this, OFFSET, newLocalValue);
             return newLocalValue;
         }
@@ -115,6 +114,18 @@ public abstract class SwCounter implements Counter {
         @Override
         public long get() {
             return value;
+        }
+
+        @Override
+        public void set(long newValue) {
+            MEM.putOrderedLong(this, OFFSET, newValue);
+        }
+
+        @Override
+        public long getAndSet(long newValue) {
+            final long oldLocalValue = value;
+            MEM.putOrderedLong(this, OFFSET, newValue);
+            return oldLocalValue;
         }
 
         @Override
@@ -132,7 +143,7 @@ public abstract class SwCounter implements Counter {
 
         private volatile long value;
 
-        protected SafeSwCounter(long initialValue) {
+        SafeSwCounter(long initialValue) {
             this.value = initialValue;
         }
 
@@ -153,6 +164,18 @@ public abstract class SwCounter implements Counter {
         @Override
         public long get() {
             return value;
+        }
+
+        @Override
+        public void set(long newValue) {
+            COUNTER.lazySet(this, newValue);
+        }
+
+        @Override
+        public long getAndSet(long newValue) {
+            final long oldValue = value;
+            COUNTER.lazySet(this, newValue);
+            return oldValue;
         }
 
         @Override

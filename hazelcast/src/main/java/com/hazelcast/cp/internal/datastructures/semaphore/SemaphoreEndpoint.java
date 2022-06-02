@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,12 +52,12 @@ public class SemaphoreEndpoint implements IdentifiedDataSerializable {
 
     @Override
     public int getFactoryId() {
-        return RaftSemaphoreDataSerializerHook.F_ID;
+        return SemaphoreDataSerializerHook.F_ID;
     }
 
     @Override
-    public int getId() {
-        return RaftSemaphoreDataSerializerHook.SEMAPHORE_ENDPOINT;
+    public int getClassId() {
+        return SemaphoreDataSerializerHook.SEMAPHORE_ENDPOINT;
     }
 
     @Override

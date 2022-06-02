@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.cp.internal.raft.impl.task;
 
-import com.hazelcast.core.Endpoint;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 import com.hazelcast.cp.internal.raft.impl.RaftNodeImpl;
 import com.hazelcast.cp.internal.raft.impl.dto.PreVoteRequest;
 import com.hazelcast.cp.internal.raft.impl.log.RaftLog;
@@ -54,24 +54,23 @@ public class PreVoteTask extends RaftNodeStatusAwareTask implements Runnable {
             return;
         }
 
-        Collection<Endpoint> remoteMembers = state.remoteMembers();
+        Collection<RaftEndpoint> remoteMembers = state.remoteMembers();
         if (remoteMembers.isEmpty()) {
             logger.fine("Remote members is empty. No need for pre-voting.");
             return;
         }
 
-
         state.initPreCandidateState();
         int nextTerm = state.term() + 1;
         RaftLog log = state.log();
-        PreVoteRequest request = new PreVoteRequest(raftNode.getLocalMember(), nextTerm,
-                log.lastLogOrSnapshotTerm(), log.lastLogOrSnapshotIndex());
+        PreVoteRequest request = new PreVoteRequest(localMember(), nextTerm, log.lastLogOrSnapshotTerm(),
+                log.lastLogOrSnapshotIndex());
 
         logger.info("Pre-vote started for next term: " + request.nextTerm() + ", last log index: " + request.lastLogIndex()
                 + ", last log term: " + request.lastLogTerm());
         raftNode.printMemberState();
 
-        for (Endpoint endpoint : remoteMembers) {
+        for (RaftEndpoint endpoint : remoteMembers) {
             raftNode.send(request, endpoint);
         }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,34 +16,47 @@
 
 package com.hazelcast.spi.impl.operationexecutor.impl;
 
-import com.hazelcast.instance.NodeExtension;
-import com.hazelcast.internal.metrics.MetricsProvider;
+import com.hazelcast.instance.impl.NodeExtension;
+import com.hazelcast.internal.metrics.ExcludedMetricTargets;
+import com.hazelcast.internal.metrics.MetricDescriptor;
 import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.internal.metrics.Probe;
+import com.hazelcast.internal.metrics.StaticMetricsProvider;
+import com.hazelcast.internal.nio.Packet;
 import com.hazelcast.internal.util.counters.SwCounter;
+import com.hazelcast.internal.util.executor.HazelcastManagedThread;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.nio.Packet;
-import com.hazelcast.spi.Operation;
 import com.hazelcast.spi.impl.PartitionSpecificRunnable;
 import com.hazelcast.spi.impl.operationexecutor.OperationRunner;
-import com.hazelcast.util.executor.HazelcastManagedThread;
+import com.hazelcast.spi.impl.operationservice.Operation;
 
 import java.util.concurrent.TimeUnit;
 
-import static com.hazelcast.instance.OutOfMemoryErrorDispatcher.inspectOutOfMemoryError;
+import static com.hazelcast.instance.impl.OutOfMemoryErrorDispatcher.inspectOutOfMemoryError;
+import static com.hazelcast.internal.metrics.MetricDescriptorConstants.OPERATION_DISCRIMINATOR_THREAD;
+import static com.hazelcast.internal.metrics.MetricDescriptorConstants.OPERATION_METRIC_THREAD_COMPLETED_OPERATION_BATCH_COUNT;
+import static com.hazelcast.internal.metrics.MetricDescriptorConstants.OPERATION_METRIC_THREAD_COMPLETED_OPERATION_COUNT;
+import static com.hazelcast.internal.metrics.MetricDescriptorConstants.OPERATION_METRIC_THREAD_COMPLETED_PACKET_COUNT;
+import static com.hazelcast.internal.metrics.MetricDescriptorConstants.OPERATION_METRIC_THREAD_COMPLETED_PARTITION_SPECIFIC_RUNNABLE_COUNT;
+import static com.hazelcast.internal.metrics.MetricDescriptorConstants.OPERATION_METRIC_THREAD_COMPLETED_RUNNABLE_COUNT;
+import static com.hazelcast.internal.metrics.MetricDescriptorConstants.OPERATION_METRIC_THREAD_COMPLETED_TOTAL_COUNT;
+import static com.hazelcast.internal.metrics.MetricDescriptorConstants.OPERATION_METRIC_THREAD_ERROR_COUNT;
+import static com.hazelcast.internal.metrics.MetricDescriptorConstants.OPERATION_PREFIX_THREAD;
+import static com.hazelcast.internal.metrics.MetricTarget.MANAGEMENT_CENTER;
 import static com.hazelcast.internal.util.counters.SwCounter.newSwCounter;
 
 /**
  * The OperationThread is responsible for processing operations, packets
  * containing operations and runnable's.
- * <p/>
+ * <p>
  * There are 2 flavors of OperationThread:
  * - threads that deal with operations for a specific partition
  * - threads that deal with non partition specific tasks
- * <p/>
+ * <p>
  * The actual processing of an operation is forwarded to the {@link OperationRunner}.
  */
-public abstract class OperationThread extends HazelcastManagedThread implements MetricsProvider {
+@ExcludedMetricTargets(MANAGEMENT_CENTER)
+public abstract class OperationThread extends HazelcastManagedThread implements StaticMetricsProvider {
 
     final int threadId;
     final OperationQueue queue;
@@ -53,19 +66,19 @@ public abstract class OperationThread extends HazelcastManagedThread implements 
 
     // All these counters are updated by this OperationThread (so a single writer)
     // and are read by the MetricsRegistry.
-    @Probe
+    @Probe(name = OPERATION_METRIC_THREAD_COMPLETED_TOTAL_COUNT)
     private final SwCounter completedTotalCount = newSwCounter();
-    @Probe
+    @Probe(name = OPERATION_METRIC_THREAD_COMPLETED_PACKET_COUNT)
     private final SwCounter completedPacketCount = newSwCounter();
-    @Probe
+    @Probe(name = OPERATION_METRIC_THREAD_COMPLETED_OPERATION_COUNT)
     private final SwCounter completedOperationCount = newSwCounter();
-    @Probe
+    @Probe(name = OPERATION_METRIC_THREAD_COMPLETED_PARTITION_SPECIFIC_RUNNABLE_COUNT)
     private final SwCounter completedPartitionSpecificRunnableCount = newSwCounter();
-    @Probe
+    @Probe(name = OPERATION_METRIC_THREAD_COMPLETED_RUNNABLE_COUNT)
     private final SwCounter completedRunnableCount = newSwCounter();
-    @Probe
+    @Probe(name = OPERATION_METRIC_THREAD_ERROR_COUNT)
     private final SwCounter errorCount = newSwCounter();
-    @Probe
+    @Probe(name = OPERATION_METRIC_THREAD_COMPLETED_OPERATION_BATCH_COUNT)
     private final SwCounter completedOperationBatchCount = newSwCounter();
 
     private final boolean priority;
@@ -96,7 +109,7 @@ public abstract class OperationThread extends HazelcastManagedThread implements 
     public abstract OperationRunner operationRunner(int partitionId);
 
     @Override
-    public final void run() {
+    public final void executeRun() {
         nodeExtension.onThreadStart(this);
         try {
             while (!shutdown) {
@@ -119,10 +132,11 @@ public abstract class OperationThread extends HazelcastManagedThread implements 
 
     private void process(Object task) {
         try {
+            boolean putBackInQueue = false;
             if (task.getClass() == Packet.class) {
-                process((Packet) task);
+                putBackInQueue = process((Packet) task);
             } else if (task instanceof Operation) {
-                process((Operation) task);
+                putBackInQueue = process((Operation) task);
             } else if (task instanceof PartitionSpecificRunnable) {
                 process((PartitionSpecificRunnable) task);
             } else if (task instanceof Runnable) {
@@ -132,7 +146,12 @@ public abstract class OperationThread extends HazelcastManagedThread implements 
             } else {
                 throw new IllegalStateException("Unhandled task:" + task);
             }
-            completedTotalCount.inc();
+            if (putBackInQueue) {
+                // retry later if not ready
+                queue.add(task, priority);
+            } else {
+                completedTotalCount.inc();
+            }
         } catch (Throwable t) {
             errorCount.inc();
             inspectOutOfMemoryError(t);
@@ -142,16 +161,45 @@ public abstract class OperationThread extends HazelcastManagedThread implements 
         }
     }
 
-    private void process(Operation operation) {
+    /**
+     * Processes/executes the provided operation.
+     *
+     * @param operation the operation to execute
+     * @return {@code true} if this operation was not executed and should be retried at a later time,
+     * {@code false} if the operation should not be retried, either because it
+     * timed out or has run successfully
+     */
+    private boolean process(Operation operation) {
         currentRunner = operationRunner(operation.getPartitionId());
-        currentRunner.run(operation);
-        completedOperationCount.inc();
+        try {
+            if (currentRunner.run(operation)) {
+                return true;
+            } else {
+                completedOperationCount.inc();
+                return false;
+            }
+        } finally {
+            operation.clearThreadContext();
+        }
     }
 
-    private void process(Packet packet) throws Exception {
+    /**
+     * Processes/executes the provided packet.
+     *
+     * @param packet the packet to execute
+     * @return {@code true} if this packet was not executed and should be retried at a later time,
+     * {@code false} if the packet should not be retried, either because it
+     * timed out or has run successfully
+     * @throws Exception if there was an exception raised while processing the packet
+     */
+    private boolean process(Packet packet) throws Exception {
         currentRunner = operationRunner(packet.getPartitionId());
-        currentRunner.run(packet);
-        completedPacketCount.inc();
+        if (currentRunner.run(packet)) {
+            return true;
+        } else {
+            completedPacketCount.inc();
+            return false;
+        }
     }
 
     private void process(PartitionSpecificRunnable runnable) {
@@ -174,7 +222,9 @@ public abstract class OperationThread extends HazelcastManagedThread implements 
 
         try {
             if (task instanceof Operation) {
-                process((Operation) task);
+                if (process((Operation) task)) {
+                    queue.add(task, false);
+                }
             } else if (task instanceof Runnable) {
                 process((Runnable) task);
             } else {
@@ -186,8 +236,12 @@ public abstract class OperationThread extends HazelcastManagedThread implements 
     }
 
     @Override
-    public void provideMetrics(MetricsRegistry registry) {
-        registry.scanAndRegister(this, "operation.thread[" + getName() + "]");
+    public void provideStaticMetrics(MetricsRegistry registry) {
+        MetricDescriptor descriptor = registry
+                .newMetricDescriptor()
+                .withPrefix(OPERATION_PREFIX_THREAD)
+                .withDiscriminator(OPERATION_DISCRIMINATOR_THREAD, getName());
+        registry.registerStaticMetrics(descriptor, this);
     }
 
     public final void shutdown() {

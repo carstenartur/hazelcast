@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.After;
 import org.junit.Before;
@@ -45,15 +45,17 @@ import javax.cache.event.CacheEntryRemovedListener;
 import javax.cache.event.CacheEntryUpdatedListener;
 import java.io.Serializable;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.hazelcast.cache.CacheTestSupport.createServerCachingProvider;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
 @RunWith(HazelcastSerialClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class CacheFromDifferentNodesTest
         extends HazelcastTestSupport {
 
@@ -67,8 +69,8 @@ public class CacheFromDifferentNodesTest
         factory = new TestHazelcastInstanceFactory(2);
         HazelcastInstance hz1 = factory.newHazelcastInstance();
         HazelcastInstance hz2 = factory.newHazelcastInstance();
-        cachingProvider1 = HazelcastServerCachingProvider.createCachingProvider(hz1);
-        cachingProvider2 = HazelcastServerCachingProvider.createCachingProvider(hz2);
+        cachingProvider1 = createServerCachingProvider(hz1);
+        cachingProvider2 = createServerCachingProvider(hz2);
     }
 
     @After
@@ -240,32 +242,36 @@ public class CacheFromDifferentNodesTest
         @Override
         public void onCreated(Iterable<CacheEntryEvent<? extends K, ? extends V>> cacheEntryEvents)
                 throws CacheEntryListenerException {
-            for (CacheEntryEvent<? extends K, ? extends V> cacheEntryEvent : cacheEntryEvents) {
-                created.incrementAndGet();
-            }
+            incrementCounter(cacheEntryEvents, created);
         }
 
         @Override
         public void onExpired(Iterable<CacheEntryEvent<? extends K, ? extends V>> cacheEntryEvents)
                 throws CacheEntryListenerException {
-            for (CacheEntryEvent<? extends K, ? extends V> cacheEntryEvent : cacheEntryEvents) {
-                expired.incrementAndGet();
-            }
+            incrementCounter(cacheEntryEvents, expired);
         }
 
         @Override
         public void onRemoved(Iterable<CacheEntryEvent<? extends K, ? extends V>> cacheEntryEvents)
                 throws CacheEntryListenerException {
-            for (CacheEntryEvent<? extends K, ? extends V> cacheEntryEvent : cacheEntryEvents) {
-                removed.incrementAndGet();
-            }
+            incrementCounter(cacheEntryEvents, removed);
         }
 
         @Override
         public void onUpdated(Iterable<CacheEntryEvent<? extends K, ? extends V>> cacheEntryEvents)
                 throws CacheEntryListenerException {
-            for (CacheEntryEvent<? extends K, ? extends V> cacheEntryEvent : cacheEntryEvents) {
-                updated.incrementAndGet();
+            incrementCounter(cacheEntryEvents, updated);
+        }
+
+        private void incrementCounter(Iterable iterable, AtomicInteger counter) {
+            // actual CacheEntryEvents don't matter
+            // so we avoid referencing each event for the sake
+            // of compatibility tests which have trouble
+            // delegating to event classes across classloaders
+            Iterator iter = iterable.iterator();
+            while (iter.hasNext()) {
+                counter.incrementAndGet();
+                iter.next();
             }
         }
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,27 +21,27 @@ import com.hazelcast.config.InMemoryFormat;
 import com.hazelcast.config.MapConfig;
 import com.hazelcast.config.NearCacheConfig;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
-import com.hazelcast.core.Partition;
 import com.hazelcast.internal.nearcache.NearCacheRecordStore;
 import com.hazelcast.internal.nearcache.impl.DefaultNearCache;
 import com.hazelcast.internal.nearcache.impl.invalidation.MetaDataContainer;
 import com.hazelcast.internal.nearcache.impl.invalidation.StaleReadDetector;
 import com.hazelcast.internal.nearcache.impl.store.AbstractNearCacheRecordStore;
+import com.hazelcast.map.IMap;
 import com.hazelcast.map.impl.proxy.NearCachedMapProxyImpl;
-import com.hazelcast.monitor.NearCacheStats;
+import com.hazelcast.nearcache.NearCacheStats;
+import com.hazelcast.partition.Partition;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelParametersRunnerFactory;
+import com.hazelcast.test.HazelcastParametrizedRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameter;
 import org.junit.runners.Parameterized.Parameters;
 import org.junit.runners.Parameterized.UseParametersRunnerFactory;
@@ -50,13 +50,13 @@ import java.util.Collection;
 
 import static com.hazelcast.config.InMemoryFormat.BINARY;
 import static com.hazelcast.config.InMemoryFormat.OBJECT;
-import static com.hazelcast.internal.nearcache.NearCacheTestUtils.getBaseConfig;
+import static com.hazelcast.internal.nearcache.impl.NearCacheTestUtils.getBaseConfig;
 import static com.hazelcast.internal.nearcache.impl.invalidation.RepairingTask.MAX_TOLERATED_MISS_COUNT;
 import static com.hazelcast.internal.nearcache.impl.invalidation.RepairingTask.MIN_RECONCILIATION_INTERVAL_SECONDS;
 import static com.hazelcast.internal.nearcache.impl.invalidation.RepairingTask.RECONCILIATION_INTERVAL_SECONDS;
 import static com.hazelcast.internal.nearcache.impl.invalidation.StaleReadDetector.ALWAYS_FRESH;
-import static com.hazelcast.spi.properties.GroupProperty.MAP_INVALIDATION_MESSAGE_BATCH_FREQUENCY_SECONDS;
-import static com.hazelcast.spi.properties.GroupProperty.MAP_INVALIDATION_MESSAGE_BATCH_SIZE;
+import static com.hazelcast.spi.properties.ClusterProperty.MAP_INVALIDATION_MESSAGE_BATCH_FREQUENCY_SECONDS;
+import static com.hazelcast.spi.properties.ClusterProperty.MAP_INVALIDATION_MESSAGE_BATCH_SIZE;
 import static java.lang.String.format;
 import static java.lang.String.valueOf;
 import static java.util.Arrays.asList;
@@ -64,9 +64,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 
-@RunWith(Parameterized.class)
+@RunWith(HazelcastParametrizedRunner.class)
 @UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class MemberMapReconciliationTest extends HazelcastTestSupport {
 
     private static final String MAP_NAME = "MemberMapReconciliationTest";
@@ -150,7 +150,7 @@ public class MemberMapReconciliationTest extends HazelcastTestSupport {
         }
 
         NearCacheStats nearCacheStats = nearCachedMapFromNewServer.getLocalMapStats().getNearCacheStats();
-        assertStats(nearCacheStats, total, 0, total);
+        assertStats(MAP_NAME, nearCacheStats, total, 0, total);
 
         sleepSeconds(2 * RECONCILIATION_INTERVAL_SECS);
 
@@ -158,7 +158,7 @@ public class MemberMapReconciliationTest extends HazelcastTestSupport {
             nearCachedMapFromNewServer.get(i);
         }
 
-        assertStats(nearCacheStats, total, total, total);
+        assertStats(MAP_NAME, nearCacheStats, total, total, total);
     }
 
     @Override
@@ -176,7 +176,7 @@ public class MemberMapReconciliationTest extends HazelcastTestSupport {
     }
 
     private void waitForNearCacheInvalidationMetadata(final IMap<Integer, Integer> nearCachedMapFromNewServer,
-                                                             final HazelcastInstance server) {
+                                                      final HazelcastInstance server) {
         assertTrueEventually(new AssertTask() {
             @Override
             public void run() throws Exception {
@@ -208,10 +208,14 @@ public class MemberMapReconciliationTest extends HazelcastTestSupport {
         return (DefaultNearCache) nearCachedMapFromNewServer.getNearCache().unwrap(DefaultNearCache.class);
     }
 
-    public static void assertStats(NearCacheStats nearCacheStats, int ownedEntryCount, int expectedHits, int expectedMisses) {
-        String msg = "Wrong %s [%s]";
-        assertEquals(format(msg, "ownedEntryCount", nearCacheStats), ownedEntryCount, nearCacheStats.getOwnedEntryCount());
-        assertEquals(format(msg, "expectedHits", nearCacheStats), expectedHits, nearCacheStats.getHits());
-        assertEquals(format(msg, "expectedMisses", nearCacheStats), expectedMisses, nearCacheStats.getMisses());
+    public static void assertStats(String name, NearCacheStats nearCacheStats,
+                                   int ownedEntryCount, int expectedHits, int expectedMisses) {
+        String msg = "NearCache for map `%s`, got wrong %s [%s]";
+        assertEquals(format(msg, name, "ownedEntryCount", nearCacheStats),
+                ownedEntryCount, nearCacheStats.getOwnedEntryCount());
+        assertEquals(format(msg, name, "expectedHits", nearCacheStats),
+                expectedHits, nearCacheStats.getHits());
+        assertEquals(format(msg, name, "expectedMisses", nearCacheStats),
+                expectedMisses, nearCacheStats.getMisses());
     }
 }

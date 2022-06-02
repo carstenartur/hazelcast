@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import com.hazelcast.cp.internal.IndeterminateOperationStateAware;
 import com.hazelcast.cp.internal.RaftOp;
 import com.hazelcast.cp.internal.session.RaftSessionService;
 import com.hazelcast.cp.internal.session.RaftSessionServiceDataSerializerHook;
-import com.hazelcast.nio.Address;
+import com.hazelcast.cluster.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
@@ -42,22 +42,19 @@ public class CreateSessionOp extends RaftOp implements IndeterminateOperationSta
 
     private CPSessionOwnerType endpointType;
 
-    private long creationTime;
-
     public CreateSessionOp() {
     }
 
-    public CreateSessionOp(Address endpoint, String endpointName, CPSessionOwnerType endpointType, long creationTime) {
+    public CreateSessionOp(Address endpoint, String endpointName, CPSessionOwnerType endpointType) {
         this.endpoint = endpoint;
         this.endpointName = endpointName;
         this.endpointType = endpointType;
-        this.creationTime = creationTime;
     }
 
     @Override
     public Object run(CPGroupId groupId, long commitIndex) {
         RaftSessionService service = getService();
-        return service.createNewSession(groupId, endpoint, endpointName, endpointType, creationTime);
+        return service.createNewSession(groupId, endpoint, endpointName, endpointType);
     }
 
     @Override
@@ -76,7 +73,7 @@ public class CreateSessionOp extends RaftOp implements IndeterminateOperationSta
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftSessionServiceDataSerializerHook.CREATE_SESSION_OP;
     }
 
@@ -86,10 +83,9 @@ public class CreateSessionOp extends RaftOp implements IndeterminateOperationSta
         boolean containsEndpointName = (endpointName != null);
         out.writeBoolean(containsEndpointName);
         if (containsEndpointName) {
-            out.writeUTF(endpointName);
+            out.writeString(endpointName);
         }
-        out.writeUTF(endpointType.name());
-        out.writeLong(creationTime);
+        out.writeString(endpointType.name());
     }
 
     @Override
@@ -97,17 +93,15 @@ public class CreateSessionOp extends RaftOp implements IndeterminateOperationSta
         endpoint = in.readObject();
         boolean containsEndpointName = in.readBoolean();
         if (containsEndpointName) {
-            endpointName = in.readUTF();
+            endpointName = in.readString();
         }
-        endpointType = CPSessionOwnerType.valueOf(in.readUTF());
-        creationTime = in.readLong();
+        endpointType = CPSessionOwnerType.valueOf(in.readString());
     }
 
     @Override
     protected void toString(StringBuilder sb) {
         sb.append(", endpoint=").append(endpoint)
           .append(", endpointName=").append(endpointName)
-          .append(", endpointType=").append(endpointType)
-          .append(", creationTime=").append(creationTime);
+          .append(", endpointType=").append(endpointType);
     }
 }

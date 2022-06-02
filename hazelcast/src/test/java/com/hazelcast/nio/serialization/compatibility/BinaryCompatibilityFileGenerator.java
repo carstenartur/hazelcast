@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,8 @@ import com.hazelcast.config.SerializerConfig;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
 import com.hazelcast.nio.serialization.ClassDefinition;
 import com.hazelcast.nio.serialization.ClassDefinitionBuilder;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.serialization.SerializationService;
+import com.hazelcast.internal.serialization.Data;
+import com.hazelcast.internal.serialization.SerializationService;
 
 import java.io.DataOutputStream;
 import java.io.FileOutputStream;
@@ -37,7 +37,7 @@ import java.nio.ByteOrder;
  *
  * mv *binary src/test/resources/
  */
-public final class BinaryCompatibilityFileGenerator {
+final class BinaryCompatibilityFileGenerator {
 
     // DON'T FORGET TO CHANGE VERSION ACCORDINGLY
     public static final byte VERSION = 1;
@@ -55,7 +55,6 @@ public final class BinaryCompatibilityFileGenerator {
         for (Object object : objects) {
             for (ByteOrder byteOrder : byteOrders) {
                 generateBinaryFile(outputStream, object, byteOrder);
-
             }
         }
         outputStream.close();
@@ -97,7 +96,8 @@ public final class BinaryCompatibilityFileGenerator {
                 .build();
     }
 
-    public static void generateBinaryFile(DataOutputStream outputStream, Object object, ByteOrder byteOrder) throws IOException {
+    private static void generateBinaryFile(DataOutputStream outputStream,
+                                           Object object, ByteOrder byteOrder) throws IOException {
         SerializationService serializationService = createSerializationService(byteOrder);
         Data data = serializationService.toData(object);
         outputStream.writeUTF(createObjectKey(object, byteOrder));

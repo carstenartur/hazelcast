@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.hazelcast.spring.cache;
 
 import com.hazelcast.core.DistributedObject;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
+import com.hazelcast.map.IMap;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.Cache;
@@ -126,7 +126,7 @@ public class HazelcastCacheManager implements CacheManager {
         String key = keyValue[0].trim();
         String value = (keyValue.length == 1) ? null : keyValue[1].trim();
 
-        isTrue(value != null && !value.isEmpty(), String.format("value for %s should not be null or empty", key));
+        isTrue(value != null && !value.isEmpty(), String.format("value for %s must not be null or empty", key));
 
         if ("defaultReadTimeout".equals(key)) {
             defaultReadTimeout = Long.parseLong(value);

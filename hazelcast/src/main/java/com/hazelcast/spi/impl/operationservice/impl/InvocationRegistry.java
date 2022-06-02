@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,12 +19,17 @@ package com.hazelcast.spi.impl.operationservice.impl;
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
 import com.hazelcast.core.HazelcastOverloadException;
 import com.hazelcast.core.MemberLeftException;
-import com.hazelcast.internal.metrics.MetricsProvider;
+import com.hazelcast.internal.diagnostics.InvocationProfilerPlugin;
 import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.internal.metrics.Probe;
+import com.hazelcast.internal.metrics.StaticMetricsProvider;
+import com.hazelcast.internal.util.LatencyDistribution;
 import com.hazelcast.internal.util.RuntimeAvailableProcessors;
 import com.hazelcast.logging.ILogger;
+import com.hazelcast.spi.impl.operationservice.Operation;
+import com.hazelcast.spi.impl.operationservice.impl.operations.PartitionIteratingOperation;
 import com.hazelcast.spi.impl.sequence.CallIdSequence;
+import com.hazelcast.spi.properties.HazelcastProperties;
 
 import java.util.Iterator;
 import java.util.Map;
@@ -32,14 +37,19 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import static com.hazelcast.internal.metrics.MetricDescriptorConstants.OPERATION_METRIC_INVOCATION_REGISTRY_INVOCATIONS_LAST_CALL_ID;
+import static com.hazelcast.internal.metrics.MetricDescriptorConstants.OPERATION_METRIC_INVOCATION_REGISTRY_INVOCATIONS_PENDING;
+import static com.hazelcast.internal.metrics.MetricDescriptorConstants.OPERATION_METRIC_INVOCATION_REGISTRY_INVOCATIONS_USED_PERCENTAGE;
+import static com.hazelcast.internal.metrics.MetricDescriptorConstants.OPERATION_PREFIX;
 import static com.hazelcast.internal.metrics.ProbeLevel.MANDATORY;
-import static com.hazelcast.spi.OperationAccessor.deactivate;
-import static com.hazelcast.spi.OperationAccessor.setCallId;
+import static com.hazelcast.internal.metrics.ProbeUnit.PERCENT;
+import static com.hazelcast.spi.impl.operationservice.OperationAccessor.deactivate;
+import static com.hazelcast.spi.impl.operationservice.OperationAccessor.setCallId;
 
 /**
  * Responsible for the registration of all pending invocations.
  * <p>
- * Using the InvocationRegistry the Invocation and its response(s) can be linked to each other.
+ * By using the InvocationRegistry, the Invocation and its response(s) can be linked to each other.
  * <p>
  * When an invocation is registered, a callId is determined. Based on this call ID, when a
  * {@link com.hazelcast.spi.impl.operationservice.impl.responses.Response} comes in, the
@@ -54,7 +64,7 @@ import static com.hazelcast.spi.OperationAccessor.setCallId;
  * the PartitionInvocation and TargetInvocation can be folded into Invocation.</li>
  * </ul>
  */
-public class InvocationRegistry implements Iterable<Invocation>, MetricsProvider {
+public class InvocationRegistry implements Iterable<Invocation>, StaticMetricsProvider {
 
     private static final int CORE_SIZE_CHECK = 8;
     private static final int CORE_SIZE_FACTOR = 4;
@@ -64,14 +74,15 @@ public class InvocationRegistry implements Iterable<Invocation>, MetricsProvider
     private static final float LOAD_FACTOR = 0.75f;
     private static final double HUNDRED_PERCENT = 100d;
 
-    @Probe(name = "invocations.pending", level = MANDATORY)
+    @Probe(name = OPERATION_METRIC_INVOCATION_REGISTRY_INVOCATIONS_PENDING, level = MANDATORY)
     private final ConcurrentMap<Long, Invocation> invocations;
     private final ILogger logger;
     private final CallIdSequence callIdSequence;
-
+    private final boolean profilerEnabled;
+    private final ConcurrentMap<Class, LatencyDistribution> latencyDistributions = new ConcurrentHashMap<>();
     private volatile boolean alive = true;
 
-    public InvocationRegistry(ILogger logger, CallIdSequence callIdSequence) {
+    public InvocationRegistry(ILogger logger, CallIdSequence callIdSequence, HazelcastProperties properties) {
         this.logger = logger;
         this.callIdSequence = callIdSequence;
 
@@ -79,15 +90,16 @@ public class InvocationRegistry implements Iterable<Invocation>, MetricsProvider
         boolean reallyMultiCore = coreSize >= CORE_SIZE_CHECK;
         int concurrencyLevel = reallyMultiCore ? coreSize * CORE_SIZE_FACTOR : CONCURRENCY_LEVEL;
 
-        this.invocations = new ConcurrentHashMap<Long, Invocation>(INITIAL_CAPACITY, LOAD_FACTOR, concurrencyLevel);
+        this.invocations = new ConcurrentHashMap<>(INITIAL_CAPACITY, LOAD_FACTOR, concurrencyLevel);
+        this.profilerEnabled = properties.getInteger(InvocationProfilerPlugin.PERIOD_SECONDS) > 0;
     }
 
     @Override
-    public void provideMetrics(MetricsRegistry registry) {
-        registry.scanAndRegister(this, "operation");
+    public void provideStaticMetrics(MetricsRegistry registry) {
+        registry.registerStaticMetrics(this, OPERATION_PREFIX);
     }
 
-    @Probe(name = "invocations.usedPercentage")
+    @Probe(name = OPERATION_METRIC_INVOCATION_REGISTRY_INVOCATIONS_USED_PERCENTAGE, unit = PERCENT)
     private double invocationsUsedPercentage() {
         int maxConcurrentInvocations = callIdSequence.getMaxConcurrentInvocations();
         if (maxConcurrentInvocations == Integer.MAX_VALUE) {
@@ -97,7 +109,7 @@ public class InvocationRegistry implements Iterable<Invocation>, MetricsProvider
         return (HUNDRED_PERCENT * invocations.size()) / maxConcurrentInvocations;
     }
 
-    @Probe(name = "invocations.lastCallId")
+    @Probe(name = OPERATION_METRIC_INVOCATION_REGISTRY_INVOCATIONS_LAST_CALL_ID)
     long getLastCallId() {
         return callIdSequence.getLastCallId();
     }
@@ -146,6 +158,25 @@ public class InvocationRegistry implements Iterable<Invocation>, MetricsProvider
         callIdSequence.complete();
         return true;
     }
+
+    public void retire(Invocation invocation) {
+        if (!profilerEnabled) {
+            return;
+        }
+
+        Operation op = invocation.op;
+        Class c = op.getClass();
+        if (op instanceof PartitionIteratingOperation) {
+            c = ((PartitionIteratingOperation) op).getOperationFactory().getClass();
+        }
+        LatencyDistribution distribution = latencyDistributions.computeIfAbsent(c, k -> new LatencyDistribution());
+        distribution.done(invocation.firstInvocationTimeNanos);
+    }
+
+    public final ConcurrentMap<Class, LatencyDistribution> latencyDistributions() {
+        return latencyDistributions;
+    }
+
 
     /**
      * Returns the number of pending invocations.

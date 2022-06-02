@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,12 +27,12 @@ import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 
 import java.io.IOException;
+import java.util.UUID;
 
 /**
  * When a CP member is shutting down gracefully, or a crashed CP member is
- * removed from the CP subsystem via
- * {@link RaftService#removeCPMember(String)}, this operation is
- * committed to the Metadata Raft group.
+ * removed from CP Subsystem via {@link RaftService#removeCPMember(UUID)},
+ * this operation is committed to the Metadata Raft group.
  */
 public class RemoveCPMemberOp extends MetadataRaftGroupOp implements IndeterminateOperationStateAware,
                                                                      IdentifiedDataSerializable {
@@ -55,6 +55,10 @@ public class RemoveCPMemberOp extends MetadataRaftGroupOp implements Indetermina
         return PostponedResponse.INSTANCE;
     }
 
+    public CPMemberInfo getMember() {
+        return member;
+    }
+
     @Override
     public boolean isRetryableOnIndeterminateOperationState() {
         return true;
@@ -66,7 +70,7 @@ public class RemoveCPMemberOp extends MetadataRaftGroupOp implements Indetermina
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftServiceDataSerializerHook.REMOVE_CP_MEMBER_OP;
     }
 

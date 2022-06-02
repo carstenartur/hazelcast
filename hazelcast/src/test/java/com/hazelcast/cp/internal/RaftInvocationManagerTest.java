@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,9 +20,8 @@ import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.cp.CPGroupId;
 import com.hazelcast.cp.exception.CPGroupDestroyedException;
 import com.hazelcast.cp.internal.raftop.metadata.TriggerDestroyRaftGroupOp;
-import com.hazelcast.test.AssertTask;
-import com.hazelcast.test.HazelcastSerialClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.HazelcastParallelClassRunner;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -32,8 +31,8 @@ import java.util.concurrent.ExecutionException;
 
 import static org.junit.Assert.fail;
 
-@RunWith(HazelcastSerialClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@RunWith(HazelcastParallelClassRunner.class)
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class RaftInvocationManagerTest extends HazelcastRaftTestSupport {
 
     private HazelcastInstance[] instances;
@@ -44,7 +43,7 @@ public class RaftInvocationManagerTest extends HazelcastRaftTestSupport {
         instances = newInstances(nodeCount);
 
         RaftInvocationManager invocationService = getRaftInvocationManager(instances[0]);
-        final CPGroupId groupId = invocationService.createRaftGroup("test", nodeCount).get();
+        CPGroupId groupId = invocationService.createRaftGroup("test", nodeCount).get();
 
         for (int i = 0; i < 100; i++) {
             invocationService.invoke(groupId, new RaftTestApplyOp("val" + i)).get();
@@ -57,7 +56,7 @@ public class RaftInvocationManagerTest extends HazelcastRaftTestSupport {
         instances = newInstances(cpNodeCount, 3, 1);
 
         RaftInvocationManager invocationService = getRaftInvocationManager(instances[instances.length - 1]);
-        final CPGroupId groupId = invocationService.createRaftGroup("test", cpNodeCount).get();
+        CPGroupId groupId = invocationService.createRaftGroup("test", cpNodeCount).get();
 
         for (int i = 0; i < 100; i++) {
             invocationService.invoke(groupId, new RaftTestApplyOp("val" + i)).get();
@@ -69,22 +68,19 @@ public class RaftInvocationManagerTest extends HazelcastRaftTestSupport {
         int nodeCount = 3;
         instances = newInstances(nodeCount);
 
-        final RaftInvocationManager invocationManager = getRaftInvocationManager(instances[0]);
-        final CPGroupId groupId = invocationManager.createRaftGroup("test", nodeCount).get();
+        RaftInvocationManager invocationManager = getRaftInvocationManager(instances[0]);
+        CPGroupId groupId = invocationManager.createRaftGroup("test", nodeCount).get();
 
         invocationManager.invoke(groupId, new RaftTestApplyOp("val")).get();
 
         invocationManager.invoke(getRaftService(instances[0]).getMetadataGroupId(), new TriggerDestroyRaftGroupOp(groupId)).get();
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() throws Exception {
-                try {
-                    invocationManager.invoke(groupId, new RaftTestApplyOp("val")).get();
-                    fail();
-                } catch (ExecutionException e) {
-                    assertInstanceOf(CPGroupDestroyedException.class, e.getCause());
-                }
+        assertTrueEventually(() -> {
+            try {
+                invocationManager.invoke(groupId, new RaftTestApplyOp("val")).get();
+                fail();
+            } catch (ExecutionException e) {
+                assertInstanceOf(CPGroupDestroyedException.class, e.getCause());
             }
         });
     }

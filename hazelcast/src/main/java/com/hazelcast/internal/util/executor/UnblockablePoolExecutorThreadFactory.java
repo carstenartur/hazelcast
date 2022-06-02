@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,6 @@
  */
 
 package com.hazelcast.internal.util.executor;
-
-import com.hazelcast.util.executor.PoolExecutorThreadFactory;
 
 /**
  * This factory is implemented to have a thread factory that creates threads with `UnblockableThread` interface.

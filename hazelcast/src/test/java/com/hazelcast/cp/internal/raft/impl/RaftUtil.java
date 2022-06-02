@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,151 +16,116 @@
 
 package com.hazelcast.cp.internal.raft.impl;
 
-import com.hazelcast.config.cp.RaftAlgorithmConfig;
-import com.hazelcast.core.Endpoint;
-import com.hazelcast.cp.internal.raft.impl.dataservice.RaftDataService;
 import com.hazelcast.cp.internal.raft.impl.log.LogEntry;
+import com.hazelcast.cp.internal.raft.impl.persistence.RaftStateStore;
+import com.hazelcast.cp.internal.raft.impl.persistence.RestoredRaftState;
 import com.hazelcast.cp.internal.raft.impl.state.LeaderState;
 import com.hazelcast.cp.internal.raft.impl.state.RaftGroupMembers;
-import com.hazelcast.cp.internal.raft.impl.testing.LocalRaftGroup;
-import com.hazelcast.cp.internal.raft.impl.testing.TestRaftMember;
-import com.hazelcast.nio.Address;
-import com.hazelcast.test.AssertTask;
-import com.hazelcast.util.ExceptionUtil;
+import com.hazelcast.cp.internal.raft.impl.testing.InMemoryRaftStateStore;
+import com.hazelcast.cp.internal.raft.impl.testing.TestRaftEndpoint;
+import com.hazelcast.cluster.Address;
+import com.hazelcast.internal.util.ExceptionUtil;
+import com.hazelcast.internal.util.UuidUtil;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.concurrent.Callable;
 import java.util.concurrent.FutureTask;
 
-import static com.hazelcast.cp.internal.raft.impl.dataservice.RaftDataService.SERVICE_NAME;
 import static com.hazelcast.test.HazelcastTestSupport.assertTrueEventually;
-import static com.hazelcast.test.HazelcastTestSupport.randomString;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.fail;
 
 public class RaftUtil {
 
-    public static RaftRole getRole(final RaftNodeImpl node) {
-        Callable<RaftRole> task = new Callable<RaftRole>() {
-            @Override
-            public RaftRole call() {
-                return node.state().role();
-            }
-        };
+    public static RaftRole getRole(RaftNodeImpl node) {
+        Callable<RaftRole> task = () -> node.state().role();
         return readRaftState(node, task);
     }
 
-    public static <T extends Endpoint> T getLeaderMember(final RaftNodeImpl node) {
-        Callable<Endpoint> task = new Callable<Endpoint>() {
-            @Override
-            public Endpoint call() {
-                return node.state().leader();
-            }
-        };
+    public static <T extends RaftEndpoint> T getLeaderMember(final RaftNodeImpl node) {
+        Callable<RaftEndpoint> task = () -> node.state().leader();
         return (T) readRaftState(node, task);
     }
 
-    public static LogEntry getLastLogOrSnapshotEntry(final RaftNodeImpl node) {
-        Callable<LogEntry> task = new Callable<LogEntry>() {
-            @Override
-            public LogEntry call() {
-                return node.state().log().lastLogOrSnapshotEntry();
-            }
-        };
+    public static LogEntry getLastLogOrSnapshotEntry(RaftNodeImpl node) {
+        Callable<LogEntry> task = () -> node.state().log().lastLogOrSnapshotEntry();
 
         return readRaftState(node, task);
     }
 
-    public static LogEntry getSnapshotEntry(final RaftNodeImpl node) {
-        Callable<LogEntry> task = new Callable<LogEntry>() {
-            @Override
-            public LogEntry call() {
-                return node.state().log().snapshot();
-            }
-        };
+    public static LogEntry getSnapshotEntry(RaftNodeImpl node) {
+        Callable<LogEntry> task = () -> node.state().log().snapshot();
 
         return readRaftState(node, task);
     }
 
-    public static long getCommitIndex(final RaftNodeImpl node) {
-        Callable<Long> task = new Callable<Long>() {
-            @Override
-            public Long call() {
-                return node.state().commitIndex();
-            }
-        };
+    public static long getCommitIndex(RaftNodeImpl node) {
+        Callable<Long> task = () -> node.state().commitIndex();
 
         return readRaftState(node, task);
     }
 
-    public static int getTerm(final RaftNodeImpl node) {
-        Callable<Integer> task = new Callable<Integer>() {
-            @Override
-            public Integer call() {
-                return node.state().term();
-            }
-        };
+    public static long getLastApplied(final RaftNodeImpl node) {
+        Callable<Long> task = () -> node.state().lastApplied();
+        return readRaftState(node, task);
+    }
+
+    public static int getTerm(RaftNodeImpl node) {
+        Callable<Integer> task = () -> node.state().term();
 
         return readRaftState(node, task);
     }
 
-    public static long getMatchIndex(final RaftNodeImpl leader, final Endpoint follower) {
-        Callable<Long> task = new Callable<Long>() {
-            @Override
-            public Long call() {
-                LeaderState leaderState = leader.state().leaderState();
-                return leaderState.getFollowerState(follower).matchIndex();
-            }
+    public static long getMatchIndex(RaftNodeImpl leader, RaftEndpoint follower) {
+        Callable<Long> task = () -> {
+            LeaderState leaderState = leader.state().leaderState();
+            return leaderState.getFollowerState(follower).matchIndex();
         };
 
         return readRaftState(leader, task);
     }
 
-    public static RaftNodeStatus getStatus(final RaftNodeImpl node) {
-        Callable<RaftNodeStatus> task = new Callable<RaftNodeStatus>() {
-            @Override
-            public RaftNodeStatus call() {
-                return node.getStatus();
-            }
+    public static long getLeaderQueryRound(RaftNodeImpl leader) {
+        Callable<Long> task = () -> {
+            LeaderState leaderState = leader.state().leaderState();
+            assertNotNull(leader.getLocalMember() + " has no leader state!", leaderState);
+            return leaderState.queryRound();
         };
+
+        return readRaftState(leader, task);
+    }
+
+    public static RaftNodeStatus getStatus(RaftNodeImpl node) {
+        Callable<RaftNodeStatus> task = node::getStatus;
 
         return readRaftState(node, task);
     }
 
-    public static RaftGroupMembers getLastGroupMembers(final RaftNodeImpl node) {
-        Callable<RaftGroupMembers> task = new Callable<RaftGroupMembers>() {
-            @Override
-            public RaftGroupMembers call() {
-                return node.state().lastGroupMembers();
-            }
-        };
+    public static RaftGroupMembers getLastGroupMembers(RaftNodeImpl node) {
+        Callable<RaftGroupMembers> task = () -> node.state().lastGroupMembers();
 
         return readRaftState(node, task);
     }
 
-    public static RaftGroupMembers getCommittedGroupMembers(final RaftNodeImpl node) {
-        Callable<RaftGroupMembers> task = new Callable<RaftGroupMembers>() {
-            @Override
-            public RaftGroupMembers call() {
-                return node.state().committedGroupMembers();
-            }
-        };
+    public static RaftGroupMembers getCommittedGroupMembers(RaftNodeImpl node) {
+        Callable<RaftGroupMembers> task = () -> node.state().committedGroupMembers();
 
         return readRaftState(node, task);
     }
 
-    public static void waitUntilLeaderElected(final RaftNodeImpl node) {
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() {
-                assertNotNull(getLeaderMember(node));
-            }
-        });
+    public static RaftEndpoint getVotedFor(RaftNodeImpl node) {
+        Callable<RaftEndpoint> task = () -> node.state().votedFor();
+
+        return readRaftState(node, task);
+    }
+
+    public static void waitUntilLeaderElected(RaftNodeImpl node) {
+        assertTrueEventually(() -> assertNotNull("Leader is null on " + node, getLeaderMember(node)));
     }
 
     private static <T> T readRaftState(RaftNodeImpl node, Callable<T> task) {
-        FutureTask<T> futureTask = new FutureTask<T>(task);
+        FutureTask<T> futureTask = new FutureTask<>(task);
         node.execute(futureTask);
         try {
             return futureTask.get();
@@ -169,8 +134,8 @@ public class RaftUtil {
         }
     }
 
-    public static TestRaftMember newRaftMember(int port) {
-        return new TestRaftMember(randomString(), port);
+    public static TestRaftEndpoint newRaftMember(int port) {
+        return new TestRaftEndpoint(UuidUtil.newUnsecureUUID(), port);
     }
 
     public static Address newAddress(int port) {
@@ -190,11 +155,18 @@ public class RaftUtil {
         return count - majority(count);
     }
 
-    public static LocalRaftGroup newGroupWithService(int nodeCount, RaftAlgorithmConfig raftAlgorithmConfig) {
-        return newGroupWithService(nodeCount, raftAlgorithmConfig, false);
+    public static RestoredRaftState getRestoredState(final RaftNodeImpl node) {
+        Callable<RestoredRaftState> task = () -> {
+            InMemoryRaftStateStore store = (InMemoryRaftStateStore) node.state().stateStore();
+            return store.toRestoredRaftState();
+        };
+
+        return readRaftState(node, task);
     }
 
-    public static LocalRaftGroup newGroupWithService(int nodeCount, RaftAlgorithmConfig raftAlgorithmConfig, boolean appendNopEntryOnLeaderElection) {
-        return new LocalRaftGroup(nodeCount, raftAlgorithmConfig, SERVICE_NAME, RaftDataService.class, appendNopEntryOnLeaderElection);
+    public static <T extends RaftStateStore> T getRaftStateStore(final RaftNodeImpl node) {
+        Callable<RaftStateStore> task = () -> node.state().stateStore();
+        return (T) readRaftState(node, task);
     }
+
 }

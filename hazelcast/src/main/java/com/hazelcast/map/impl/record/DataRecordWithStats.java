@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,18 @@
 
 package com.hazelcast.map.impl.record;
 
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.Data;
 
-import static com.hazelcast.util.JVMUtil.REFERENCE_COST_IN_BYTES;
+import static com.hazelcast.internal.util.JVMUtil.REFERENCE_COST_IN_BYTES;
 
-class DataRecordWithStats extends AbstractRecordWithStats<Data> {
-
+class DataRecordWithStats extends AbstractRecord<Data> {
     protected volatile Data value;
 
     DataRecordWithStats() {
     }
 
     DataRecordWithStats(Data value) {
-        super();
-        this.value = value;
+        setValue(value);
     }
 
     /**
@@ -37,7 +35,8 @@ class DataRecordWithStats extends AbstractRecordWithStats<Data> {
      */
     @Override
     public long getCost() {
-        return super.getCost() + REFERENCE_COST_IN_BYTES + (value == null ? 0L : value.getHeapCost());
+        return super.getCost() + REFERENCE_COST_IN_BYTES
+                + (value == null ? 0L : value.getHeapCost());
     }
 
     @Override
@@ -57,7 +56,6 @@ class DataRecordWithStats extends AbstractRecordWithStats<Data> {
         }
 
         DataRecordWithStats that = (DataRecordWithStats) o;
-
         return value.equals(that.value);
     }
 
@@ -66,5 +64,13 @@ class DataRecordWithStats extends AbstractRecordWithStats<Data> {
         int result = super.hashCode();
         result = 31 * result + value.hashCode();
         return result;
+    }
+
+    @Override
+    public String toString() {
+        return "DataRecordWithStats{"
+                + "value=" + value
+                + ", " + super.toString()
+                + "} ";
     }
 }

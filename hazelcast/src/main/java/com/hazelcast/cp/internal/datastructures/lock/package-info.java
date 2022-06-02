@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
  */
 
 /**
- * Contains service classes for the Raft-based {@link com.hazelcast.core.ILock}
+ * Contains service classes for the Raft-based {@link com.hazelcast.cp.lock.FencedLock}
  * and {@link com.hazelcast.cp.lock.FencedLock} implementation
  */
 package com.hazelcast.cp.internal.datastructures.lock;

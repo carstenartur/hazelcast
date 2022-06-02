@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,19 +19,18 @@ package com.hazelcast.ringbuffer.impl.operations;
 import com.hazelcast.core.IFunction;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.impl.Versioned;
 import com.hazelcast.ringbuffer.impl.ReadResultSetImpl;
 import com.hazelcast.ringbuffer.impl.RingbufferContainer;
-import com.hazelcast.spi.BlockingOperation;
-import com.hazelcast.spi.ReadonlyOperation;
-import com.hazelcast.spi.WaitNotifyKey;
+import com.hazelcast.spi.impl.operationservice.BlockingOperation;
+import com.hazelcast.spi.impl.operationservice.ReadonlyOperation;
+import com.hazelcast.spi.impl.operationservice.WaitNotifyKey;
 
 import java.io.IOException;
 
 import static com.hazelcast.ringbuffer.impl.RingbufferDataSerializerHook.READ_MANY_OPERATION;
 
 public class ReadManyOperation<O> extends AbstractRingBufferOperation
-        implements BlockingOperation, ReadonlyOperation, Versioned {
+        implements BlockingOperation, ReadonlyOperation {
     transient long sequence;
 
     private int minSize;
@@ -54,21 +53,26 @@ public class ReadManyOperation<O> extends AbstractRingBufferOperation
 
     @Override
     public void beforeRun() {
-        RingbufferContainer ringbuffer = getRingBufferContainer();
-        ringbuffer.checkBlockableReadSequence(startSequence);
     }
 
     @Override
     public boolean shouldWait() {
+        RingbufferContainer ringbuffer = getRingBufferContainerOrNull();
+
         if (resultSet == null) {
-            resultSet = new ReadResultSetImpl<O, O>(minSize, maxSize, getNodeEngine().getSerializationService(), filter);
+            resultSet = new ReadResultSetImpl<>(minSize, maxSize, getNodeEngine().getSerializationService(), filter);
             sequence = startSequence;
         }
 
-        RingbufferContainer ringbuffer = getRingBufferContainer();
+        if (ringbuffer == null) {
+            return minSize > 0;
+        }
+
+        sequence = ringbuffer.clampReadSequenceToBounds(sequence);
+
         if (minSize == 0) {
-            if (!ringbuffer.shouldWait(sequence)) {
-                sequence = ringbuffer.readMany(sequence, resultSet);
+            if (sequence < ringbuffer.tailSequence() + 1) {
+                readMany(ringbuffer);
             }
 
             return false;
@@ -79,21 +83,27 @@ public class ReadManyOperation<O> extends AbstractRingBufferOperation
             return false;
         }
 
-        if (ringbuffer.isTooLargeSequence(sequence) || ringbuffer.isStaleSequence(sequence)) {
-            //no need to wait, let the operation continue and fail in beforeRun
-            return false;
-        }
         if (sequence == ringbuffer.tailSequence() + 1) {
             // the sequence is not readable
             return true;
         }
-        sequence = ringbuffer.readMany(sequence, resultSet);
+        readMany(ringbuffer);
         return !resultSet.isMinSizeReached();
+    }
+
+    private void readMany(RingbufferContainer ringbuffer) {
+        sequence = ringbuffer.readMany(sequence, resultSet);
+        resultSet.setNextSequenceToReadFrom(sequence);
     }
 
     @Override
     public void run() throws Exception {
         // no-op; we already did the work in the shouldWait method.
+    }
+
+    @Override
+    public void afterRun() throws Exception {
+        reportReliableTopicReceived(resultSet.size());
     }
 
     @Override
@@ -103,8 +113,7 @@ public class ReadManyOperation<O> extends AbstractRingBufferOperation
 
     @Override
     public WaitNotifyKey getWaitKey() {
-        RingbufferContainer ringbuffer = getRingBufferContainer();
-        return ringbuffer.getRingEmptyWaitNotifyKey();
+        return getRingbufferWaitNotifyKey();
     }
 
     @Override
@@ -113,7 +122,7 @@ public class ReadManyOperation<O> extends AbstractRingBufferOperation
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return READ_MANY_OPERATION;
     }
 

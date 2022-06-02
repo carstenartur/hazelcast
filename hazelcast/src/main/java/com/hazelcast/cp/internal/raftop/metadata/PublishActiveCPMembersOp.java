@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import com.hazelcast.cp.internal.RaftOp;
 import com.hazelcast.cp.internal.RaftSystemOperation;
 import com.hazelcast.cp.internal.RaftService;
 import com.hazelcast.cp.internal.RaftServiceDataSerializerHook;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.operationservice.Operation;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -34,7 +34,7 @@ import java.util.Collection;
 /**
  * CP members use this operation to broadcast their current active CP member
  * list to the AP Hazelcast members.
- * <p/>
+ * <p>
  * Please note that this operation is not a {@link RaftOp},
  * so it is not handled via the Raft layer.
  */
@@ -75,7 +75,7 @@ public class PublishActiveCPMembersOp extends Operation implements IdentifiedDat
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftServiceDataSerializerHook.PUBLISH_ACTIVE_CP_MEMBERS_OP;
     }
 
@@ -96,7 +96,7 @@ public class PublishActiveCPMembersOp extends Operation implements IdentifiedDat
         metadataGroupId = in.readObject();
         membersCommitIndex = in.readLong();
         int len = in.readInt();
-        members = new ArrayList<CPMemberInfo>(len);
+        members = new ArrayList<>(len);
         for (int i = 0; i < len; i++) {
             CPMemberInfo member = in.readObject();
             members.add(member);

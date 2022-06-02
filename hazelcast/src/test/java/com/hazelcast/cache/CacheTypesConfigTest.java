@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,18 +20,18 @@ import classloading.domain.Person;
 import classloading.domain.PersonCacheLoaderFactory;
 import classloading.domain.PersonEntryProcessor;
 import classloading.domain.PersonExpiryPolicyFactory;
-import com.hazelcast.cache.impl.HazelcastServerCachingProvider;
 import com.hazelcast.config.CacheConfig;
 import com.hazelcast.config.Config;
 import com.hazelcast.config.UserCodeDeploymentConfig;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.internal.util.FilteringClassLoader;
+import com.hazelcast.internal.util.RootCauseMatcher;
+import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.util.FilteringClassLoader;
-import com.hazelcast.util.RootCauseMatcher;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -44,7 +44,10 @@ import javax.cache.spi.CachingProvider;
 import java.util.Arrays;
 import java.util.List;
 
+import static com.hazelcast.cache.CacheTestSupport.createServerCachingProvider;
 import static com.hazelcast.cache.HazelcastCachingProvider.propertiesByInstanceItself;
+import com.hazelcast.cache.impl.CacheProxy;
+import com.hazelcast.cache.impl.CacheService;
 import static com.hazelcast.config.UserCodeDeploymentConfig.ClassCacheMode.OFF;
 import static org.junit.Assert.assertNotNull;
 
@@ -52,7 +55,7 @@ import static org.junit.Assert.assertNotNull;
  * Test transfer of CacheConfig's of typed Caches to a joining member
  */
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class CacheTypesConfigTest extends HazelcastTestSupport {
 
     @Rule
@@ -73,7 +76,7 @@ public class CacheTypesConfigTest extends HazelcastTestSupport {
     public void cacheConfigShouldBeAddedOnJoiningMember_whenClassNotResolvable() {
         // create a HazelcastInstance with a CacheConfig referring to a Class not resolvable on the joining member
         HazelcastInstance hz1 = factory.newHazelcastInstance(getConfig());
-        CachingProvider cachingProvider = HazelcastServerCachingProvider.createCachingProvider(hz1);
+        CachingProvider cachingProvider = createServerCachingProvider(hz1);
         cachingProvider.getCacheManager().createCache(cacheName, createCacheConfig());
 
         // joining member cannot resolve Person class
@@ -90,6 +93,24 @@ public class CacheTypesConfigTest extends HazelcastTestSupport {
         cache.invoke(key, new PersonEntryProcessor());
     }
 
+    @Test
+    public void cacheConfigShouldBeAddedOnJoiningMember_whenNoMemberResolvesClass() {
+        // given a member who cannot resolve the value type of a CacheConfig
+        HazelcastInstance hz1 = factory.newHazelcastInstance(getClassFilteringConfig());
+        // and a new member that creates a CacheConfig with an explicit value type
+        HazelcastInstance hz2 = factory.newHazelcastInstance(getConfig());
+        CachingProvider cachingProvider = createServerCachingProvider(hz1);
+        cachingProvider.getCacheManager().createCache(cacheName, createCacheConfig());
+        // ensure cluster is formed but cache is not used
+        assertClusterSize(2, hz1, hz2);
+        // member that is aware of value type leaves cluster
+        hz2.shutdown();
+
+        // then new member unaware of the value type can join the cluster
+        hz2 = factory.newHazelcastInstance(getClassFilteringConfig());
+        assertClusterSize(2, hz1, hz2);
+    }
+
     // When the joining member is not aware of key or value class but it is later resolvable via user code deployment, then
     // all Cache features should work
     @Test
@@ -102,7 +123,7 @@ public class CacheTypesConfigTest extends HazelcastTestSupport {
                 .setWhitelistedPrefixes("classloading");
         config.setUserCodeDeploymentConfig(codeDeploymentConfig);
         HazelcastInstance hz1 = factory.newHazelcastInstance(config);
-        CachingProvider cachingProvider = HazelcastServerCachingProvider.createCachingProvider(hz1);
+        CachingProvider cachingProvider = createServerCachingProvider(hz1);
         cachingProvider.getCacheManager().createCache(cacheName, createCacheConfig());
 
         // joining member cannot resolve Person class but it is resolvable on other member via user code deployment
@@ -122,7 +143,7 @@ public class CacheTypesConfigTest extends HazelcastTestSupport {
     @Test
     public void cacheConfigShouldBeAddedOnJoiningMember_whenCacheLoaderFactoryNotResolvable() throws InterruptedException {
         HazelcastInstance hz1 = factory.newHazelcastInstance(getConfig());
-        CachingProvider cachingProvider = HazelcastServerCachingProvider.createCachingProvider(hz1);
+        CachingProvider cachingProvider = createServerCachingProvider(hz1);
         CacheManager cacheManager1 = cachingProvider.getCacheManager(null, null, propertiesByInstanceItself(hz1));
         CacheConfig cacheConfig = createCacheConfig();
         cacheConfig.setCacheLoaderFactory(new PersonCacheLoaderFactory());
@@ -139,11 +160,41 @@ public class CacheTypesConfigTest extends HazelcastTestSupport {
         cache.invoke(key, new PersonEntryProcessor());
     }
 
+    // tests deferred resolution of factories, with context class loader set correctly
+    @Test
+    public void cacheConfigShouldBeAddedOnJoiningMember_whenCacheLoaderFactoryNotResolvableWithClassLoaderSet() throws InterruptedException {
+        HazelcastInstance hz1 = factory.newHazelcastInstance(getConfig());
+        CachingProvider cachingProvider = createServerCachingProvider(hz1);
+        CacheManager cacheManager1 = cachingProvider.getCacheManager(null, null, propertiesByInstanceItself(hz1));
+        CacheConfig<String, Person> cacheConfig = createCacheConfig();
+        cacheConfig.setCacheLoaderFactory(new PersonCacheLoaderFactory());
+        cacheManager1.createCache(cacheName, cacheConfig);
+
+        // joining member cannot resolve PersonCacheLoaderFactory class
+        HazelcastInstance hz2 = factory.newHazelcastInstance(getClassFilteringConfig());
+        assertClusterSize(2, hz1, hz2);
+
+        ICache<String, Person> cache = hz2.getCacheManager().getCache(cacheName);
+        ClassLoader oldClassLoader = Thread.currentThread().getContextClassLoader();
+        try {
+            Thread.currentThread().setContextClassLoader(hz2.getConfig().getClassLoader());
+            CacheProxy<String, Person> cacheProxy = (CacheProxy<String, Person>) cache;
+            CacheService cacheService = (CacheService) cacheProxy.getService();
+            expect.expectCause(new RootCauseMatcher(ClassNotFoundException.class, "classloading.domain.PersonCacheLoaderFactory - "
+                    + "Package excluded explicitly"));
+            cacheService.getCacheConfig(cache.getPrefixedName()).getCacheLoaderFactory();
+            String key = generateKeyOwnedBy(hz2);
+            cache.invoke(key, new PersonEntryProcessor());
+        } finally {
+            Thread.currentThread().setContextClassLoader(oldClassLoader);
+        }
+    }
+
     // tests deferred resolution of expiry policy factory
     @Test
     public void cacheConfigShouldBeAddedOnJoiningMember_whenExpiryPolicyFactoryNotResolvable() throws InterruptedException {
         HazelcastInstance hz1 = factory.newHazelcastInstance(getConfig());
-        CachingProvider cachingProvider = HazelcastServerCachingProvider.createCachingProvider(hz1);
+        CachingProvider cachingProvider = createServerCachingProvider(hz1);
         cachingProvider.getCacheManager().createCache(cacheName, createCacheConfig()
                 .setExpiryPolicyFactory(new PersonExpiryPolicyFactory()));
 
@@ -159,9 +210,15 @@ public class CacheTypesConfigTest extends HazelcastTestSupport {
 
     // overridden in another context
     CacheConfig<String, Person> createCacheConfig() {
-        CacheConfig<String, Person> cacheConfig = new CacheConfig<String, Person>();
-        cacheConfig.setTypes(String.class, Person.class).setManagementEnabled(true);
+        CacheConfig<String, Person> cacheConfig = new CacheConfig<>();
+        cacheConfig.setTypes(String.class, Person.class);
         return cacheConfig;
+    }
+
+    @Override
+    protected Config getConfig() {
+        return smallInstanceConfig()
+                .setProperty(ClusterProperty.MAX_JOIN_SECONDS.getName(), "10");
     }
 
     private Config getClassFilteringConfig() {

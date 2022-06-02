@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,16 @@ package com.hazelcast.internal.management.events;
 
 import com.hazelcast.internal.json.JsonObject;
 
-abstract class AbstractWanSyncFinishedEvent extends AbstractWanEventBase {
+import java.util.UUID;
+
+abstract class AbstractWanSyncFinishedEvent extends AbstractWanAntiEntropyEventBase {
     private final int partitionsSynced;
     private final long recordsSynced;
     private final long durationSecs;
 
-    AbstractWanSyncFinishedEvent(String wanReplicationName, String targetGroupName, String mapName, long durationSecs,
+    AbstractWanSyncFinishedEvent(UUID uuid, String wanReplicationName, String wanPublisherId, String mapName, long durationSecs,
                                  long recordsSynced, int partitionsSynced) {
-        super(wanReplicationName, targetGroupName, mapName);
+        super(uuid, wanReplicationName, wanPublisherId, mapName);
         this.durationSecs = durationSecs;
         this.recordsSynced = recordsSynced;
         this.partitionsSynced = partitionsSynced;

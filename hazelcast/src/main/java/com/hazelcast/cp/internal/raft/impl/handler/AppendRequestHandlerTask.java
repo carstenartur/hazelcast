@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -78,22 +78,20 @@ public class AppendRequestHandlerTask extends RaftNodeStatusAwareTask implements
             return;
         }
 
-        RaftLog raftLog = state.log();
-
         // Transform into follower if a newer term is seen or another node wins the election of the current term
         if (req.term() > state.term() || state.role() != FOLLOWER) {
             // If RPC request or response contains term T > currentTerm: set currentTerm = T, convert to follower (§5.1)
             logger.info("Demoting to FOLLOWER from current role: " + state.role() + ", term: " + state.term()
                     + " to new term: " + req.term() + " and leader: " + req.leader());
-            state.toFollower(req.term());
-            raftNode.printMemberState();
+            raftNode.toFollower(req.term());
         }
 
         if (!req.leader().equals(state.leader())) {
             logger.info("Setting leader: " + req.leader());
-            state.leader(req.leader());
-            raftNode.printMemberState();
+            raftNode.leader(req.leader());
         }
+
+        RaftLog raftLog = state.log();
 
         // Verify the last log entry
         if (req.prevLogIndex() > 0) {
@@ -149,7 +147,7 @@ public class AppendRequestHandlerTask extends RaftNodeStatusAwareTask implements
                 // If an existing entry conflicts with a new one (same index but different terms),
                 // delete the existing entry and all that follow it (§5.3)
                 if (reqEntry.term() != localEntry.term()) {
-                    List<LogEntry> truncatedEntries = raftLog.truncateEntriesFrom(reqEntry.index());
+                    List<LogEntry> truncatedEntries = raftLog.deleteEntriesFrom(reqEntry.index());
                     if (logger.isFineEnabled()) {
                         logger.warning("Truncated " + truncatedEntries.size() + " entries from entry index: "
                                 + reqEntry.index() + " => " + truncatedEntries);
@@ -161,6 +159,7 @@ public class AppendRequestHandlerTask extends RaftNodeStatusAwareTask implements
                     raftNode.invalidateFuturesFrom(reqEntry.index());
                     revertPreAppliedRaftGroupCmd(truncatedEntries);
                     newEntries = Arrays.copyOfRange(req.entries(), i, req.entryCount());
+                    raftLog.flush();
                     break;
                 }
             }
@@ -182,6 +181,7 @@ public class AppendRequestHandlerTask extends RaftNodeStatusAwareTask implements
                 }
 
                 raftLog.appendEntries(newEntries);
+                raftLog.flush();
             }
         }
 
@@ -204,12 +204,8 @@ public class AppendRequestHandlerTask extends RaftNodeStatusAwareTask implements
         raftNode.updateLastAppendEntriesTimestamp();
 
         try {
-            // If I just appended any new entry or the leader is trying to adjust my match index, I must send a response.
-            // Otherwise, I just learnt the last commit index and I don't need to send a response.
-            if (req.entryCount() > 0 || oldCommitIndex == state.commitIndex()) {
-                AppendSuccessResponse resp = new AppendSuccessResponse(raftNode.getLocalMember(), state.term(), lastLogIndex);
-                raftNode.send(resp, req.leader());
-            }
+            AppendSuccessResponse resp = new AppendSuccessResponse(localMember(), state.term(), lastLogIndex, req.queryRound());
+            raftNode.send(resp, req.leader());
         } finally {
             if (state.commitIndex() > oldCommitIndex) {
                 raftNode.applyLogEntries();
@@ -245,7 +241,7 @@ public class AppendRequestHandlerTask extends RaftNodeStatusAwareTask implements
 
     private void revertPreAppliedRaftGroupCmd(List<LogEntry> entries) {
         // I am reverting appended-but-uncommitted entries and there can be at most 1 uncommitted Raft command...
-        List<LogEntry> commandEntries = new ArrayList<LogEntry>();
+        List<LogEntry> commandEntries = new ArrayList<>();
         for (LogEntry entry : entries) {
             if (entry.operation() instanceof RaftGroupCmd) {
                 commandEntries.add(entry);
@@ -265,6 +261,6 @@ public class AppendRequestHandlerTask extends RaftNodeStatusAwareTask implements
     }
 
     private AppendFailureResponse createFailureResponse(int term) {
-        return new AppendFailureResponse(raftNode.getLocalMember(), term, req.prevLogIndex() + 1);
+        return new AppendFailureResponse(localMember(), term, req.prevLogIndex() + 1);
     }
 }

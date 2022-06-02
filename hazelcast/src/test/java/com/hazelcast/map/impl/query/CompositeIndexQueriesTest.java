@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,21 +18,25 @@ package com.hazelcast.map.impl.query;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.config.InMemoryFormat;
-import com.hazelcast.core.IMap;
-import com.hazelcast.query.IndexAwarePredicate;
+import com.hazelcast.config.IndexConfig;
+import com.hazelcast.config.IndexType;
+import com.hazelcast.map.IMap;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.Predicates;
 import com.hazelcast.query.QueryException;
-import com.hazelcast.query.SqlPredicate;
-import com.hazelcast.query.VisitablePredicate;
 import com.hazelcast.query.impl.Extractable;
+import com.hazelcast.query.impl.IndexUtils;
 import com.hazelcast.query.impl.Indexes;
 import com.hazelcast.query.impl.QueryContext;
 import com.hazelcast.query.impl.QueryableEntry;
+import com.hazelcast.query.impl.predicates.IndexAwarePredicate;
+import com.hazelcast.query.impl.predicates.SqlPredicate;
+import com.hazelcast.query.impl.predicates.VisitablePredicate;
 import com.hazelcast.query.impl.predicates.Visitor;
 import com.hazelcast.test.HazelcastParallelParametersRunnerFactory;
+import com.hazelcast.test.HazelcastParametrizedRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -50,10 +54,11 @@ import java.util.Set;
 import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
+import static org.junit.runners.Parameterized.UseParametersRunnerFactory;
 
-@RunWith(Parameterized.class)
-@Parameterized.UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
-@Category({QuickTest.class, ParallelTest.class})
+@RunWith(HazelcastParametrizedRunner.class)
+@UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class CompositeIndexQueriesTest extends HazelcastTestSupport {
 
     private IMap<Integer, Person> map;
@@ -72,14 +77,20 @@ public class CompositeIndexQueriesTest extends HazelcastTestSupport {
     public void before() {
         Config config = getConfig();
         config.getMapConfig("map").setInMemoryFormat(inMemoryFormat);
+        config.setProperty(QueryEngineImpl.DISABLE_MIGRATION_FALLBACK.getName(), "true");
         map = createHazelcastInstance(config).getMap("map");
-        map.addIndex("name, age", false);
-        map.addIndex("__key, age", true);
-        map.addIndex("height, __key", true);
 
-        indexes.add("name, age");
-        indexes.add("__key, age");
-        indexes.add("height, __key");
+        IndexConfig indexConfig1 = IndexUtils.createTestIndexConfig(IndexType.HASH, "name", "age");
+        IndexConfig indexConfig2 = IndexUtils.createTestIndexConfig(IndexType.SORTED, "__key", "age");
+        IndexConfig indexConfig3 = IndexUtils.createTestIndexConfig(IndexType.SORTED, "height", "__key");
+
+        map.addIndex(indexConfig1);
+        map.addIndex(indexConfig2);
+        map.addIndex(indexConfig3);
+
+        indexes.add(indexConfig1.getName());
+        indexes.add(indexConfig2.getName());
+        indexes.add(indexConfig3.getName());
 
         map.put(-2, new Person(null));
         map.put(-1, new Person(null));
@@ -90,7 +101,6 @@ public class CompositeIndexQueriesTest extends HazelcastTestSupport {
         map.put(101, new Person(null));
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     public void testCompositeQueries() {
         check(null, 0, 0, 0, 0);
@@ -110,11 +120,10 @@ public class CompositeIndexQueriesTest extends HazelcastTestSupport {
 
         map.put(101, new Person(10));
         check("name = '010' and age = 110", 2, 3, 7, 0);
-        map.removeAll(new SqlPredicate("name = '010' and age = 110"));
+        map.removeAll(Predicates.sql("name = '010' and age = 110"));
         check("name = '010' and age = 110", 0, 5, 7, 0);
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     public void testFirstComponentQuerying() {
         check(null, 0, 0, 0, 0);
@@ -166,7 +175,6 @@ public class CompositeIndexQueriesTest extends HazelcastTestSupport {
         check("height != null", 100, 0, 0, 0);
     }
 
-    @SuppressWarnings("unchecked")
     @Test
     public void testNulls() {
         check(null, 0, 0, 0, 0);
@@ -190,7 +198,7 @@ public class CompositeIndexQueriesTest extends HazelcastTestSupport {
 
         map.put(50, new Person(null));
         check("this.name = null and age = null", 5, 2, 3, 7);
-        map.removeAll(new SqlPredicate("this.name = null and age = null"));
+        map.removeAll(Predicates.sql("this.name = null and age = null"));
         check("this.name = null and age = null", 0, 4, 3, 7);
     }
 
@@ -200,7 +208,7 @@ public class CompositeIndexQueriesTest extends HazelcastTestSupport {
 
     private void check(String sql, int expectedSize, int... queryCounts) {
         if (sql != null) {
-            SqlPredicate sqlPredicate = new SqlPredicate(sql);
+            SqlPredicate sqlPredicate = (SqlPredicate) Predicates.sql(sql);
             Set<Map.Entry<Integer, Person>> result = map.entrySet(sqlPredicate);
             assertEquals(expectedSize, result.size());
 
@@ -274,7 +282,7 @@ public class CompositeIndexQueriesTest extends HazelcastTestSupport {
         private final Integer key;
         private final Person value;
 
-        public ExtractableAdapter(Map.Entry<Integer, Person> entry) {
+        ExtractableAdapter(Map.Entry<Integer, Person> entry) {
             this.key = entry.getKey();
             this.value = entry.getValue();
         }
@@ -319,16 +327,17 @@ public class CompositeIndexQueriesTest extends HazelcastTestSupport {
 
     private static class NoIndexPredicate implements IndexAwarePredicate, VisitablePredicate {
 
-        private Predicate delegate;
+        private volatile Predicate delegate;
 
-        public NoIndexPredicate(Predicate delegate) {
+        NoIndexPredicate(Predicate delegate) {
             this.delegate = delegate;
         }
 
         @Override
         public Predicate accept(Visitor visitor, Indexes indexes) {
+            Predicate delegate = this.delegate;
             if (delegate instanceof VisitablePredicate) {
-                delegate = ((VisitablePredicate) delegate).accept(visitor, indexes);
+                this.delegate = ((VisitablePredicate) delegate).accept(visitor, indexes);
             }
             return this;
         }

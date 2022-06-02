@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,20 +17,21 @@
 package com.hazelcast.map.impl.mapstore;
 
 import com.hazelcast.config.Config;
+import com.hazelcast.config.EvictionConfig;
 import com.hazelcast.config.EvictionPolicy;
+import com.hazelcast.config.IndexType;
 import com.hazelcast.config.MapConfig;
-import com.hazelcast.config.MaxSizeConfig;
 import com.hazelcast.core.EntryAdapter;
 import com.hazelcast.core.EntryEvent;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
+import com.hazelcast.map.IMap;
 import com.hazelcast.map.impl.mapstore.MapStoreTest.TestMapStore;
-import com.hazelcast.map.impl.mapstore.MapStoreWriteBehindTest.FailAwareMapStore;
+import com.hazelcast.map.impl.mapstore.writebehind.MapStoreWriteBehindTest.FailAwareMapStore;
 import com.hazelcast.query.SampleTestObjects.Employee;
-import com.hazelcast.spi.properties.GroupProperty;
+import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -39,6 +40,7 @@ import org.junit.runner.RunWith;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import static com.hazelcast.test.Accessors.getNode;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -46,7 +48,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class MapStoreWriteThroughTest extends AbstractMapStoreTest {
 
     @Test(timeout = 120000)
@@ -86,13 +88,13 @@ public class MapStoreWriteThroughTest extends AbstractMapStoreTest {
         TestMapStore testMapStore = new TestMapStore(size * 2, 1, 1);
         testMapStore.setLoadAllKeys(false);
         Config config = newConfig(testMapStore, 0);
-        config.setProperty(GroupProperty.PARTITION_COUNT.getName(), "1");
-        MaxSizeConfig maxSizeConfig = new MaxSizeConfig();
-        maxSizeConfig.setSize(size);
+        config.setProperty(ClusterProperty.PARTITION_COUNT.getName(), "1");
+
         MapConfig mapConfig = config.getMapConfig("default");
-        mapConfig.setEvictionPolicy(EvictionPolicy.LRU);
-        mapConfig.setMaxSizeConfig(maxSizeConfig);
-        mapConfig.setMinEvictionCheckMillis(0);
+        EvictionConfig evictionConfig = mapConfig.getEvictionConfig();
+        evictionConfig.setEvictionPolicy(EvictionPolicy.LRU);
+        evictionConfig.setSize(size);
+
         TestHazelcastInstanceFactory nodeFactory = createHazelcastInstanceFactory(3);
 
         HazelcastInstance instance = nodeFactory.newHazelcastInstance(config);
@@ -137,7 +139,7 @@ public class MapStoreWriteThroughTest extends AbstractMapStoreTest {
         testMapStore.insert("7", employee);
 
         IMap<String, Employee> map = instance.getMap("default");
-        map.addIndex("name", false);
+        map.addIndex(IndexType.HASH, "name");
         assertEquals(0, map.size());
         assertEquals(employee, map.get("1"));
         assertEquals(employee, testMapStore.getStore().get("1"));
@@ -191,7 +193,7 @@ public class MapStoreWriteThroughTest extends AbstractMapStoreTest {
         Employee employee2 = new Employee("jay", 35, false, 100.00);
         testMapStore.insert("1", employee);
         IMap<String, Employee> map = instance.getMap("default");
-        map.addIndex("name", false);
+        map.addIndex(IndexType.HASH, "name");
         assertEquals(0, map.size());
         assertEquals(employee, map.get("1"));
         assertEquals(employee, testMapStore.getStore().get("1"));

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,68 +16,42 @@
 
 package com.hazelcast.config;
 
+import javax.annotation.Nonnull;
+import java.util.Objects;
 import java.util.Properties;
+
+import static com.hazelcast.internal.util.Preconditions.checkNotNull;
 
 /**
  * SSL configuration.
  */
-public final class SSLConfig {
+public final class SSLConfig extends AbstractFactoryWithPropertiesConfig<SSLConfig> {
 
-    private boolean enabled;
-    private String factoryClassName;
     private Object factoryImplementation;
-    private Properties properties = new Properties();
 
     public SSLConfig() {
     }
 
     public SSLConfig(SSLConfig sslConfig) {
-        enabled = sslConfig.enabled;
-        factoryClassName = sslConfig.factoryClassName;
         factoryImplementation = sslConfig.factoryImplementation;
-        properties = new Properties();
-        properties.putAll(sslConfig.properties);
-    }
-
-    /**
-     * Returns the name of the implementation class.
-     * <p>
-     * Class can either be an  {@link com.hazelcast.nio.ssl.SSLContextFactory} or {@link com.hazelcast.nio.ssl.SSLEngineFactory}.
-     *
-     * @return the name implementation class
-     */
-    public String getFactoryClassName() {
-        return factoryClassName;
+        setEnabled(sslConfig.isEnabled());
+        factoryClassName = sslConfig.getFactoryClassName();
+        Properties properties = new Properties();
+        properties.putAll(sslConfig.getProperties());
+        setProperties(properties);
     }
 
     /**
      * Sets the name for the implementation class.
      * <p>
-     * Class can either be an  {@link com.hazelcast.nio.ssl.SSLContextFactory} or {@link com.hazelcast.nio.ssl.SSLEngineFactory}.
+     * Class can either be an {@link com.hazelcast.nio.ssl.SSLContextFactory} or {@code com.hazelcast.nio.ssl.SSLEngineFactory}
+     * (Enterprise edition).
      *
      * @param factoryClassName the name implementation class
      */
-    public SSLConfig setFactoryClassName(String factoryClassName) {
-        this.factoryClassName = factoryClassName;
-        return this;
-    }
-
-    /**
-     * Returns if this configuration is enabled.
-     *
-     * @return {@code true} if enabled, {@code false} otherwise
-     */
-    public boolean isEnabled() {
-        return enabled;
-    }
-
-    /**
-     * Enables and disables this configuration.
-     *
-     * @param enabled {@code true} to enable, {@code false} to disable
-     */
-    public SSLConfig setEnabled(boolean enabled) {
-        this.enabled = enabled;
+    public SSLConfig setFactoryClassName(@Nonnull String factoryClassName) {
+        super.setFactoryClassName(factoryClassName);
+        this.factoryImplementation = null;
         return this;
     }
 
@@ -85,20 +59,22 @@ public final class SSLConfig {
      * Sets the implementation object.
      * <p>
      * Object must be instance of an {@link com.hazelcast.nio.ssl.SSLContextFactory} or
-     * {@link com.hazelcast.nio.ssl.SSLEngineFactory}.
+     * {@code com.hazelcast.nio.ssl.SSLEngineFactory} (Enterprise edition).
      *
      * @param factoryImplementation the implementation object
      * @return this SSLConfig instance
      */
-    public SSLConfig setFactoryImplementation(Object factoryImplementation) {
-        this.factoryImplementation = factoryImplementation;
+    public SSLConfig setFactoryImplementation(@Nonnull Object factoryImplementation) {
+        this.factoryImplementation = checkNotNull(factoryImplementation, "SSL context factory cannot be null!");
+        factoryClassName = null;
         return this;
     }
 
     /**
      * Returns the factory implementation object.
      * <p>
-     * Object is instance of an {@link com.hazelcast.nio.ssl.SSLContextFactory} or {@link com.hazelcast.nio.ssl.SSLEngineFactory}.
+     * Object is instance of an {@link com.hazelcast.nio.ssl.SSLContextFactory} or {@code com.hazelcast.nio.ssl.SSLEngineFactory}
+     * (Enterprise edition).
      *
      * @return the factory implementation object
      */
@@ -106,96 +82,38 @@ public final class SSLConfig {
         return factoryImplementation;
     }
 
-    /**
-     * Sets a property.
-     *
-     * @param name  the name of the property to set
-     * @param value the value of the property to set
-     * @return the updated SSLConfig
-     * @throws NullPointerException if name or value is {@code null}
-     */
-    public SSLConfig setProperty(String name, String value) {
-        properties.put(name, value);
-        return this;
+    @Override
+    public int hashCode() {
+        final int prime = 31;
+        int result = super.hashCode();
+        result = prime * result + Objects.hash(factoryImplementation);
+        return result;
     }
 
-    /**
-     * Gets a property.
-     *
-     * @param name the name of the property to get
-     * @return the value of the property, null if not found
-     * @throws NullPointerException if name is {@code null}
-     */
-    public String getProperty(String name) {
-        return properties.getProperty(name);
-    }
-
-    /**
-     * Gets all properties.
-     *
-     * @return the properties
-     */
-    public Properties getProperties() {
-        return properties;
-    }
-
-    /**
-     * Sets the properties.
-     *
-     * @param properties the properties to set
-     * @return the updated SSLConfig
-     * @throws IllegalArgumentException if properties is {@code null}
-     */
-    public SSLConfig setProperties(Properties properties) {
-        if (properties == null) {
-            throw new IllegalArgumentException("properties can't be null");
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
         }
-        this.properties = properties;
-        return this;
+        if (!super.equals(obj)) {
+            return false;
+        }
+        if (getClass() != obj.getClass()) {
+            return false;
+        }
+        SSLConfig other = (SSLConfig) obj;
+        return Objects.equals(factoryImplementation, other.factoryImplementation);
     }
 
     @Override
     public String toString() {
-        return "SSLConfig{"
-                + "className='" + factoryClassName + '\''
-                + ", enabled=" + enabled
-                + ", implementation=" + factoryImplementation
-                + ", properties=" + properties
-                + '}';
+        return "SSLConfig [factoryImplementation=" + factoryImplementation + ", getFactoryClassName()=" + getFactoryClassName()
+                + ", isEnabled()=" + isEnabled() + ", getProperties()=" + getProperties() + "]";
     }
 
     @Override
-    @SuppressWarnings({"checkstyle:npathcomplexity"})
-    public boolean equals(Object o) {
-        if (this == o) {
-            return true;
-        }
-        if (o == null || getClass() != o.getClass()) {
-            return false;
-        }
-
-        SSLConfig sslConfig = (SSLConfig) o;
-
-        if (enabled != sslConfig.enabled) {
-            return false;
-        }
-        if (factoryClassName != null
-                ? !factoryClassName.equals(sslConfig.factoryClassName) : sslConfig.factoryClassName != null) {
-            return false;
-        }
-        if (factoryImplementation != null
-                ? !factoryImplementation.equals(sslConfig.factoryImplementation) : sslConfig.factoryImplementation != null) {
-            return false;
-        }
-        return properties != null ? properties.equals(sslConfig.properties) : sslConfig.properties == null;
+    protected SSLConfig self() {
+        return this;
     }
 
-    @Override
-    public int hashCode() {
-        int result = (enabled ? 1 : 0);
-        result = 31 * result + (factoryClassName != null ? factoryClassName.hashCode() : 0);
-        result = 31 * result + (factoryImplementation != null ? factoryImplementation.hashCode() : 0);
-        result = 31 * result + (properties != null ? properties.hashCode() : 0);
-        return result;
-    }
 }

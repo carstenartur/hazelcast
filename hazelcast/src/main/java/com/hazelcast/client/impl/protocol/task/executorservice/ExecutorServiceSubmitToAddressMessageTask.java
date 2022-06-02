@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,35 +17,31 @@
 package com.hazelcast.client.impl.protocol.task.executorservice;
 
 import com.hazelcast.client.impl.protocol.ClientMessage;
-import com.hazelcast.client.impl.protocol.codec.ExecutorServiceSubmitToAddressCodec;
-import com.hazelcast.client.impl.protocol.task.AbstractInvocationMessageTask;
-import com.hazelcast.core.ExecutionCallback;
+import com.hazelcast.client.impl.protocol.codec.ExecutorServiceSubmitToMemberCodec;
+import com.hazelcast.client.impl.protocol.task.AbstractTargetMessageTask;
 import com.hazelcast.executor.impl.DistributedExecutorService;
 import com.hazelcast.executor.impl.operations.MemberCallableTaskOperation;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.security.SecurityContext;
-import com.hazelcast.spi.InvocationBuilder;
-import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.impl.operationservice.InternalOperationService;
+import com.hazelcast.spi.impl.operationservice.Operation;
 
 import javax.security.auth.Subject;
 import java.security.Permission;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 
 public class ExecutorServiceSubmitToAddressMessageTask
-        extends AbstractInvocationMessageTask<ExecutorServiceSubmitToAddressCodec.RequestParameters>
-        implements ExecutionCallback {
+        extends AbstractTargetMessageTask<ExecutorServiceSubmitToMemberCodec.RequestParameters> {
 
     public ExecutorServiceSubmitToAddressMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
     }
 
     @Override
-    protected InvocationBuilder getInvocationBuilder(Operation op) {
-        final InternalOperationService operationService = nodeEngine.getOperationService();
-        return operationService.createInvocationBuilder(getServiceName(), op, parameters.address);
+    protected UUID getTargetUuid() {
+        return parameters.memberUUID;
     }
 
     @Override
@@ -53,9 +49,14 @@ public class ExecutorServiceSubmitToAddressMessageTask
         SecurityContext securityContext = clientEngine.getSecurityContext();
         Data callableData = parameters.callable;
         if (securityContext != null) {
-            Callable callable = serializationService.toObject(parameters.callable);
             Subject subject = endpoint.getSubject();
-            callable = securityContext.createSecureCallable(subject, callable);
+            Object taskObject = serializationService.toObject(parameters.callable);
+            Callable callable;
+            if (taskObject instanceof Runnable) {
+                callable = securityContext.createSecureCallable(subject, (Runnable) taskObject);
+            } else {
+                callable = securityContext.createSecureCallable(subject, (Callable<? extends Object>) taskObject);
+            }
             callableData = serializationService.toData(callable);
         }
 
@@ -65,16 +66,14 @@ public class ExecutorServiceSubmitToAddressMessageTask
     }
 
     @Override
-    protected ExecutorServiceSubmitToAddressCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
-        parameters = ExecutorServiceSubmitToAddressCodec.decodeRequest(clientMessage);
-        parameters.address = clientEngine.memberAddressOf(parameters.address);
-        return parameters;
+    protected ExecutorServiceSubmitToMemberCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+        return ExecutorServiceSubmitToMemberCodec.decodeRequest(clientMessage);
     }
 
     @Override
     protected ClientMessage encodeResponse(Object response) {
         Data data = serializationService.toData(response);
-        return ExecutorServiceSubmitToAddressCodec.encodeResponse(data);
+        return ExecutorServiceSubmitToMemberCodec.encodeResponse(data);
     }
 
     @Override

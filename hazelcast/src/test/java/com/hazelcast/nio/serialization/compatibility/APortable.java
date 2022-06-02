@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.hazelcast.nio.serialization.compatibility;
 
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.nio.serialization.Portable;
 import com.hazelcast.nio.serialization.PortableReader;
@@ -26,6 +26,9 @@ import com.hazelcast.nio.serialization.PortableWriter;
 
 import java.io.IOException;
 import java.util.Arrays;
+
+import static com.hazelcast.internal.nio.IOUtil.readData;
+import static com.hazelcast.internal.nio.IOUtil.writeData;
 
 public class APortable implements Portable {
 
@@ -144,7 +147,7 @@ public class APortable implements Portable {
         writer.writeFloat("f", f);
         writer.writeInt("i", i);
         writer.writeLong("l", l);
-        writer.writeUTF("str", str);
+        writer.writeString("str", str);
         if (p != null) {
             writer.writePortable("p", p);
         } else {
@@ -158,7 +161,7 @@ public class APortable implements Portable {
         writer.writeFloatArray("fs", floats);
         writer.writeIntArray("is", ints);
         writer.writeLongArray("ls", longs);
-        writer.writeUTFArray("strs", strings);
+        writer.writeStringArray("strs", strings);
         writer.writePortableArray("ps", portables);
 
         writer.writeBooleanArray("booleansNull", booleansNull);
@@ -169,7 +172,7 @@ public class APortable implements Portable {
         writer.writeFloatArray("fsNull", floatsNull);
         writer.writeIntArray("isNull", intsNull);
         writer.writeLongArray("lsNull", longsNull);
-        writer.writeUTFArray("strsNull", stringsNull);
+        writer.writeStringArray("strsNull", stringsNull);
 
         ObjectDataOutput dataOutput = writer.getRawDataOutput();
 
@@ -181,7 +184,7 @@ public class APortable implements Portable {
         dataOutput.writeFloat(f);
         dataOutput.writeInt(i);
         dataOutput.writeLong(l);
-        dataOutput.writeUTF(str);
+        dataOutput.writeString(str);
 
         dataOutput.writeBooleanArray(booleans);
         dataOutput.writeByteArray(bytes);
@@ -218,7 +221,7 @@ public class APortable implements Portable {
         dataOutput.writeObject(customByteArraySerializableObject);
         dataOutput.writeObject(customStreamSerializableObject);
 
-        dataOutput.writeData(data);
+        writeData(dataOutput, data);
     }
 
     public void readPortable(PortableReader reader) throws IOException {
@@ -230,7 +233,7 @@ public class APortable implements Portable {
         f = reader.readFloat("f");
         i = reader.readInt("i");
         l = reader.readLong("l");
-        str = reader.readUTF("str");
+        str = reader.readString("str");
         p = reader.readPortable("p");
 
         booleans = reader.readBooleanArray("booleans");
@@ -241,7 +244,7 @@ public class APortable implements Portable {
         floats = reader.readFloatArray("fs");
         ints = reader.readIntArray("is");
         longs = reader.readLongArray("ls");
-        strings = reader.readUTFArray("strs");
+        strings = reader.readStringArray("strs");
         portables = reader.readPortableArray("ps");
 
         booleansNull = reader.readBooleanArray("booleansNull");
@@ -252,7 +255,7 @@ public class APortable implements Portable {
         floatsNull = reader.readFloatArray("fsNull");
         intsNull = reader.readIntArray("isNull");
         longsNull = reader.readLongArray("lsNull");
-        stringsNull = reader.readUTFArray("strsNull");
+        stringsNull = reader.readStringArray("strsNull");
 
         ObjectDataInput dataInput = reader.getRawDataInput();
 
@@ -264,7 +267,7 @@ public class APortable implements Portable {
         f = dataInput.readFloat();
         i = dataInput.readInt();
         l = dataInput.readLong();
-        str = dataInput.readUTF();
+        str = dataInput.readString();
 
         booleans = dataInput.readBooleanArray();
         bytes = dataInput.readByteArray();
@@ -274,7 +277,7 @@ public class APortable implements Portable {
         floats = dataInput.readFloatArray();
         ints = dataInput.readIntArray();
         longs = dataInput.readLongArray();
-        strings = dataInput.readUTFArray();
+        strings = dataInput.readStringArray();
 
         booleansNull = dataInput.readBooleanArray();
         bytesNull = dataInput.readByteArray();
@@ -284,7 +287,7 @@ public class APortable implements Portable {
         floatsNull = dataInput.readFloatArray();
         intsNull = dataInput.readIntArray();
         longsNull = dataInput.readLongArray();
-        stringsNull = dataInput.readUTFArray();
+        stringsNull = dataInput.readStringArray();
 
         byteSize = dataInput.readByte();
         bytesFully = new byte[byteSize];
@@ -306,7 +309,7 @@ public class APortable implements Portable {
         customByteArraySerializableObject = dataInput.readObject();
         customStreamSerializableObject = dataInput.readObject();
 
-        data = dataInput.readData();
+        data = readData(dataInput);
     }
 
     @Override

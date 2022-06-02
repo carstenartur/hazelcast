@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.query.impl.Comparables;
-import com.hazelcast.util.MapUtil;
+import com.hazelcast.internal.util.MapUtil;
 
 import java.io.IOException;
 import java.util.Collection;
@@ -51,6 +51,7 @@ public final class CanonicalizingHashSet<E> implements Set<E>, IdentifiedDataSer
     /**
      * Constructs a new empty instance of canonicalizing hash set with the given
      * expected capacity.
+     * @param capacity the expected capacity
      */
     public CanonicalizingHashSet(int capacity) {
         this.map = new HashMap<Object, E>(capacity);
@@ -100,7 +101,7 @@ public final class CanonicalizingHashSet<E> implements Set<E>, IdentifiedDataSer
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return AggregatorDataSerializerHook.CANONICALIZING_SET;
     }
 

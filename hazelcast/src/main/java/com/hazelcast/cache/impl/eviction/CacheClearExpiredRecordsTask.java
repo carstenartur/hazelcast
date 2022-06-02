@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,16 +20,11 @@ import com.hazelcast.cache.impl.CachePartitionSegment;
 import com.hazelcast.cache.impl.ICacheRecordStore;
 import com.hazelcast.cache.impl.operation.CacheClearExpiredOperation;
 import com.hazelcast.cache.impl.operation.CacheExpireBatchBackupOperation;
-import com.hazelcast.core.IBiFunction;
-import com.hazelcast.core.Member;
-import com.hazelcast.internal.cluster.Versions;
 import com.hazelcast.internal.eviction.ClearExpiredRecordsTask;
 import com.hazelcast.internal.eviction.ExpiredKey;
 import com.hazelcast.internal.nearcache.impl.invalidation.InvalidationQueue;
-import com.hazelcast.nio.Address;
-import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.partition.IPartition;
+import com.hazelcast.spi.impl.NodeEngine;
+import com.hazelcast.spi.impl.operationservice.Operation;
 import com.hazelcast.spi.properties.HazelcastProperty;
 
 import java.util.Collection;
@@ -44,18 +39,26 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
  * Clears expired entries.
- * This task provides per partition expiration operation logic.
- * Fires cleanup operations at most partition operation thread count or some factor of it in one round.
+ * <p>
+ * This task provides per partition expiration
+ * operation logic. Fires cleanup operations at most partition
+ * operation thread count or some factor of it in one round.
+ *
  * <ul>
  * <li>
- * {@value PROP_CLEANUP_PERCENTAGE}: Scannable percentage
- * of entries in a maps' partition in each round.
- * Default percentage is {@value DEFAULT_CLEANUP_PERCENTAGE}%.
+ * {@value PROP_TASK_PERIOD_SECONDS}: Interval, in seconds,
+ * at which the background expiration task is going to run.
+ * Default value is {@value DEFAULT_TASK_PERIOD_SECONDS} seconds.
  * </li>
  * <li>
- * {@value PROP_CLEANUP_OPERATION_COUNT}: Number of
- * scannable partitions in each round. No default value exists. Dynamically calculated against partition-count or
- * partition-thread-count.
+ * {@value PROP_CLEANUP_PERCENTAGE}: Scannable percentage
+ * of entries in a maps' partition in each round. Default
+ * percentage is {@value DEFAULT_CLEANUP_PERCENTAGE}%.
+ * </li>
+ * <li>
+ * {@value PROP_CLEANUP_OPERATION_COUNT}: Number of scannable
+ * partitions in each round. No default value exists. Dynamically
+ * calculated against partition-count or partition-thread-count.
  * </li>
  * </ul>
  *
@@ -65,22 +68,19 @@ import static java.util.concurrent.TimeUnit.SECONDS;
  * Node-wide setting example:
  * <pre>
  *           Config config = new Config();
- *           config.setProperty(
- *           {@value PROP_CLEANUP_OPERATION_COUNT}, "3");
+ *           config.setProperty({@value PROP_CLEANUP_OPERATION_COUNT}, "3");
  *           Hazelcast.newHazelcastInstance(config);
- *       </pre>
- * </p>
+ * </pre>
  * <p>
  * System-wide setting example:
  * <pre>
- *        System.setProperty(
- *        {@value PROP_CLEANUP_OPERATION_COUNT}, "3");
- *    </pre>
- * </p>
+ *        System.setProperty({@value PROP_CLEANUP_OPERATION_COUNT}, "3");
+ * </pre>
  */
 public class CacheClearExpiredRecordsTask
         extends ClearExpiredRecordsTask<CachePartitionSegment, ICacheRecordStore> {
 
+    public static final String PROP_CLEANUP_ENABLED = "hazelcast.internal.cache.expiration.cleanup.enabled";
     public static final String PROP_CLEANUP_PERCENTAGE = "hazelcast.internal.cache.expiration.cleanup.percentage";
     public static final String PROP_TASK_PERIOD_SECONDS = "hazelcast.internal.cache.expiration.task.period.seconds";
     public static final String PROP_CLEANUP_OPERATION_COUNT = "hazelcast.internal.cache.expiration.cleanup.operation.count";
@@ -92,18 +92,17 @@ public class CacheClearExpiredRecordsTask
     private static final HazelcastProperty CLEANUP_PERCENTAGE
             = new HazelcastProperty(PROP_CLEANUP_PERCENTAGE, DEFAULT_CLEANUP_PERCENTAGE);
     private static final HazelcastProperty CLEANUP_OPERATION_COUNT = new HazelcastProperty(PROP_CLEANUP_OPERATION_COUNT);
+    private static final HazelcastProperty CLEANUP_ENABLED = new HazelcastProperty(PROP_CLEANUP_ENABLED, true);
 
-    private final Comparator<CachePartitionSegment> partitionSegmentComparator = new Comparator<CachePartitionSegment>() {
-        @Override
-        public int compare(CachePartitionSegment o1, CachePartitionSegment o2) {
-            final long s1 = o1.getLastCleanupTimeBeforeSorting();
-            final long s2 = o2.getLastCleanupTimeBeforeSorting();
-            return (s1 < s2) ? -1 : ((s1 == s2) ? 0 : 1);
-        }
+    private final Comparator<CachePartitionSegment> partitionSegmentComparator = (o1, o2) -> {
+        long s1 = o1.getLastCleanupTimeBeforeSorting();
+        long s2 = o2.getLastCleanupTimeBeforeSorting();
+        return (s1 < s2) ? -1 : ((s1 == s2) ? 0 : 1);
     };
 
     public CacheClearExpiredRecordsTask(CachePartitionSegment[] containers, NodeEngine nodeEngine) {
-        super(SERVICE_NAME, containers, CLEANUP_OPERATION_COUNT, CLEANUP_PERCENTAGE, TASK_PERIOD_SECONDS, nodeEngine);
+        super(SERVICE_NAME, containers, CLEANUP_ENABLED, CLEANUP_OPERATION_COUNT,
+                CLEANUP_PERCENTAGE, TASK_PERIOD_SECONDS, nodeEngine);
     }
 
     @Override
@@ -134,32 +133,6 @@ public class CacheClearExpiredRecordsTask
     @Override
     protected Operation newBackupExpiryOp(ICacheRecordStore store, Collection<ExpiredKey> expiredKeys) {
         return new CacheExpireBatchBackupOperation(store.getName(), expiredKeys, store.size());
-    }
-
-    @Override
-    protected IBiFunction<Integer, Integer, Boolean> newBackupExpiryOpFilter() {
-        return new IBiFunction<Integer, Integer, Boolean>() {
-            @Override
-            public Boolean apply(Integer partitionId, Integer replicaIndex) {
-                IBiFunction<Integer, Integer, Boolean> filter
-                        = CacheClearExpiredRecordsTask.super.newBackupExpiryOpFilter();
-                if (!filter.apply(partitionId, replicaIndex)) {
-                    return false;
-                }
-                // Previous versions did not remove expired entries until they are
-                // touched. Old members behave the same whereas newer members still
-                // benefit from periodic removal of expired entries.
-                //
-                // RU_COMPAT_3_10
-                IPartition partition = partitionService.getPartition(partitionId);
-                Address replicaAddress = partition.getReplicaAddress(replicaIndex);
-                Member member = nodeEngine.getClusterService().getMember(replicaAddress);
-                if (member == null) {
-                    return false;
-                }
-                return member.getVersion().asVersion().isGreaterOrEqual(Versions.V3_11);
-            }
-        };
     }
 
     @Override

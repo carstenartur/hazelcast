@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,10 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.Properties;
 
 import static com.hazelcast.config.RestEndpointGroup.CLUSTER_READ;
 import static com.hazelcast.config.RestEndpointGroup.HEALTH_CHECK;
@@ -33,16 +35,17 @@ import static com.hazelcast.instance.ProtocolType.MEMCACHE;
 import static com.hazelcast.instance.ProtocolType.WAN;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
  * Abstract class defining the common test cases for XML and YAML
  * based configuration tests.
- * <p/>
+ * <p>
  * All common test cases should be defined in this class to guarantee
  * compilation error if either YAML or XML configuration misses to cover
  * a common case.
- * <p/>
+ * <p>
  * For specific test cases, see {@link XmlOnlyConfigBuilderTest} and
  * {@link YamlOnlyConfigBuilderTest}.
  *
@@ -58,19 +61,19 @@ public abstract class AbstractConfigBuilderTest extends HazelcastTestSupport {
     public abstract void testConfigurationURL() throws Exception;
 
     @Test
+    public abstract void testClusterName();
+
+    @Test
     public abstract void testConfigurationWithFileName() throws Exception;
 
     @Test(expected = IllegalArgumentException.class)
     public abstract void testConfiguration_withNullInputStream();
 
     @Test(expected = InvalidConfigurationException.class)
-    public abstract void testInvalidRootElement();
-
-    @Test(expected = InvalidConfigurationException.class)
     public abstract void testJoinValidation();
 
     @Test
-    public abstract void testSecurityInterceptorConfig();
+    public abstract void testSecurityConfig();
 
     @Test
     public abstract void readAwsConfig();
@@ -106,9 +109,6 @@ public abstract class AbstractConfigBuilderTest extends HazelcastTestSupport {
     public abstract void networkReuseAddress();
 
     @Test
-    public abstract void readSemaphoreConfig();
-
-    @Test
     public abstract void readQueueConfig();
 
     @Test
@@ -118,22 +118,10 @@ public abstract class AbstractConfigBuilderTest extends HazelcastTestSupport {
     public abstract void readSetConfig();
 
     @Test
-    public abstract void readLockConfig();
-
-    @Test
     public abstract void readReliableTopic();
 
     @Test
     public abstract void readRingbuffer();
-
-    @Test
-    public abstract void readAtomicLong();
-
-    @Test
-    public abstract void readAtomicReference();
-
-    @Test
-    public abstract void readCountDownLatch();
 
     @Test
     public abstract void testCaseInsensitivityOfSettings();
@@ -142,43 +130,28 @@ public abstract class AbstractConfigBuilderTest extends HazelcastTestSupport {
     public abstract void testManagementCenterConfig();
 
     @Test
-    public abstract void testManagementCenterConfigComplex();
-
-    @Test
     public abstract void testNullManagementCenterConfig();
 
     @Test
     public abstract void testEmptyManagementCenterConfig();
 
     @Test
-    public abstract void testNotEnabledManagementCenterConfig();
-
-    @Test
-    public abstract void testNotEnabledWithURLManagementCenterConfig();
-
-    @Test
-    public abstract void testManagementCenterConfigComplexDisabledMutualAuth();
-
-    @Test
     public abstract void testMapStoreInitialModeLazy();
 
     @Test
-    public abstract void testMapConfig_minEvictionCheckMillis();
-
-    @Test
-    public abstract void testMapConfig_minEvictionCheckMillis_defaultValue();
-
-    @Test
     public abstract void testMapConfig_metadataPolicy();
+
+    @Test
+    public abstract void testMapConfig_statisticsEnable();
+
+    @Test
+    public abstract void testMapConfig_perEntryStatsEnabled();
 
     @Test
     public abstract void testMapConfig_metadataPolicy_defaultValue();
 
     @Test
     public abstract void testMapConfig_evictions();
-
-    @Test
-    public abstract void testMapConfig_optimizeQueries();
 
     @Test
     public abstract void testMapConfig_cacheValueConfig_defaultValue();
@@ -194,6 +167,15 @@ public abstract class AbstractConfigBuilderTest extends HazelcastTestSupport {
 
     @Test
     public abstract void testMapStoreInitialModeEager();
+
+    @Test
+    public abstract void testMapStoreEnabled();
+
+    @Test
+    public abstract void testMapStoreEnabledIfNotDisabled();
+
+    @Test
+    public abstract void testMapStoreDisabled();
 
     @Test
     public abstract void testMapStoreWriteBatchSize();
@@ -220,6 +202,12 @@ public abstract class AbstractConfigBuilderTest extends HazelcastTestSupport {
     public abstract void testPartitionGroupZoneAware();
 
     @Test
+    public abstract void testPartitionGroupNodeAware();
+
+    @Test
+    public abstract void testPartitionGroupPlacementAware();
+
+    @Test
     public abstract void testPartitionGroupSPI();
 
     @Test
@@ -241,22 +229,10 @@ public abstract class AbstractConfigBuilderTest extends HazelcastTestSupport {
     public abstract void testWanReplicationSyncConfig();
 
     @Test
-    public abstract void testMapEventJournalConfig();
-
-    @Test
-    public abstract void testMapMerkleTreeConfig();
-
-    @Test
-    public abstract void testCacheEventJournalConfig();
-
-    @Test
     public abstract void testFlakeIdGeneratorConfig();
 
     @Test(expected = InvalidConfigurationException.class)
     public abstract void testParseExceptionIsNotSwallowed();
-
-    @Test
-    public abstract void setMapStoreConfigImplementationTest();
 
     @Test
     public abstract void testMapPartitionLostListenerConfig();
@@ -270,8 +246,6 @@ public abstract class AbstractConfigBuilderTest extends HazelcastTestSupport {
     @Test
     public abstract void testCachePartitionLostListenerConfigReadOnly();
 
-    protected abstract Config buildConfig(String xml);
-
     @Test
     public abstract void readMulticastConfig();
 
@@ -279,31 +253,31 @@ public abstract class AbstractConfigBuilderTest extends HazelcastTestSupport {
     public abstract void testWanConfig();
 
     @Test
-    public abstract void testQuorumConfig();
+    public abstract void testSplitBrainProtectionConfig();
 
     @Test
-    public abstract void testQuorumListenerConfig();
-
-    @Test(expected = ConfigurationException.class)
-    public abstract void testQuorumConfig_whenClassNameAndRecentlyActiveQuorumDefined_exceptionIsThrown();
-
-    @Test(expected = ConfigurationException.class)
-    public abstract void testQuorumConfig_whenClassNameAndProbabilisticQuorumDefined_exceptionIsThrown();
+    public abstract void testSplitBrainProtectionListenerConfig();
 
     @Test(expected = InvalidConfigurationException.class)
-    public abstract void testQuorumConfig_whenBothBuiltinQuorumsDefined_exceptionIsThrown();
+    public abstract void testConfig_whenClassNameAndRecentlyActiveSplitBrainProtectionDefined_exceptionIsThrown();
+
+    @Test(expected = InvalidConfigurationException.class)
+    public abstract void testConfig_whenClassNameAndProbabilisticSplitBrainProtectionDefined_exceptionIsThrown();
+
+    @Test(expected = InvalidConfigurationException.class)
+    public abstract void testConfig_whenBothBuiltinSplitBrainProtectionsDefined_exceptionIsThrown();
 
     @Test
-    public abstract void testQuorumConfig_whenRecentlyActiveQuorum_withDefaultValues();
+    public abstract void testConfig_whenRecentlyActiveSplitBrainProtection_withDefaultValues();
 
     @Test
-    public abstract void testQuorumConfig_whenRecentlyActiveQuorum_withCustomValues();
+    public abstract void testConfig_whenRecentlyActiveSplitBrainProtection_withCustomValues();
 
     @Test
-    public abstract void testQuorumConfig_whenProbabilisticQuorum_withDefaultValues();
+    public abstract void testConfig_whenProbabilisticSplitBrainProtection_withDefaultValues();
 
     @Test
-    public abstract void testQuorumConfig_whenProbabilisticQuorum_withCustomValues();
+    public abstract void testConfig_whenProbabilisticSplitBrainProtection_withCustomValues();
 
     @Test
     public abstract void testCacheConfig();
@@ -340,6 +314,9 @@ public abstract class AbstractConfigBuilderTest extends HazelcastTestSupport {
 
     @Test
     public abstract void testMapConfig();
+
+    @Test
+    public abstract void testMapCustomEvictionPolicy();
 
     @Test
     public abstract void testIndexesConfig();
@@ -390,6 +367,9 @@ public abstract class AbstractConfigBuilderTest extends HazelcastTestSupport {
     public abstract void testUserCodeDeployment();
 
     @Test
+    public abstract void testEmptyUserCodeDeployment();
+
+    @Test
     public abstract void testCRDTReplicationConfig();
 
     @Test
@@ -399,13 +379,49 @@ public abstract class AbstractConfigBuilderTest extends HazelcastTestSupport {
     public abstract void testJavaSerializationFilter();
 
     @Test
+    public abstract void testCompactSerialization();
+
+    @Test
+    public abstract void testCompactSerialization_explicitSerializationRegistration();
+
+    @Test
+    public abstract void testCompactSerialization_reflectiveSerializerRegistration();
+
+    @Test(expected = InvalidConfigurationException.class)
+    public abstract void testCompactSerialization_registrationWithJustTypeName();
+
+    @Test(expected = InvalidConfigurationException.class)
+    public abstract void testCompactSerialization_registrationWithJustSerializer();
+
+    @Test
+    public abstract void testAllowOverrideDefaultSerializers();
+
+    @Test
     public abstract void testHotRestart();
 
     @Test
-    public abstract void testMapEvictionPolicyClassName();
+    public abstract void testHotRestartEncryptionAtRest_whenJavaKeyStore();
 
     @Test
-    public abstract void testMapEvictionPolicyIsSelected_whenEvictionPolicySet();
+    public abstract void testHotRestartEncryptionAtRest_whenVault();
+
+    @Test
+    public abstract void testPersistence();
+
+    @Test
+    public abstract void testDynamicConfig();
+
+    @Test
+    public abstract void testLocalDevice();
+
+    @Test
+    public abstract void testTieredStore();
+
+    @Test
+    public abstract void testPersistenceEncryptionAtRest_whenJavaKeyStore();
+
+    @Test
+    public abstract void testPersistenceEncryptionAtRest_whenVault();
 
     @Test
     public abstract void testOnJoinPermissionOperation();
@@ -460,6 +476,9 @@ public abstract class AbstractConfigBuilderTest extends HazelcastTestSupport {
 
     @Test
     public abstract void testMultipleMemberEndpointConfigs_throwsException();
+
+    @Test
+    public abstract void testWhitespaceInNonSpaceStrings();
 
     @Test
     public void testCompleteAdvancedNetworkConfig() {
@@ -568,6 +587,32 @@ public abstract class AbstractConfigBuilderTest extends HazelcastTestSupport {
 
     public abstract void testCPSubsystemConfig();
 
+    public abstract void testMetricsConfig();
+
+    public abstract void testInstanceTrackingConfig();
+
+    public abstract void testMetricsConfigMasterSwitchDisabled();
+
+    public abstract void testMetricsConfigMcDisabled();
+
+    public abstract void testMetricsConfigJmxDisabled();
+
+    @Test
+    public void testAuditlogConfig() {
+        Config config = buildAuditlogConfig();
+        AuditlogConfig auditlogConfig = config.getAuditlogConfig();
+        assertNotNull(auditlogConfig);
+        assertTrue(auditlogConfig.isEnabled());
+
+        assertEquals("com.acme.auditlog.AuditlogToSyslogFactory", auditlogConfig.getFactoryClassName());
+        Properties properties = auditlogConfig.getProperties();
+        assertNotNull(properties);
+        assertEquals("syslogserver.acme.com", properties.get("host"));
+        assertEquals("514", properties.get("port"));
+    }
+
+    public abstract void testSqlConfig();
+
     protected static void assertAwsConfig(AwsConfig aws) {
         assertEquals("sample-access-key", aws.getProperties().get("access-key"));
         assertEquals("sample-secret-key", aws.getProperties().get("secret-key"));
@@ -588,4 +633,56 @@ public abstract class AbstractConfigBuilderTest extends HazelcastTestSupport {
         assertEquals(expected.getName(), configured.getName());
         assertEquals(expected.getActions(), configured.getActions());
     }
+
+    @Test
+    public abstract void testPersistentMemoryDirectoryConfiguration() throws IOException;
+
+    @Test
+    public abstract void testPersistentMemoryDirectoryConfigurationSimple();
+
+    @Test(expected = InvalidConfigurationException.class)
+    public abstract void testPersistentMemoryDirectoryConfiguration_uniqueDirViolationThrows();
+
+    @Test(expected = InvalidConfigurationException.class)
+    public abstract void testPersistentMemoryDirectoryConfiguration_uniqueNumaNodeViolationThrows();
+
+    @Test(expected = InvalidConfigurationException.class)
+    public abstract void testPersistentMemoryDirectoryConfiguration_numaNodeConsistencyViolationThrows();
+
+    @Test
+    public abstract void testPersistentMemoryDirectoryConfiguration_simpleAndAdvancedPasses();
+
+    @Test
+    public abstract void testPersistentMemoryConfiguration_SystemMemoryMode();
+
+    @Test(expected = InvalidConfigurationException.class)
+    public abstract void testPersistentMemoryConfiguration_NotExistingModeThrows();
+
+    @Test(expected = InvalidConfigurationException.class)
+    public abstract void testPersistentMemoryDirectoryConfiguration_SystemMemoryModeThrows();
+
+    @Test
+    public void testMapWildcardConfig() {
+        Config config = buildMapWildcardConfig();
+
+        MapConfig map1 = config.getMapConfig("mapA");
+        assertEquals(1, map1.getBackupCount());
+        assertEquals(1, map1.getAttributeConfigs().size());
+
+        MapConfig mapWith2Backups = config.getMapConfig("mapBackup2A");
+        assertEquals(2, mapWith2Backups.getBackupCount());
+        assertEquals(1, map1.getAttributeConfigs().size());
+    }
+
+    @Test
+    public abstract void testMapExpiryConfig();
+
+    @Test
+    public abstract void testIntegrityCheckerConfig();
+
+    protected abstract Config buildAuditlogConfig();
+
+    /** Build a config with overlapping wildcard configs map* & mapBackup2* */
+    protected abstract Config buildMapWildcardConfig();
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,12 @@
 
 package com.hazelcast.internal.dynamicconfig;
 
-import com.hazelcast.config.cp.CPSemaphoreConfig;
+import com.hazelcast.config.cp.SemaphoreConfig;
 import com.hazelcast.config.cp.CPSubsystemConfig;
 import com.hazelcast.config.cp.FencedLockConfig;
 import com.hazelcast.config.cp.RaftAlgorithmConfig;
 
+import java.io.File;
 import java.util.Map;
 
 /**
@@ -58,6 +59,11 @@ class DynamicCPSubsystemConfig extends CPSubsystemConfig {
     }
 
     @Override
+    public CPSubsystemConfig setFailOnIndeterminateOperationState(boolean failOnIndeterminateOperationState) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public RaftAlgorithmConfig getRaftAlgorithmConfig() {
         return new DynamicRaftAlgorithmConfig(super.getRaftAlgorithmConfig());
     }
@@ -68,12 +74,12 @@ class DynamicCPSubsystemConfig extends CPSubsystemConfig {
     }
 
     @Override
-    public CPSubsystemConfig addSemaphoreConfig(CPSemaphoreConfig cpSemaphoreConfig) {
+    public CPSubsystemConfig addSemaphoreConfig(SemaphoreConfig semaphoreConfig) {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public CPSubsystemConfig setSemaphoreConfigs(Map<String, CPSemaphoreConfig> cpSemaphoreConfigs) {
+    public CPSubsystemConfig setSemaphoreConfigs(Map<String, SemaphoreConfig> semaphoreConfigs) {
         throw new UnsupportedOperationException();
     }
 
@@ -84,6 +90,21 @@ class DynamicCPSubsystemConfig extends CPSubsystemConfig {
 
     @Override
     public CPSubsystemConfig setLockConfigs(Map<String, FencedLockConfig> lockConfigs) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CPSubsystemConfig setPersistenceEnabled(boolean persistenceEnabled) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CPSubsystemConfig setBaseDir(File baseDir) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CPSubsystemConfig setDataLoadTimeoutSeconds(int dataLoadTimeoutSeconds) {
         throw new UnsupportedOperationException();
     }
 

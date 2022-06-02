@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,11 @@
 package com.hazelcast.internal.cluster.impl;
 
 import com.hazelcast.config.NetworkConfig;
-import com.hazelcast.instance.Node;
+import com.hazelcast.instance.impl.Node;
 import com.hazelcast.internal.cluster.impl.SplitBrainJoinMessage.SplitBrainMergeCheckResult;
-import com.hazelcast.nio.Address;
-import com.hazelcast.util.Clock;
-import com.hazelcast.util.RandomPicker;
+import com.hazelcast.cluster.Address;
+import com.hazelcast.internal.util.Clock;
+import com.hazelcast.internal.util.RandomPicker;
 
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
@@ -44,7 +44,7 @@ public class MulticastJoiner extends AbstractJoiner {
 
     // this deque is used as a stack, the SplitBrainMulticastListener adds to its head and the periodic split brain handler job
     // also polls from its head.
-    private final BlockingDeque<SplitBrainJoinMessage> splitBrainJoinMessages = new LinkedBlockingDeque<SplitBrainJoinMessage>();
+    private final BlockingDeque<SplitBrainJoinMessage> splitBrainJoinMessages = new LinkedBlockingDeque<>();
 
     public MulticastJoiner(Node node) {
         super(node);
@@ -90,13 +90,13 @@ public class MulticastJoiner extends AbstractJoiner {
                 if (logger.isFineEnabled()) {
                     logger.fine("Joining to master " + master);
                 }
-                clusterJoinManager.sendJoinRequest(master, true);
+                clusterJoinManager.sendJoinRequest(master);
             } else {
                 break;
             }
 
             try {
-                Thread.sleep(JOIN_RETRY_INTERVAL);
+                clusterService.blockOnJoin(JOIN_RETRY_INTERVAL);
             } catch (InterruptedException e) {
                 currentThread().interrupt();
             }
@@ -174,7 +174,7 @@ public class MulticastJoiner extends AbstractJoiner {
             if (logger.isFineEnabled()) {
                 logger.fine("Searching for master node. Max tries: " + maxTryCount.get());
             }
-            JoinRequest joinRequest = node.createJoinRequest(false);
+            JoinRequest joinRequest = node.createJoinRequest(null);
             while (node.isRunning() && currentTryCount.incrementAndGet() <= maxTryCount.get()) {
                 joinRequest.setTryCount(currentTryCount.get());
                 node.multicastService.send(joinRequest);

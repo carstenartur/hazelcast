@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.OverridePropertyRule;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import com.hazelcast.test.environment.RuntimeAvailableProcessorsRule;
 import org.junit.Rule;
@@ -31,13 +31,14 @@ import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Future;
 
-import static com.hazelcast.spi.properties.GroupProperty.GRACEFUL_SHUTDOWN_MAX_WAIT;
+import static com.hazelcast.spi.properties.ClusterProperty.GRACEFUL_SHUTDOWN_MAX_WAIT;
 import static com.hazelcast.test.OverridePropertyRule.clear;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class SingleProcessorMemberTest extends HazelcastTestSupport {
 
     @Rule
@@ -62,20 +63,15 @@ public class SingleProcessorMemberTest extends HazelcastTestSupport {
         gracefulShutdownTimeoutRule.setOrClearProperty(Integer.toString(Integer.MAX_VALUE));
 
         TestHazelcastInstanceFactory factory = createHazelcastInstanceFactory();
-        final HazelcastInstance[] instances = factory.newInstances(new Config(), 4);
+        HazelcastInstance[] instances = factory.newInstances(new Config(), 4);
         assertClusterSizeEventually(4, instances);
         if (initializePartitions) {
             warmUpPartitions(instances);
         }
 
-        ArrayList<Future> futures = new ArrayList<Future>();
+        List<Future> futures = new ArrayList<>();
         for (final HazelcastInstance instance : instances) {
-            Future future = spawn(new Runnable() {
-                @Override
-                public void run() {
-                    instance.shutdown();
-                }
-            });
+            Future future = spawn(instance::shutdown);
             futures.add(future);
         }
 

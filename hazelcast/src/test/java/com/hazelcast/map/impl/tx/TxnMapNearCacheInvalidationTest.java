@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,22 +18,25 @@ package com.hazelcast.map.impl.tx;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.config.InMemoryFormat;
+import com.hazelcast.config.MapConfig;
 import com.hazelcast.config.NearCacheConfig;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
-import com.hazelcast.core.TransactionalMap;
-import com.hazelcast.test.HazelcastParametersRunnerFactory;
+import com.hazelcast.map.IMap;
+import com.hazelcast.test.HazelcastParallelParametersRunnerFactory;
+import com.hazelcast.test.HazelcastParametrizedRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
+import com.hazelcast.transaction.TransactionContext;
 import com.hazelcast.transaction.TransactionException;
+import com.hazelcast.transaction.TransactionOptions;
+import com.hazelcast.transaction.TransactionalMap;
 import com.hazelcast.transaction.TransactionalTask;
 import com.hazelcast.transaction.TransactionalTaskContext;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameter;
 import org.junit.runners.Parameterized.Parameters;
 import org.junit.runners.Parameterized.UseParametersRunnerFactory;
@@ -57,9 +60,9 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-@RunWith(Parameterized.class)
-@UseParametersRunnerFactory(HazelcastParametersRunnerFactory.class)
-@Category({QuickTest.class, ParallelTest.class})
+@RunWith(HazelcastParametrizedRunner.class)
+@UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class TxnMapNearCacheInvalidationTest extends HazelcastTestSupport {
 
     @Parameters(name = "format:{0} serializeKeys:{1}")
@@ -77,6 +80,64 @@ public class TxnMapNearCacheInvalidationTest extends HazelcastTestSupport {
 
     @Parameter(value = 1)
     public boolean serializeKeys;
+
+    @Override
+    protected Config getConfig() {
+        return smallInstanceConfig();
+    }
+
+    @Test
+    public void after_txn_commit_near_cache_should_be_invalidated() {
+        Config cfg = getConfig();
+        String mapName = "cache";
+        MapConfig cacheConfig = cfg.getMapConfig(mapName);
+        NearCacheConfig nearCacheConfig = new NearCacheConfig();
+        nearCacheConfig.setInvalidateOnChange(true)
+                .setCacheLocalEntries(true)
+                .setInMemoryFormat(inMemoryFormat)
+                .setSerializeKeys(serializeKeys);
+
+        cacheConfig.setNearCacheConfig(nearCacheConfig);
+
+        HazelcastInstance server = createHazelcastInstance(cfg);
+        IMap map = server.getMap(mapName);
+
+        String key = "key";
+        String oldValue = "oldValue";
+        String updatedValue = "updatedValue";
+
+        // populate imap
+        map.put(key, oldValue);
+
+        // populate near cache
+        Object valueReadBeforeTxnFromNonTxnMap = map.get(key);
+
+        // begin txn
+        TransactionOptions opts = new TransactionOptions();
+        opts.setTransactionType(TransactionOptions.TransactionType.TWO_PHASE);
+        TransactionContext ctx = server.newTransactionContext(opts);
+        ctx.beginTransaction();
+
+        TransactionalMap txnMap = ctx.getMap(mapName);
+        Object valueReadInsideTxnFromTxnMapBeforeUpdate = txnMap.get(key);
+
+        txnMap.put(key, updatedValue);
+
+        Object valueReadInsideTxnFromTxnMapAfterUpdate = txnMap.get(key);
+        Object valueReadInsideTxnFromNonTxnMapAfterUpdate = map.get(key);
+
+        ctx.commitTransaction();
+
+        // check values read from txn map
+        assertEquals(oldValue, valueReadInsideTxnFromTxnMapBeforeUpdate);
+        assertEquals(updatedValue, valueReadInsideTxnFromTxnMapAfterUpdate);
+
+        // check values read from non-txn map
+        assertEquals(oldValue, valueReadBeforeTxnFromNonTxnMap);
+        assertEquals(oldValue, valueReadInsideTxnFromNonTxnMapAfterUpdate);
+        Object valueReadAfterTxnFromNonTxnMap = map.get(key);
+        assertEquals(updatedValue, valueReadAfterTxnFromNonTxnMap);
+    }
 
     @Test
     public void txn_map_contains_newly_put_key_even_it_is_null_cached_after_addition() {

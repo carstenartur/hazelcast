@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,20 +17,19 @@
 package com.hazelcast.cache.instance;
 
 import com.hazelcast.cache.ICache;
-import com.hazelcast.cache.impl.HazelcastServerCachingProvider;
 import com.hazelcast.cache.impl.event.CachePartitionLostEvent;
 import com.hazelcast.cache.impl.event.CachePartitionLostListener;
 import com.hazelcast.config.CacheConfig;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastInstanceAware;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.ClassLoaderUtil;
-import com.hazelcast.spi.NodeAware;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.ClassLoaderUtil;
+import com.hazelcast.internal.services.NodeAware;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.AfterClass;
 import org.junit.Test;
@@ -62,13 +61,14 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import static com.hazelcast.cache.CacheTestSupport.createServerCachingProvider;
 import static org.junit.Assert.assertEquals;
 
 /**
  * Test Node & HazelcastInstance are injected to {@link NodeAware} and {@link HazelcastInstanceAware} cache resources.
  */
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class CacheHazelcastInstanceAwareTest extends HazelcastTestSupport {
 
     private static final ConcurrentMap<Long, Boolean> HAZELCAST_INSTANCE_INJECTION_RESULT_MAP = new ConcurrentHashMap<Long, Boolean>();
@@ -90,7 +90,7 @@ public class CacheHazelcastInstanceAwareTest extends HazelcastTestSupport {
     }
 
     protected CachingProvider createCachingProvider(HazelcastInstance instance) {
-        return HazelcastServerCachingProvider.createCachingProvider(instance);
+        return createServerCachingProvider(instance);
     }
 
     protected HazelcastInstance createInstance() {
@@ -116,12 +116,14 @@ public class CacheHazelcastInstanceAwareTest extends HazelcastTestSupport {
         long id2 = generateUniqueHazelcastInjectionId();
         CacheConfig<Integer, Integer> cacheConfig = createCacheConfig(CACHE_NAME);
         cacheConfig.setCacheLoaderFactory(new CacheLoaderFactoryWithDependencies(id1, id2));
+        cacheConfig.setReadThrough(true);
 
         HazelcastInstance hazelcastInstance = createInstance();
         CacheManager cacheManager = createCachingProvider(hazelcastInstance).getCacheManager();
         Cache<Integer, Integer> cache = cacheManager.createCache(CACHE_NAME, cacheConfig);
 
         cache.put(1, 1);
+        cache.get(2);
 
         assertEquals("Hazelcast instance has not been injected into cache loader factory!",
                 Boolean.TRUE, HAZELCAST_INSTANCE_INJECTION_RESULT_MAP.get(id1));
@@ -139,6 +141,7 @@ public class CacheHazelcastInstanceAwareTest extends HazelcastTestSupport {
         long id2 = generateUniqueHazelcastInjectionId();
         CacheConfig<Integer, Integer> cacheConfig = createCacheConfig(CACHE_NAME);
         cacheConfig.setCacheWriterFactory(new CacheWriterFactoryWithDependencies(id1, id2));
+        cacheConfig.setWriteThrough(true);
 
         HazelcastInstance hazelcastInstance = createInstance();
         CacheManager cacheManager = createCachingProvider(hazelcastInstance).getCacheManager();

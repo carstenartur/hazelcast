@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,13 +19,13 @@ package com.hazelcast.test.starter.test;
 import com.hazelcast.config.Config;
 import com.hazelcast.core.Hazelcast;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.instance.HazelcastInstanceImpl;
-import com.hazelcast.instance.Node;
-import com.hazelcast.instance.TestUtil;
+import com.hazelcast.instance.impl.HazelcastInstanceImpl;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.instance.impl.TestUtil;
 import com.hazelcast.internal.partition.TestPartitionUtils;
 import com.hazelcast.internal.partition.impl.PartitionServiceState;
-import com.hazelcast.nio.tcp.FirewallingNetworkingService;
-import com.hazelcast.nio.tcp.TcpIpNetworkingService;
+import com.hazelcast.internal.server.FirewallingServer;
+import com.hazelcast.internal.server.tcp.TcpServer;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
 import com.hazelcast.test.annotation.SlowTest;
@@ -38,7 +38,7 @@ import org.junit.runner.RunWith;
 
 import java.io.File;
 
-import static com.hazelcast.instance.TestUtil.terminateInstance;
+import static com.hazelcast.instance.impl.TestUtil.terminateInstance;
 import static com.hazelcast.test.HazelcastTestSupport.assertInstanceOf;
 import static com.hazelcast.test.HazelcastTestSupport.ignore;
 import static org.junit.Assert.assertEquals;
@@ -48,6 +48,7 @@ import static org.junit.Assert.fail;
 
 @RunWith(HazelcastSerialClassRunner.class)
 @Category(SlowTest.class)
+@Ignore("To be enabled in 4.1 with 4.x instances - see https://github.com/hazelcast/hazelcast/issues/15263")
 public class HazelcastStarterTest {
 
     private HazelcastInstance hz;
@@ -107,9 +108,9 @@ public class HazelcastStarterTest {
         assertEquals("Expected the same address from HazelcastInstance and Node",
                 hz.getCluster().getLocalMember().getAddress(), node.getThisAddress());
         if (supportsFirewallingConnectionManager) {
-            assertInstanceOf(FirewallingNetworkingService.class, node.getNetworkingService());
+            assertInstanceOf(FirewallingServer.class, node.getServer());
         } else {
-            assertInstanceOf(TcpIpNetworkingService.class, node.getNetworkingService());
+            assertInstanceOf(TcpServer.class, node.getServer());
         }
     }
 

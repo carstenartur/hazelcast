@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,18 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.cache.impl.CacheDataSerializerHook;
 import com.hazelcast.cache.impl.DeferredValue;
 import com.hazelcast.config.CacheSimpleConfig.ExpiryPolicyFactoryConfig.DurationConfig;
 import com.hazelcast.config.CacheSimpleConfig.ExpiryPolicyFactoryConfig.TimedExpiryPolicyFactoryConfig;
 import com.hazelcast.config.CacheSimpleConfig.ExpiryPolicyFactoryConfig.TimedExpiryPolicyFactoryConfig.ExpiryPolicyType;
-import com.hazelcast.nio.ClassLoaderUtil;
+import com.hazelcast.internal.nio.Bits;
+import com.hazelcast.internal.nio.ClassLoaderUtil;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.BinaryInterface;
-import com.hazelcast.spi.merge.SplitBrainMergeTypeProvider;
-import com.hazelcast.spi.merge.SplitBrainMergeTypes;
-import com.hazelcast.spi.tenantcontrol.TenantControl;
+import com.hazelcast.nio.serialization.impl.Versioned;
+import com.hazelcast.spi.impl.SerializationServiceSupport;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 
 import javax.cache.configuration.CacheEntryListenerConfiguration;
 import javax.cache.configuration.CompleteConfiguration;
@@ -39,24 +40,22 @@ import javax.cache.expiry.AccessedExpiryPolicy;
 import javax.cache.expiry.CreatedExpiryPolicy;
 import javax.cache.expiry.Duration;
 import javax.cache.expiry.EternalExpiryPolicy;
-import javax.cache.expiry.ExpiryPolicy;
 import javax.cache.expiry.ModifiedExpiryPolicy;
 import javax.cache.expiry.TouchedExpiryPolicy;
-import javax.cache.integration.CacheLoader;
 import javax.cache.integration.CacheWriter;
-import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import static com.hazelcast.config.CacheSimpleConfig.DEFAULT_BACKUP_COUNT;
 import static com.hazelcast.config.CacheSimpleConfig.DEFAULT_IN_MEMORY_FORMAT;
 import static com.hazelcast.config.CacheSimpleConfig.MIN_BACKUP_COUNT;
-import static com.hazelcast.spi.tenantcontrol.TenantControl.NOOP_TENANT_CONTROL;
-import static com.hazelcast.util.Preconditions.checkAsyncBackupCount;
-import static com.hazelcast.util.Preconditions.checkBackupCount;
-import static com.hazelcast.util.Preconditions.isNotNull;
+import static com.hazelcast.internal.util.Preconditions.checkAsyncBackupCount;
+import static com.hazelcast.internal.util.Preconditions.checkBackupCount;
+import static com.hazelcast.internal.util.Preconditions.checkNotNull;
+import static com.hazelcast.internal.util.Preconditions.isNotNull;
 
 /**
  * Contains all the configuration for the {@link com.hazelcast.cache.ICache}.
@@ -64,33 +63,30 @@ import static com.hazelcast.util.Preconditions.isNotNull;
  * @param <K> the key type
  * @param <V> the value type
  */
-@BinaryInterface
-public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements SplitBrainMergeTypeProvider {
+public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Versioned {
 
     private String name;
     private String managerPrefix;
     private String uriString;
     private int asyncBackupCount = MIN_BACKUP_COUNT;
     private int backupCount = DEFAULT_BACKUP_COUNT;
+    private String splitBrainProtectionName;
+    private WanReplicationRef wanReplicationRef;
     private InMemoryFormat inMemoryFormat = DEFAULT_IN_MEMORY_FORMAT;
     // Default value of eviction config is
     //      * ENTRY_COUNT with 10000 max entry count
     //      * LRU as eviction policy
-    // TODO: change to "EvictionConfig" in the future since "CacheEvictionConfig" is deprecated
-    private CacheEvictionConfig evictionConfig = new CacheEvictionConfig();
-
-    private WanReplicationRef wanReplicationRef;
+    private EvictionConfig evictionConfig = new EvictionConfig();
+    @SuppressFBWarnings("SE_BAD_FIELD")
+    private MergePolicyConfig mergePolicyConfig = new MergePolicyConfig();
+    private MerkleTreeConfig merkleTreeConfig = new MerkleTreeConfig();
     private List<CachePartitionLostListenerConfig> partitionLostListenerConfigs;
-    private String quorumName;
-    private String mergePolicy = CacheSimpleConfig.DEFAULT_CACHE_MERGE_POLICY;
 
     /**
      * Disables invalidation events for per entry but full-flush invalidation events are still enabled.
      * Full-flush invalidation means the invalidation of events for all entries when clear is called.
      */
     private boolean disablePerEntryInvalidationEvents;
-
-    private TenantControl tenantControl = NOOP_TENANT_CONTROL;
 
     public CacheConfig() {
     }
@@ -110,9 +106,11 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
             this.backupCount = config.backupCount;
             this.inMemoryFormat = config.inMemoryFormat;
             this.hotRestartConfig = new HotRestartConfig(config.hotRestartConfig);
+            this.dataPersistenceConfig = new DataPersistenceConfig(config.dataPersistenceConfig);
+            this.eventJournalConfig = new EventJournalConfig(config.eventJournalConfig);
             // eviction config is not allowed to be null
             if (config.evictionConfig != null) {
-                this.evictionConfig = new CacheEvictionConfig(config.evictionConfig);
+                this.evictionConfig = new EvictionConfig(config.evictionConfig);
             }
             if (config.wanReplicationRef != null) {
                 this.wanReplicationRef = new WanReplicationRef(config.wanReplicationRef);
@@ -121,8 +119,9 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
                 this.partitionLostListenerConfigs = new ArrayList<CachePartitionLostListenerConfig>(
                         config.partitionLostListenerConfigs);
             }
-            this.quorumName = config.quorumName;
-            this.mergePolicy = config.mergePolicy;
+            this.splitBrainProtectionName = config.splitBrainProtectionName;
+            this.mergePolicyConfig = new MergePolicyConfig(config.mergePolicyConfig);
+            this.merkleTreeConfig = new MerkleTreeConfig(config.merkleTreeConfig);
             this.disablePerEntryInvalidationEvents = config.disablePerEntryInvalidationEvents;
             this.serializationService = config.serializationService;
             this.classLoader = config.classLoader;
@@ -149,15 +148,18 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
         this.inMemoryFormat = simpleConfig.getInMemoryFormat();
         // eviction config is not allowed to be null
         if (simpleConfig.getEvictionConfig() != null) {
-            this.evictionConfig = new CacheEvictionConfig(simpleConfig.getEvictionConfig());
+            this.evictionConfig = new EvictionConfig(simpleConfig.getEvictionConfig());
         }
         if (simpleConfig.getWanReplicationRef() != null) {
             this.wanReplicationRef = new WanReplicationRef(simpleConfig.getWanReplicationRef());
         }
         copyListeners(simpleConfig);
-        this.quorumName = simpleConfig.getQuorumName();
-        this.mergePolicy = simpleConfig.getMergePolicy();
+        this.splitBrainProtectionName = simpleConfig.getSplitBrainProtectionName();
+        this.mergePolicyConfig = new MergePolicyConfig(simpleConfig.getMergePolicyConfig());
+        this.merkleTreeConfig = new MerkleTreeConfig(simpleConfig.getMerkleTreeConfig());
         this.hotRestartConfig = new HotRestartConfig(simpleConfig.getHotRestartConfig());
+        this.dataPersistenceConfig = new DataPersistenceConfig(simpleConfig.getDataPersistenceConfig());
+        this.eventJournalConfig = new EventJournalConfig(simpleConfig.getEventJournalConfig());
         this.disablePerEntryInvalidationEvents = simpleConfig.isDisablePerEntryInvalidationEvents();
     }
 
@@ -167,7 +169,7 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
         if (expiryPolicyFactoryConfig != null) {
             if (expiryPolicyFactoryConfig.getClassName() != null) {
                 setExpiryPolicyFactory(
-                        ClassLoaderUtil.<Factory<? extends ExpiryPolicy>>newInstance(
+                        ClassLoaderUtil.newInstance(
                                 null,
                                 expiryPolicyFactoryConfig.getClassName()
                         )
@@ -212,16 +214,6 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
                 }
             }
         }
-    }
-
-    /**
-     * Gets immutable version of this configuration.
-     *
-     * @return immutable version of this configuration
-     * @deprecated this method will be removed in 4.0; it is meant for internal usage only
-     */
-    public CacheConfigReadOnly<K, V> getAsReadOnly() {
-        return new CacheConfigReadOnly<K, V>(this);
     }
 
     /**
@@ -362,8 +354,7 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
      *
      * @return the {@link EvictionConfig} instance of the eviction configuration
      */
-    // TODO: change to "EvictionConfig" in the future since "CacheEvictionConfig" is deprecated
-    public CacheEvictionConfig getEvictionConfig() {
+    public EvictionConfig getEvictionConfig() {
         return evictionConfig;
     }
 
@@ -375,14 +366,7 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
      */
     public CacheConfig<K, V> setEvictionConfig(EvictionConfig evictionConfig) {
         isNotNull(evictionConfig, "evictionConfig");
-
-        // TODO: remove this check in the future since "CacheEvictionConfig" is deprecated
-        if (evictionConfig instanceof CacheEvictionConfig) {
-            this.evictionConfig = (CacheEvictionConfig) evictionConfig;
-        } else {
-            this.evictionConfig = new CacheEvictionConfig(evictionConfig);
-        }
-
+        this.evictionConfig = evictionConfig;
         return this;
     }
 
@@ -402,7 +386,7 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
      */
     public List<CachePartitionLostListenerConfig> getPartitionLostListenerConfigs() {
         if (partitionLostListenerConfigs == null) {
-            partitionLostListenerConfigs = new ArrayList<CachePartitionLostListenerConfig>();
+            partitionLostListenerConfigs = new ArrayList<>();
         }
         return partitionLostListenerConfigs;
     }
@@ -433,6 +417,7 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
      * <ul>
      * <li>BINARY (default): keys and values will be stored as binary data</li>
      * <li>OBJECT: values will be stored in their object forms</li>
+     * <li>NATIVE: values will be stored in non-heap region of JVM (Hazelcast Enterprise only)</li>
      * </ul>
      *
      * @param inMemoryFormat the record type to set
@@ -445,47 +430,60 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
     }
 
     /**
-     * Gets the name of the associated quorum if any.
+     * Gets the name of the associated split brain protection if any.
      *
-     * @return the name of the associated quorum if any
+     * @return the name of the associated split brain protection if any
      */
-    public String getQuorumName() {
-        return quorumName;
+    public String getSplitBrainProtectionName() {
+        return splitBrainProtectionName;
     }
 
     /**
-     * Associates this cache configuration to a quorum.
+     * Associates this cache configuration to a split brain protection.
      *
-     * @param quorumName name of the desired quorum
+     * @param splitBrainProtectionName name of the desired split brain protection
      * @return the updated CacheConfig
      */
-    public CacheConfig<K, V> setQuorumName(String quorumName) {
-        this.quorumName = quorumName;
+    public CacheConfig<K, V> setSplitBrainProtectionName(String splitBrainProtectionName) {
+        this.splitBrainProtectionName = splitBrainProtectionName;
         return this;
     }
 
     /**
-     * Gets the class name of {@link com.hazelcast.cache.CacheMergePolicy} implementation of this cache config.
+     * Gets the {@link MergePolicyConfig} for this map.
      *
-     * @return the class name of {@link com.hazelcast.cache.CacheMergePolicy} implementation of this cache config
+     * @return the {@link MergePolicyConfig} for this map
      */
-    public String getMergePolicy() {
-        return mergePolicy;
+    public MergePolicyConfig getMergePolicyConfig() {
+        return mergePolicyConfig;
     }
 
     /**
-     * Sets the class name of {@link com.hazelcast.cache.CacheMergePolicy} implementation to this cache config.
+     * Sets the {@link MergePolicyConfig} for this map.
      *
-     * @param mergePolicy the class name of {@link com.hazelcast.cache.CacheMergePolicy} implementation to be set to this cache
-     *                    config
+     * @return the updated map configuration
      */
-    public void setMergePolicy(String mergePolicy) {
-        this.mergePolicy = mergePolicy;
+    public CacheConfig<K, V> setMergePolicyConfig(MergePolicyConfig mergePolicyConfig) {
+        this.mergePolicyConfig = checkNotNull(mergePolicyConfig, "mergePolicyConfig cannot be null!");
+        return this;
     }
 
-    @Override
-    public Class getProvidedMergeTypes() {
-        return SplitBrainMergeTypes.CacheMergeTypes.class;
+    /**
+     * Gets the {@code MerkleTreeConfig} for this {@code CacheConfig}
+     *
+     * @return merkle tree config
+     */
+    public MerkleTreeConfig getMerkleTreeConfig() {
+        return merkleTreeConfig;
+    }
+
+    /**
+     * Sets the {@code MerkleTreeConfig} for this {@code CacheConfig}
+     *
+     * @param merkleTreeConfig merkle tree config
+     */
+    public void setMerkleTreeConfig(MerkleTreeConfig merkleTreeConfig) {
+        this.merkleTreeConfig = checkNotNull(merkleTreeConfig, "merkleTreeConfig cannot be null!");
     }
 
     /**
@@ -502,26 +500,27 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
      *
      * @param disablePerEntryInvalidationEvents disables invalidation event sending behaviour if it is {@code true},
      *                                          otherwise enables it
+     * @return this configuration
      */
-    public void setDisablePerEntryInvalidationEvents(boolean disablePerEntryInvalidationEvents) {
+    public CacheConfig<K, V> setDisablePerEntryInvalidationEvents(boolean disablePerEntryInvalidationEvents) {
         this.disablePerEntryInvalidationEvents = disablePerEntryInvalidationEvents;
+        return this;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeUTF(name);
-        out.writeUTF(managerPrefix);
-        out.writeUTF(uriString);
+        out.writeString(name);
+        out.writeString(managerPrefix);
+        out.writeString(uriString);
         out.writeInt(backupCount);
         out.writeInt(asyncBackupCount);
 
-        out.writeUTF(inMemoryFormat.name());
+        out.writeString(inMemoryFormat.name());
         out.writeObject(evictionConfig);
 
         out.writeObject(wanReplicationRef);
         // SUPER
         writeKeyValueTypes(out);
-        writeTenant(out);
         writeFactories(out);
 
         out.writeBoolean(isReadThrough);
@@ -529,65 +528,96 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
         out.writeBoolean(isStoreByValue);
         out.writeBoolean(isManagementEnabled);
         out.writeBoolean(isStatisticsEnabled);
-        out.writeBoolean(hotRestartConfig.isEnabled());
-        out.writeBoolean(hotRestartConfig.isFsync());
+        out.writeObject(hotRestartConfig);
+        out.writeObject(eventJournalConfig);
 
-        out.writeUTF(quorumName);
+        out.writeString(splitBrainProtectionName);
 
         out.writeBoolean(hasListenerConfiguration());
         if (hasListenerConfiguration()) {
             writeListenerConfigurations(out);
         }
 
-        out.writeUTF(mergePolicy);
+        out.writeObject(mergePolicyConfig);
         out.writeBoolean(disablePerEntryInvalidationEvents);
+
+        writePartitionLostListenerConfigs(out);
+
+        out.writeObject(merkleTreeConfig);
+        out.writeObject(dataPersistenceConfig);
+    }
+
+    private void writePartitionLostListenerConfigs(ObjectDataOutput out)
+            throws IOException {
+        if (partitionLostListenerConfigs == null) {
+            out.writeInt(Bits.NULL_ARRAY_LENGTH);
+            return;
+        }
+
+        out.writeInt(partitionLostListenerConfigs.size());
+        for (CachePartitionLostListenerConfig partitionLostListenerConfig : partitionLostListenerConfigs) {
+            out.writeObject(partitionLostListenerConfig);
+        }
+    }
+
+    @Override
+    public int getClassId() {
+        return CacheDataSerializerHook.CACHE_CONFIG;
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        name = in.readUTF();
-        managerPrefix = in.readUTF();
-        uriString = in.readUTF();
+        name = in.readString();
+        managerPrefix = in.readString();
+        uriString = in.readString();
         backupCount = in.readInt();
         asyncBackupCount = in.readInt();
 
-        String resultInMemoryFormat = in.readUTF();
+        String resultInMemoryFormat = in.readString();
         inMemoryFormat = InMemoryFormat.valueOf(resultInMemoryFormat);
-        // set the thread-context and class loading context for this cache's tenant application
-        // This way user customizations (loader factories, listeners) and keyType/valueType
-        // can be CDI / EJB / JPA objects
-        Closeable tenantContext = tenantControl.setTenant(false);
-        try {
-            evictionConfig = in.readObject();
-            wanReplicationRef = in.readObject();
+        evictionConfig = in.readObject();
+        wanReplicationRef = in.readObject();
 
-            readKeyValueTypes(in);
-            readTenant(in);
-            readFactories(in);
+        readKeyValueTypes(in);
+        readFactories(in);
 
-            isReadThrough = in.readBoolean();
-            isWriteThrough = in.readBoolean();
-            isStoreByValue = in.readBoolean();
-            isManagementEnabled = in.readBoolean();
-            isStatisticsEnabled = in.readBoolean();
-            hotRestartConfig.setEnabled(in.readBoolean());
-            hotRestartConfig.setFsync(in.readBoolean());
+        isReadThrough = in.readBoolean();
+        isWriteThrough = in.readBoolean();
+        isStoreByValue = in.readBoolean();
+        isManagementEnabled = in.readBoolean();
+        isStatisticsEnabled = in.readBoolean();
+        setHotRestartConfig(in.readObject());
+        eventJournalConfig = in.readObject();
 
-            quorumName = in.readUTF();
+        splitBrainProtectionName = in.readString();
 
-            final boolean listNotEmpty = in.readBoolean();
-            if (listNotEmpty) {
-                readListenerConfigurations(in);
-            }
-        } finally {
-            tenantContext.close();
+        final boolean listNotEmpty = in.readBoolean();
+        if (listNotEmpty) {
+            readListenerConfigurations(in);
         }
 
-        mergePolicy = in.readUTF();
+        mergePolicyConfig = in.readObject();
         disablePerEntryInvalidationEvents = in.readBoolean();
 
         setClassLoader(in.getClassLoader());
-        this.serializationService = in.getSerializationService();
+        assert in instanceof SerializationServiceSupport;
+        this.serializationService = ((SerializationServiceSupport) in).getSerializationService();
+
+        readPartitionLostListenerConfigs(in);
+
+        merkleTreeConfig = in.readObject();
+        setDataPersistenceConfig(in.readObject());
+    }
+
+    private void readPartitionLostListenerConfigs(ObjectDataInput in)
+            throws IOException {
+        int partitionLostListenerConfigCount = in.readInt();
+        if (partitionLostListenerConfigCount > 0) {
+            partitionLostListenerConfigs = new ArrayList<>(partitionLostListenerConfigCount);
+            for (int i = 0; i < partitionLostListenerConfigCount; i++) {
+                partitionLostListenerConfigs.add(in.readObject());
+            }
+        }
     }
 
     @Override
@@ -609,13 +639,13 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
         }
 
         final CacheConfig that = (CacheConfig) o;
-        if (managerPrefix != null ? !managerPrefix.equals(that.managerPrefix) : that.managerPrefix != null) {
+        if (!Objects.equals(managerPrefix, that.managerPrefix)) {
             return false;
         }
-        if (name != null ? !name.equals(that.name) : that.name != null) {
+        if (!Objects.equals(name, that.name)) {
             return false;
         }
-        if (uriString != null ? !uriString.equals(that.uriString) : that.uriString != null) {
+        if (!Objects.equals(uriString, that.uriString)) {
             return false;
         }
 
@@ -630,16 +660,10 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
                 + ", inMemoryFormat=" + inMemoryFormat
                 + ", backupCount=" + backupCount
                 + ", hotRestart=" + hotRestartConfig
+                + ", dataPersistenceConfig=" + dataPersistenceConfig
                 + ", wanReplicationRef=" + wanReplicationRef
+                + ", merkleTreeConfig=" + merkleTreeConfig
                 + '}';
-    }
-
-    TenantControl getTenantControl() {
-        return tenantControl;
-    }
-
-    void setTenantControl(TenantControl tenantControl) {
-        this.tenantControl = tenantControl;
     }
 
     protected void writeTenant(ObjectDataOutput out) throws IOException {
@@ -654,8 +678,8 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
     }
 
     protected void readKeyValueTypes(ObjectDataInput in) throws IOException {
-        setKeyType((Class<K>) in.readObject());
-        setValueType((Class<V>) in.readObject());
+        setKeyType(in.readObject());
+        setValueType(in.readObject());
     }
 
     protected void writeFactories(ObjectDataOutput out) throws IOException {
@@ -665,9 +689,9 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
     }
 
     protected void readFactories(ObjectDataInput in) throws IOException {
-        setCacheLoaderFactory(in.<Factory<? extends CacheLoader<K, V>>>readObject());
-        setCacheWriterFactory(in.<Factory<? extends CacheWriter<? super K, ? super V>>>readObject());
-        setExpiryPolicyFactory(in.<Factory<? extends ExpiryPolicy>>readObject());
+        setCacheLoaderFactory(in.readObject());
+        setCacheWriterFactory(in.readObject());
+        setExpiryPolicyFactory(in.readObject());
     }
 
     protected void writeListenerConfigurations(ObjectDataOutput out) throws IOException {
@@ -681,7 +705,7 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
         final int size = in.readInt();
         Set<DeferredValue<CacheEntryListenerConfiguration<K, V>>> lc = createConcurrentSet();
         for (int i = 0; i < size; i++) {
-            lc.add(DeferredValue.withValue((CacheEntryListenerConfiguration<K, V>) in.readObject()));
+            lc.add(DeferredValue.withValue(in.readObject()));
         }
         listenerConfigurations = lc;
     }
@@ -689,20 +713,21 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
     /**
      * Copy this CacheConfig to given {@code target} object whose type extends CacheConfig.
      *
-     * @param target    the target object to which this configuration will be copied
-     * @param resolved  when {@code true}, it is assumed that this {@code cacheConfig}'s key-value types have already been
-     *                  or will be resolved to loaded classes and the actual {@code keyType} and {@code valueType} will be copied.
-     *                  Otherwise, this configuration's {@code keyClassName} and {@code valueClassName} will be copied to the
-     *                  target config, to be resolved at a later time.
-     * @return          the target config
+     * @param target   the target object to which this configuration will be copied
+     * @param resolved when {@code true}, it is assumed that this {@code cacheConfig}'s key-value types have already been
+     *                 or will be resolved to loaded classes and the actual {@code keyType} and {@code valueType} will be copied.
+     *                 Otherwise, this configuration's {@code keyClassName} and {@code valueClassName} will be copied to the
+     *                 target config, to be resolved at a later time.
+     * @param <T>      the target object type
+     * @return the target config
      */
     public <T extends CacheConfig<K, V>> T copy(T target, boolean resolved) {
-        target.setTenantControl(getTenantControl());
         target.setAsyncBackupCount(getAsyncBackupCount());
         target.setBackupCount(getBackupCount());
         target.setDisablePerEntryInvalidationEvents(isDisablePerEntryInvalidationEvents());
         target.setEvictionConfig(getEvictionConfig());
         target.setHotRestartConfig(getHotRestartConfig());
+        target.setEventJournalConfig(getEventJournalConfig());
         target.setInMemoryFormat(getInMemoryFormat());
         if (resolved) {
             target.setKeyType(getKeyType());
@@ -712,21 +737,22 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
             target.setValueClassName(getValueClassName());
         }
 
-        target.cacheLoaderFactory = cacheLoaderFactory.shallowCopy();
-        target.cacheWriterFactory = cacheWriterFactory.shallowCopy();
-        target.expiryPolicyFactory = expiryPolicyFactory.shallowCopy();
+        target.cacheLoaderFactory = cacheLoaderFactory.shallowCopy(resolved, serializationService);
+        target.cacheWriterFactory = cacheWriterFactory.shallowCopy(resolved, serializationService);
+        target.expiryPolicyFactory = expiryPolicyFactory.shallowCopy(resolved, serializationService);
 
         target.listenerConfigurations = createConcurrentSet();
         for (DeferredValue<CacheEntryListenerConfiguration<K, V>> lazyEntryListenerConfig : listenerConfigurations) {
-            target.listenerConfigurations.add(lazyEntryListenerConfig.shallowCopy());
+            target.listenerConfigurations.add(lazyEntryListenerConfig.shallowCopy(resolved, serializationService));
         }
 
         target.setManagementEnabled(isManagementEnabled());
         target.setManagerPrefix(getManagerPrefix());
-        target.setMergePolicy(getMergePolicy());
+        target.setMergePolicyConfig(getMergePolicyConfig());
+        target.setMerkleTreeConfig(getMerkleTreeConfig());
         target.setName(getName());
         target.setPartitionLostListenerConfigs(getPartitionLostListenerConfigs());
-        target.setQuorumName(getQuorumName());
+        target.setSplitBrainProtectionName(getSplitBrainProtectionName());
         target.setReadThrough(isReadThrough());
         target.setStatisticsEnabled(isStatisticsEnabled());
         target.setStoreByValue(isStoreByValue());
@@ -751,9 +777,8 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
             }
             boolean isOldValueRequired = simpleListener.isOldValueRequired();
             boolean synchronous = simpleListener.isSynchronous();
-            MutableCacheEntryListenerConfiguration<K, V> listenerConfiguration =
-                    new MutableCacheEntryListenerConfiguration<K, V>(
-                            listenerFactory, filterFactory, isOldValueRequired, synchronous);
+            MutableCacheEntryListenerConfiguration<K, V> listenerConfiguration = new MutableCacheEntryListenerConfiguration<>(
+                    listenerFactory, filterFactory, isOldValueRequired, synchronous);
             addCacheEntryListenerConfiguration(listenerConfiguration);
         }
         for (CachePartitionLostListenerConfig listenerConfig : simpleConfig.getPartitionLostListenerConfigs()) {
@@ -764,14 +789,14 @@ public class CacheConfig<K, V> extends AbstractCacheConfig<K, V> implements Spli
     private void copyFactories(CacheSimpleConfig simpleConfig) throws Exception {
         if (simpleConfig.getCacheLoaderFactory() != null) {
             setCacheLoaderFactory(
-                    ClassLoaderUtil.<Factory<? extends CacheLoader<K, V>>>newInstance(
+                    ClassLoaderUtil.newInstance(
                             null,
                             simpleConfig.getCacheLoaderFactory()
                     )
             );
         }
         if (simpleConfig.getCacheLoader() != null) {
-            setCacheLoaderFactory(FactoryBuilder.<CacheLoader<K, V>>factoryOf(simpleConfig.getCacheLoader()));
+            setCacheLoaderFactory(FactoryBuilder.factoryOf(simpleConfig.getCacheLoader()));
         }
         if (simpleConfig.getCacheWriterFactory() != null) {
             setCacheWriterFactory(

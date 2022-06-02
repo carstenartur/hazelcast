@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.hazelcast.instance;
 
 import com.hazelcast.logging.Logger;
 
-import static com.hazelcast.util.StringUtil.tokenizeVersionString;
+import static com.hazelcast.internal.util.StringUtil.tokenizeVersionString;
 import static java.lang.Integer.parseInt;
 
 public class BuildInfo {
@@ -37,35 +37,23 @@ public class BuildInfo {
     private final boolean enterprise;
     private final byte serializationVersion;
     private final BuildInfo upstreamBuildInfo;
-    private final JetBuildInfo jetBuildInfo;
+    private final String commitId;
 
     public BuildInfo(String version, String build, String revision, int buildNumber, boolean enterprise,
-                     byte serializationVersion) {
-        this(version, build, revision, buildNumber, enterprise, serializationVersion, null);
+                     byte serializationVersion, String commitId) {
+        this(version, build, revision, buildNumber, enterprise, serializationVersion, commitId, null);
     }
 
     public BuildInfo(String version, String build, String revision, int buildNumber, boolean enterprise,
-                     byte serializationVersion, BuildInfo upstreamBuildInfo) {
-        this(version, build, revision, buildNumber, enterprise, serializationVersion, upstreamBuildInfo,
-                null);
-    }
-
-    private BuildInfo(String version, String build, String revision, int buildNumber, boolean enterprise,
-                     byte serializationVersion, BuildInfo upstreamBuildInfo, JetBuildInfo jetBuildInfo) {
+                     byte serializationVersion, String commitId, BuildInfo upstreamBuildInfo) {
         this.version = version;
         this.build = build;
         this.revision = revision;
         this.buildNumber = buildNumber;
         this.enterprise = enterprise;
         this.serializationVersion = serializationVersion;
+        this.commitId = commitId;
         this.upstreamBuildInfo = upstreamBuildInfo;
-        this.jetBuildInfo = jetBuildInfo;
-    }
-
-    private BuildInfo(BuildInfo buildInfo, JetBuildInfo jetBuildInfo) {
-        this(buildInfo.getVersion(), buildInfo.getBuild(), buildInfo.getRevision(), buildInfo.getBuildNumber(),
-                buildInfo.isEnterprise(), buildInfo.getSerializationVersion(), buildInfo.getUpstreamBuildInfo(),
-                jetBuildInfo);
     }
 
     public String getRevision() {
@@ -96,15 +84,8 @@ public class BuildInfo {
         return upstreamBuildInfo;
     }
 
-    /**
-     * @return {@link JetBuildInfo} if Hazelcast Jet is used, {@code null} otherwise
-     */
-    public JetBuildInfo getJetBuildInfo() {
-        return jetBuildInfo;
-    }
-
-    BuildInfo withJetBuildInfo(JetBuildInfo jetBuildInfo) {
-        return new BuildInfo(this, jetBuildInfo);
+    public String getCommitId() {
+        return commitId;
     }
 
     @Override
@@ -116,7 +97,6 @@ public class BuildInfo {
                 + ", revision=" + revision
                 + ", enterprise=" + enterprise
                 + ", serializationVersion=" + serializationVersion
-                + (jetBuildInfo == null ? "" : ", jet=" + jetBuildInfo)
                 + (upstreamBuildInfo == null ? "" : ", upstream=" + upstreamBuildInfo)
                 + '}';
     }

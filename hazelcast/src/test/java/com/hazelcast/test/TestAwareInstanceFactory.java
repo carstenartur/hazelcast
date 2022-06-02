@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,11 +23,12 @@ import com.hazelcast.config.NetworkConfig;
 import com.hazelcast.config.ServerSocketEndpointConfig;
 import com.hazelcast.config.TcpIpConfig;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.instance.DefaultNodeContext;
 import com.hazelcast.instance.EndpointQualifier;
-import com.hazelcast.instance.HazelcastInstanceFactory;
-import com.hazelcast.instance.NodeContext;
+import com.hazelcast.instance.impl.DefaultNodeContext;
+import com.hazelcast.instance.impl.HazelcastInstanceFactory;
+import com.hazelcast.instance.impl.NodeContext;
 import com.hazelcast.internal.jmx.ManagementService;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,34 +36,35 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static com.hazelcast.config.Config.DEFAULT_CLUSTER_NAME;
+import static com.hazelcast.instance.EndpointQualifier.CLIENT;
 import static com.hazelcast.instance.EndpointQualifier.MEMBER;
 import static com.hazelcast.test.AbstractHazelcastClassRunner.getTestMethodName;
-import static com.hazelcast.test.HazelcastTestSupport.getAddress;
+import static com.hazelcast.test.Accessors.getAddress;
 
 /**
  * Per test-method factory for Hazelcast members. It sets existing members host:port from given cluster to TCP join
  * configuration of other members. The instances are kept per test method which allows to terminate them in
- * {@link org.junit.After} methods (see {@link #terminateAll()}). The factory methods also sets custom group name which prevents
+ * {@link org.junit.After} methods (see {@link #terminateAll()}). The factory methods also sets custom cluster name which prevents
  * accidental joins (e.g. dangling members).
  * <p>
- * <b>Tests using this factory should not be annotated with {@code ParallelTest} category to avoid runs in multiple JVMs.</b>
+ * <b>Tests using this factory should not be annotated with {@link ParallelJVMTest} category to avoid runs in multiple JVMs.</b>
  * <p>
- * Usage of {@link com.hazelcast.test.annotation.ParallelTest} is allowed with this instance factory.<br/>
  * Example:
  *
  * <pre>
- * &commat;RunWith(HazelcastParallelClassRunner.class)
- * &commat;Category({QuickTest.class, ParallelTest.class})
+ * &#64;RunWith(HazelcastParallelClassRunner.class)
+ * &#64;Category(QuickTest.class)
  * public class Test {
  *
  *     private final TestAwareInstanceFactory factory = new TestAwareInstanceFactory();
  *
- *     &commat;After
+ *     &#64;After
  *     public void after() {
  *         factory.terminateAll();
  *     }
  *
- *     &commat;Test
+ *     &#64;Test
  *     public void test1() {
  *         Config config = new Config();
  *         HazelcastInstance h1 = factory.newHazelcastInstance(config);
@@ -70,7 +72,7 @@ import static com.hazelcast.test.HazelcastTestSupport.getAddress;
  *         // ...
  *     }
  *
- *     &commat;Test
+ *     &#64;Test
  *     public void test2() {
  *         Config config = new Config();
  *         HazelcastInstance h1 = factory.newHazelcastInstance(config);
@@ -84,7 +86,7 @@ public class TestAwareInstanceFactory {
 
     private static final AtomicInteger PORT = new AtomicInteger(5000);
 
-    protected final Map<String, List<HazelcastInstance>> perMethodMembers = new ConcurrentHashMap<String, List<HazelcastInstance>>();
+    protected final Map<String, List<HazelcastInstance>> perMethodMembers = new ConcurrentHashMap<>();
 
     /**
      * Calls {@link #newHazelcastInstance(Config, NodeContext)} using the
@@ -97,13 +99,15 @@ public class TestAwareInstanceFactory {
     /**
      * Creates new member instance with TCP join configured. Uses
      * {@link com.hazelcast.test.AbstractHazelcastClassRunner#getTestMethodName()}
-     * as the cluster group name.
+     * as the cluster name if it's not changed already.
      */
     public HazelcastInstance newHazelcastInstance(Config config, NodeContext nodeCtx) {
         if (config == null) {
             config = new Config();
         }
-        config.getGroupConfig().setName(getTestMethodName());
+        if (DEFAULT_CLUSTER_NAME.equals(config.getClusterName())) {
+            config.setClusterName(getTestMethodName());
+        }
         List<HazelcastInstance> members = getOrInitInstances(perMethodMembers);
 
         // Prepare Unified Networking (legacy)
@@ -121,6 +125,11 @@ public class TestAwareInstanceFactory {
         ServerSocketEndpointConfig memberEndpointConfig
                 = (ServerSocketEndpointConfig) advancedNetworkConfig.getEndpointConfigs().get(MEMBER);
         memberEndpointConfig.setPort(PORT.getAndIncrement());
+        ServerSocketEndpointConfig clientEndpointConfig = (ServerSocketEndpointConfig) advancedNetworkConfig
+                .getEndpointConfigs().get(CLIENT);
+        if (clientEndpointConfig != null) {
+            clientEndpointConfig.setPort(PORT.getAndIncrement());
+        }
         JoinConfig advancedJoinConfig = advancedNetworkConfig.getJoin();
         advancedJoinConfig.getMulticastConfig().setEnabled(false);
         TcpIpConfig advancedTcpIpConfig = advancedJoinConfig.getTcpIpConfig().setEnabled(true);
@@ -131,7 +140,7 @@ public class TestAwareInstanceFactory {
         HazelcastInstance hz = HazelcastInstanceFactory.newHazelcastInstance(
                 config, config.getInstanceName(), nodeCtx);
         members.add(hz);
-        int nextPort = getPort(hz, MEMBER) + 1;
+        int nextPort = Math.max(getPort(hz, MEMBER), getPort(hz, CLIENT)) + 1;
         int current;
         while (nextPort > (current = PORT.get())) {
             PORT.compareAndSet(current, nextPort);
@@ -157,11 +166,7 @@ public class TestAwareInstanceFactory {
 
     protected List<HazelcastInstance> getOrInitInstances(Map<String, List<HazelcastInstance>> map) {
         String methodName = getTestMethodName();
-        List<HazelcastInstance> list = map.get(methodName);
-        if (list == null) {
-            list = new ArrayList<HazelcastInstance>();
-            map.put(methodName, list);
-        }
+        List<HazelcastInstance> list = map.computeIfAbsent(methodName, k -> new ArrayList<>());
         return list;
     }
 

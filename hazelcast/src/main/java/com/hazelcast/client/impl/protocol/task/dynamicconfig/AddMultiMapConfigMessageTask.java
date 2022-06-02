@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,9 @@ import com.hazelcast.client.impl.protocol.codec.DynamicConfigAddMultiMapConfigCo
 import com.hazelcast.config.EntryListenerConfig;
 import com.hazelcast.config.MergePolicyConfig;
 import com.hazelcast.config.MultiMapConfig;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.dynamicconfig.DynamicConfigurationAwareConfig;
+import com.hazelcast.internal.nio.Connection;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 
 public class AddMultiMapConfigMessageTask extends
@@ -57,8 +58,7 @@ public class AddMultiMapConfigMessageTask extends
                 multiMapConfig.addEntryListenerConfig(entryListenerConfig);
             }
         }
-        MergePolicyConfig mergePolicyConfig = mergePolicyConfig(parameters.mergePolicyExist, parameters.mergePolicy,
-                parameters.mergeBatchSize);
+        MergePolicyConfig mergePolicyConfig = mergePolicyConfig(parameters.mergePolicy, parameters.mergeBatchSize);
         multiMapConfig.setMergePolicyConfig(mergePolicyConfig);
         return multiMapConfig;
     }
@@ -66,5 +66,13 @@ public class AddMultiMapConfigMessageTask extends
     @Override
     public String getMethodName() {
         return "addMultiMapConfig";
+    }
+
+    @Override
+    protected boolean checkStaticConfigDoesNotExist(IdentifiedDataSerializable config) {
+        DynamicConfigurationAwareConfig nodeConfig = (DynamicConfigurationAwareConfig) nodeEngine.getConfig();
+        MultiMapConfig multiMapConfig = (MultiMapConfig) config;
+        return nodeConfig.checkStaticConfigDoesNotExist(nodeConfig.getStaticConfig().getMultiMapConfigs(),
+                multiMapConfig.getName(), multiMapConfig);
     }
 }

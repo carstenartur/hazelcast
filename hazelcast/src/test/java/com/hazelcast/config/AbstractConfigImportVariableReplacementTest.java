@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,12 @@ package com.hazelcast.config;
 
 import com.hazelcast.config.replacer.PropertyReplacer;
 import com.hazelcast.config.replacer.spi.ConfigReplacer;
-import com.hazelcast.core.HazelcastException;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 import org.junit.rules.TemporaryFolder;
 
-import java.io.File;
-import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.Properties;
 
 /**
@@ -38,25 +36,22 @@ public abstract class AbstractConfigImportVariableReplacementTest {
     @Rule
     public TemporaryFolder tempFolder = new TemporaryFolder();
 
-    @SuppressWarnings("ResultOfMethodCallIgnored")
-    protected static File createConfigFile(String filename, String suffix) throws Exception {
-        File file = File.createTempFile(filename, suffix);
-        file.setWritable(true);
-        file.deleteOnExit();
-        return file;
-    }
-
-    protected static void writeStringToStreamAndClose(FileOutputStream os, String string) throws Exception {
-        os.write(string.getBytes());
-        os.flush();
-        os.close();
-    }
+    abstract String contentWithImportResource(String url);
 
     @Test
     public abstract void testHazelcastElementOnlyAppearsOnce();
 
     @Test
     public abstract void readVariables();
+
+    @Test
+    public abstract void testImportResourceWithConfigReplacers() throws IOException;
+
+    @Test
+    public abstract void testImportResourceWithNestedImports() throws IOException;
+
+    @Test
+    public abstract void testImportResourceWithNestedImportsAndProperties() throws IOException;
 
     @Test
     public abstract void testImportConfigFromResourceVariables() throws Exception;
@@ -79,8 +74,8 @@ public abstract class AbstractConfigImportVariableReplacementTest {
     @Test
     public abstract void testImportNotExistingResourceThrowsException();
 
-    @Test(expected = HazelcastException.class)
-    public abstract void testImportFromNonHazelcastConfigThrowsException() throws Exception;
+    @Test
+    public abstract void testImportNotExistingUrlResourceThrowsException();
 
     @Test
     public abstract void testImportNetworkConfigFromFile() throws Exception;
@@ -104,12 +99,12 @@ public abstract class AbstractConfigImportVariableReplacementTest {
     public abstract void testMapConfigFromMainAndImportedFile() throws Exception;
 
     @Test
-    public abstract void testImportGroupConfigFromClassPath();
+    public abstract void testImportConfigFromClassPath();
 
     @Test
     public abstract void testReplacers() throws Exception;
 
-    @Test(expected = ConfigurationException.class)
+    @Test(expected = InvalidConfigurationException.class)
     public abstract void testMissingReplacement() throws Exception;
 
     @Test
@@ -147,10 +142,6 @@ public abstract class AbstractConfigImportVariableReplacementTest {
 
     @Test
     public abstract void testReplaceVariablesUseSystemProperties() throws Exception;
-
-    protected void expectInvalid() {
-        InvalidConfigurationTest.expectInvalid(rule);
-    }
 
     public static class IdentityReplacer implements ConfigReplacer {
         @Override

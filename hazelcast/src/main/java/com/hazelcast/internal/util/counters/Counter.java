@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,6 +32,20 @@ public interface Counter {
      * @return the current value of the counter.
      */
     long get();
+
+    /**
+     * Sets the current value of the counter.
+     */
+    void set(long value);
+
+    /**
+     * Sets the current value of the counter
+     * and returns the old value.
+     *
+     * @param newValue the new value.
+     * @return the old value of the counter.
+     */
+    long getAndSet(long newValue);
 
     /**
      * Increments the counter by one.

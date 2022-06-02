@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,22 @@
 
 package com.hazelcast.internal.cluster;
 
-import com.hazelcast.core.Cluster;
-import com.hazelcast.core.Member;
-import com.hazelcast.core.MemberSelector;
-import com.hazelcast.instance.MemberImpl;
-import com.hazelcast.nio.Address;
-import com.hazelcast.spi.CoreService;
+import com.hazelcast.cluster.Cluster;
+import com.hazelcast.cluster.Member;
+import com.hazelcast.cluster.MemberSelector;
+import com.hazelcast.cluster.impl.MemberImpl;
+import com.hazelcast.cluster.Address;
+import com.hazelcast.internal.services.CoreService;
 
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.util.Collection;
+import java.util.UUID;
 
 /**
  * A service responsible for member related functionality, e.g. members joining, leaving etc.
  * <p>
- * This API is an internal API; the end user will use the {@link com.hazelcast.core.Cluster} interface.
+ * This API is an internal API; the end user will use the {@link Cluster} interface.
  */
 public interface ClusterService extends CoreService, Cluster {
 
@@ -38,7 +41,8 @@ public interface ClusterService extends CoreService, Cluster {
      * @param address the address of the member to lookup
      * @return the found member, or {@code null} if not found (if the address is {@code null}, {@code null} is returned)
      */
-    MemberImpl getMember(Address address);
+    @Nullable
+    MemberImpl getMember(@Nullable Address address);
 
     /**
      * Gets the member with the given UUID.
@@ -46,7 +50,8 @@ public interface ClusterService extends CoreService, Cluster {
      * @param uuid the UUID of the member
      * @return the found member, or {@code null} if not found (if the UUID is {@code null}, {@code null} is returned)
      */
-    MemberImpl getMember(String uuid);
+    @Nullable
+    MemberImpl getMember(@Nullable UUID uuid);
 
     /**
      * Gets the member with the given UUID and address.
@@ -56,7 +61,8 @@ public interface ClusterService extends CoreService, Cluster {
      * @return the found member, or {@code null} if not found
      * (if the UUID and/or address is {@code null}, {@code null} is returned)
      */
-    MemberImpl getMember(Address address, String uuid);
+    @Nullable
+    MemberImpl getMember(@Nullable Address address, @Nullable UUID uuid);
 
     /**
      * Gets the collection of members.
@@ -65,13 +71,14 @@ public interface ClusterService extends CoreService, Cluster {
      *
      * @return the collection of member (the returned value will never be {@code null})
      */
+    @Nonnull
     Collection<MemberImpl> getMemberImpls();
 
     /**
-     * Returns a collection of the members that satisfy the given {@link com.hazelcast.core.MemberSelector}.
+     * Returns a collection of the members that satisfy the given {@link MemberSelector}.
      *
-     * @param selector {@link com.hazelcast.core.MemberSelector} instance to filter members to return
-     * @return members that satisfy the given {@link com.hazelcast.core.MemberSelector}
+     * @param selector {@link MemberSelector} instance to filter members to return
+     * @return members that satisfy the given {@link MemberSelector}
      */
     Collection<Member> getMembers(MemberSelector selector);
 
@@ -80,6 +87,7 @@ public interface ClusterService extends CoreService, Cluster {
      *
      * @return the address of the master member (can be {@code null} if the master is not yet known)
      */
+    @Nullable
     Address getMasterAddress();
 
     /**
@@ -101,7 +109,16 @@ public interface ClusterService extends CoreService, Cluster {
      *
      * @return the address of this member (the returned value will never be {@code null})
      */
+    @Nonnull
     Address getThisAddress();
+
+    /**
+     * Gets the uuid of this member.
+     *
+     * @return the uuid of this member (the returned value will never be {@code null})
+     */
+    @Nonnull
+    UUID getThisUuid();
 
     /**
      * Gets the local member instance.
@@ -113,6 +130,7 @@ public interface ClusterService extends CoreService, Cluster {
      *
      * @return the local member instance (the returned value will never be {@code null})
      */
+    @Nonnull
     Member getLocalMember();
 
     /**
@@ -123,10 +141,10 @@ public interface ClusterService extends CoreService, Cluster {
     int getSize();
 
     /**
-     * Gets the number of members that satisfy the given {@link com.hazelcast.core.MemberSelector} instance.
+     * Gets the number of members that satisfy the given {@link MemberSelector} instance.
      *
-     * @param selector {@link com.hazelcast.core.MemberSelector} instance that filters members to be counted
-     * @return the number of members that satisfy the given {@link com.hazelcast.core.MemberSelector} instance
+     * @param selector {@link MemberSelector} instance that filters members to be counted
+     * @return the number of members that satisfy the given {@link MemberSelector} instance
      */
     int getSize(MemberSelector selector);
 
@@ -137,6 +155,7 @@ public interface ClusterService extends CoreService, Cluster {
      *
      * @return the ClusterClock
      */
+    @Nonnull
     ClusterClock getClusterClock();
 
     /**
@@ -144,7 +163,8 @@ public interface ClusterService extends CoreService, Cluster {
      *
      * @return unique UUID for cluster
      */
-    String getClusterId();
+    @Nullable
+    UUID getClusterId();
 
     /**
      * Returns the current version of member list.
@@ -159,8 +179,8 @@ public interface ClusterService extends CoreService, Cluster {
      * The join algorithm assigns different member list join versions to each member in the cluster.
      * If two members join at the same time, they will appear on different version of member list.
      * <p>
-     * The uniqueness guarantee of member list join versions is provided except the following scenario:
-     * when there is a split-brain issue, if a new node joins to any sub-cluster,
+     * The uniqueness guarantee of member list join versions is provided except for the following
+     * scenario: when there is a split-brain issue, if a new node joins to any sub-cluster,
      * it can get a duplicate member list join version, i.e., its member list join version
      * can be assigned to another node in the other sub-cluster(s).
      * <p>

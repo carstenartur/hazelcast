@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ import java.io.IOException;
 
 /**
  * Returns information about the queried Raft group.
- * <p/>
+ * <p>
  * This operation is committed to the Metadata group.
  */
 public class GetRaftGroupOp extends MetadataRaftGroupOp implements IndeterminateOperationStateAware, IdentifiedDataSerializable {
@@ -60,7 +60,7 @@ public class GetRaftGroupOp extends MetadataRaftGroupOp implements Indeterminate
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftServiceDataSerializerHook.GET_RAFT_GROUP_OP;
     }
 

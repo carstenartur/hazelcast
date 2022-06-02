@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,12 +21,14 @@ import com.hazelcast.config.Config;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
+import static com.hazelcast.internal.util.StringUtil.equalsIgnoreCase;
 import static java.lang.String.format;
 import static java.util.Collections.unmodifiableSet;
 
 /**
- * Container for configured Hazelcast properties ({@see HazelcastProperty}).
+ * Container for configured Hazelcast properties (see {@link HazelcastProperty}).
  * <p>
  * A {@link HazelcastProperty} can be set as:
  * <ul>
@@ -42,6 +44,7 @@ public class HazelcastProperties {
 
     private final Set<String> keys;
     private final Properties properties = new Properties();
+    private Config config;
 
     /**
      * Creates a container with configured Hazelcast properties.
@@ -54,6 +57,7 @@ public class HazelcastProperties {
      */
     public HazelcastProperties(Config config) {
         this(config.getProperties());
+        this.config = config;
     }
 
     /**
@@ -74,6 +78,10 @@ public class HazelcastProperties {
         this.keys = unmodifiableSet((Set) properties.keySet());
     }
 
+    protected Config getConfig() {
+        return config;
+    }
+
     /**
      * Returns an immutable set of all keys in this HazelcastProperties.
      *
@@ -85,13 +93,18 @@ public class HazelcastProperties {
 
     /**
      * Returns the value for the given key.
+     * If this {@code HazelcastProperties} object is initialized with a
+     * "compromised" {@link Properties} object (ie one where keys/values of types
+     * other than {@code String} have been inserted), then {@code get} on {@code String} keys
+     * mapped to non-{@code String} values will return {@code null},
+     * similarly to {@link Properties#getProperty(String)}.
      *
      * @param key the key
      * @return the value for the given key, or {@code null} if no value is found
      * @throws NullPointerException if key is {@code null}
      */
     public String get(String key) {
-        return (String) properties.get(key);
+        return properties.getProperty(key);
     }
 
     /**
@@ -133,6 +146,10 @@ public class HazelcastProperties {
             }
         }
 
+        Function<HazelcastProperties, ?> function = property.getFunction();
+        if (function != null) {
+            return "" + function.apply(this);
+        }
         return property.getDefaultValue();
     }
 
@@ -254,7 +271,7 @@ public class HazelcastProperties {
      * Returns the configured value of a {@link HazelcastProperty} converted to milliseconds if
      * it is positive, otherwise returns the passed default value.
      *
-     * @param property the {@link HazelcastProperty} to get the value from
+     * @param property     the {@link HazelcastProperty} to get the value from
      * @param defaultValue the default value to return if property has non positive value.
      * @return the value in milliseconds if it is positive, otherwise the passed default value.
      * @throws IllegalArgumentException if the {@link HazelcastProperty} has no {@link TimeUnit}
@@ -278,11 +295,12 @@ public class HazelcastProperties {
     }
 
     /**
-     * Returns the configured enum value of a {@link GroupProperty}.
+     * Returns the configured enum value of a {@link ClusterProperty}.
      * <p>
      * The case of the enum is ignored.
      *
-     * @param property the {@link GroupProperty} to get the value from
+     * @param property the {@link ClusterProperty} to get the value from
+     * @param <E> the enum type
      * @return the enum
      * @throws IllegalArgumentException if the enum value can't be found
      */
@@ -290,7 +308,7 @@ public class HazelcastProperties {
         String value = getString(property);
 
         for (E enumConstant : enumClazz.getEnumConstants()) {
-            if (enumConstant.name().equalsIgnoreCase(value)) {
+            if (equalsIgnoreCase(enumConstant.name(), value)) {
                 return enumConstant;
             }
         }

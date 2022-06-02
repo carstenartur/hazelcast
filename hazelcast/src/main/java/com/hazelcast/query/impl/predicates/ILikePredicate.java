@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,11 @@
 
 package com.hazelcast.query.impl.predicates;
 
-import com.hazelcast.nio.serialization.BinaryInterface;
+import com.hazelcast.internal.serialization.BinaryInterface;
+import com.hazelcast.query.impl.QueryContext;
+import com.hazelcast.query.impl.QueryableEntry;
 
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -34,17 +37,27 @@ public class ILikePredicate extends LikePredicate {
     }
 
     @Override
+    public Set<QueryableEntry> filter(QueryContext queryContext) {
+        return null;
+    }
+
+    @Override
+    public boolean isIndexed(QueryContext queryContext) {
+        return false;
+    }
+
+    @Override
     public String toString() {
         return attributeName + " ILIKE '" + expression + "'";
     }
 
     @Override
     protected int getFlags() {
-        return super.getFlags() | Pattern.CASE_INSENSITIVE;
+        return super.getFlags() | Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return PredicateDataSerializerHook.ILIKE_PREDICATE;
     }
 }

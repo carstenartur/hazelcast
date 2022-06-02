@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.hazelcast.internal.usercodedeployment.impl;
 
 import com.hazelcast.config.UserCodeDeploymentConfig;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.nio.IOUtil;
+import com.hazelcast.internal.nio.IOUtil;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -26,8 +26,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
 
-import static com.hazelcast.nio.IOUtil.toByteArray;
-import static com.hazelcast.util.EmptyStatement.ignore;
+import static com.hazelcast.internal.nio.IOUtil.toByteArray;
+import static com.hazelcast.internal.util.EmptyStatement.ignore;
 
 /**
  * Provides {@link ClassData} to remote members.
@@ -103,21 +103,33 @@ public final class ClassDataProvider {
 
     private Map<String, byte[]> loadAnonymousClasses(String className, Map<String, byte[]> innerClassDefinitions) {
         int i = 1;
+
         while (true) {
-            try {
-                String innerClassName = className + "$" + i;
-                parent.loadClass(innerClassName);
-                byte[] innerByteCode = loadBytecodeFromParent(innerClassName);
-                if (innerClassDefinitions == null) {
-                    innerClassDefinitions = new HashMap<String, byte[]>();
-                }
-                innerClassDefinitions.put(innerClassName, innerByteCode);
-                i++;
-            } catch (ClassNotFoundException e) {
+            String innerClassName = className + "$" + i;
+            boolean shouldContinue = attemptToLoadClass(innerClassName);
+
+            if (!shouldContinue) {
                 break;
             }
+
+            byte[] innerByteCode = loadBytecodeFromParent(innerClassName);
+            if (innerClassDefinitions == null) {
+                innerClassDefinitions = new HashMap<String, byte[]>();
+            }
+            innerClassDefinitions.put(innerClassName, innerByteCode);
+            i++;
         }
         return innerClassDefinitions;
+    }
+
+    private boolean attemptToLoadClass(String innerClassName) {
+        try {
+            parent.loadClass(innerClassName);
+        } catch (ClassNotFoundException exception) {
+            return false;
+        }
+
+        return true;
     }
 
     private Map<String, byte[]> loadInnerClasses(String className) {

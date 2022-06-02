@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.internal.diagnostics;
 
-import com.hazelcast.config.ConfigurationException;
+import com.hazelcast.config.InvalidConfigurationException;
 import com.hazelcast.logging.ILogger;
 
 import java.io.BufferedWriter;
@@ -26,13 +26,13 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
-import java.nio.charset.Charset;
 import java.nio.charset.CharsetEncoder;
+import java.nio.charset.StandardCharsets;
 
 import static com.hazelcast.internal.diagnostics.Diagnostics.MAX_ROLLED_FILE_COUNT;
 import static com.hazelcast.internal.diagnostics.Diagnostics.MAX_ROLLED_FILE_SIZE_MB;
-import static com.hazelcast.nio.IOUtil.closeResource;
-import static com.hazelcast.nio.IOUtil.deleteQuietly;
+import static com.hazelcast.internal.nio.IOUtil.closeResource;
+import static com.hazelcast.internal.nio.IOUtil.deleteQuietly;
 import static java.lang.Math.round;
 import static java.lang.String.format;
 
@@ -41,7 +41,7 @@ import static java.lang.String.format;
  * <p>
  * Should only be called from the {@link Diagnostics}.
  */
-final class DiagnosticsLogFile {
+final class DiagnosticsLogFile implements DiagnosticsLog {
 
     private static final int ONE_MB = 1024 * 1024;
 
@@ -62,7 +62,7 @@ final class DiagnosticsLogFile {
         this.diagnostics = diagnostics;
         this.logger = diagnostics.logger;
         this.fileName = diagnostics.baseFileName + "-%03d.log";
-        this.logWriter = new DiagnosticsLogWriterImpl(diagnostics.includeEpochTime);
+        this.logWriter = new DiagnosticsLogWriterImpl(diagnostics.includeEpochTime, diagnostics.logger);
 
         this.maxRollingFileCount = diagnostics.properties.getInteger(MAX_ROLLED_FILE_COUNT);
         // we accept a float so it becomes easier to testing to create a small file
@@ -98,6 +98,7 @@ final class DiagnosticsLogFile {
 
     private File newFile(int index) {
         createDirectoryIfDoesNotExist();
+        logger.info("Diagnostics log directory is [" + diagnostics.directory + "]");
         return new File(diagnostics.directory, format(fileName, index));
     }
 
@@ -105,12 +106,12 @@ final class DiagnosticsLogFile {
         File dir = diagnostics.directory;
         if (dir.exists()) {
             if (!dir.isDirectory()) {
-                throw new ConfigurationException("Configured path for diagnostics log file '" + dir
+                throw new InvalidConfigurationException("Configured path for diagnostics log file '" + dir
                         + "' exists, but it's not a directory");
             }
         } else {
             if (!dir.mkdirs()) {
-                throw new ConfigurationException("Error while creating a directory '" + dir
+                throw new InvalidConfigurationException("Error while creating a directory '" + dir
                         + "' for diagnostics log files. Are you having sufficient rights on the filesystem?");
             }
         }
@@ -123,14 +124,14 @@ final class DiagnosticsLogFile {
     }
 
     private void renderPlugin(DiagnosticsPlugin plugin) {
+        logWriter.resetSectionLevel();
         logWriter.init(printWriter);
-
         plugin.run(logWriter);
     }
 
     private PrintWriter newWriter() throws FileNotFoundException {
         FileOutputStream fos = new FileOutputStream(file, true);
-        CharsetEncoder encoder = Charset.forName("UTF-8").newEncoder();
+        CharsetEncoder encoder = StandardCharsets.UTF_8.newEncoder();
         return new PrintWriter(new BufferedWriter(new OutputStreamWriter(fos, encoder), Short.MAX_VALUE));
     }
 

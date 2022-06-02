@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,14 @@
 
 package com.hazelcast.config;
 
-import com.hazelcast.util.StringUtil;
+import static com.hazelcast.internal.util.EmptyStatement.ignore;
 
 import java.util.Properties;
 
-import static com.hazelcast.util.EmptyStatement.ignore;
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
+
+import com.hazelcast.internal.util.StringUtil;
 
 /**
  * Configuration for Login Module
@@ -75,15 +78,6 @@ public class LoginModuleConfig {
         return className;
     }
 
-    @Deprecated
-    /**
-     * @deprecated Not supported, to be removed in 4.0. Use {@link #getClassName()} instead
-     * @since 3.9
-     */
-    public Object getImplementation() {
-        throw new UnsupportedOperationException("Deprecated operation. Use getClassName instead.");
-    }
-
     public Properties getProperties() {
         return properties;
     }
@@ -97,15 +91,6 @@ public class LoginModuleConfig {
         return this;
     }
 
-    @Deprecated
-    /**
-     * @deprecated Not supported, to be removed in 4.0. User {@link #setClassName(String)} instead
-     * @since 3.9
-     */
-    public LoginModuleConfig setImplementation(Object implementation) {
-        throw new UnsupportedOperationException("Deprecated operation. Use setClassName instead.");
-    }
-
     public LoginModuleConfig setUsage(LoginModuleUsage usage) {
         this.usage = usage;
         return this;
@@ -113,6 +98,28 @@ public class LoginModuleConfig {
 
     public LoginModuleConfig setProperties(Properties properties) {
         this.properties = properties;
+        return this;
+    }
+
+    public LoginModuleConfig setProperty(String key, String value) {
+        properties.setProperty(key, value);
+        return this;
+    }
+
+    /**
+     * Alternative to the {@link #setProperty(String, String)} method. This method allows to use {@code null} as {@code value}
+     * parameter. In such case is the property removed.
+     *
+     * @param key property name (must not be {@code null})
+     * @param value new value or {@code null}
+     * @return this instance
+     */
+    public LoginModuleConfig setOrClear(@Nonnull String key, @Nullable String value) {
+        if (value != null) {
+            properties.setProperty(key, value);
+        } else {
+            properties.remove(key);
+        }
         return this;
     }
 

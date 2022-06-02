@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,26 +16,25 @@
 
 package com.hazelcast.spi.impl.operationservice.impl;
 
+import com.hazelcast.internal.nio.Packet;
+import com.hazelcast.internal.server.ServerConnection;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
 import com.hazelcast.logging.ILogger;
 import com.hazelcast.logging.Logger;
-import com.hazelcast.nio.Connection;
-import com.hazelcast.nio.Packet;
-import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.NodeEngine;
+import com.hazelcast.spi.impl.operationservice.Operation;
 import com.hazelcast.spi.impl.operationservice.impl.InboundResponseHandlerSupplier.AsyncMultithreadedResponseHandler;
 import com.hazelcast.spi.impl.operationservice.impl.InboundResponseHandlerSupplier.AsyncSingleThreadedResponseHandler;
 import com.hazelcast.spi.impl.operationservice.impl.responses.NormalResponse;
 import com.hazelcast.spi.impl.sequence.CallIdSequenceWithoutBackpressure;
-import com.hazelcast.spi.properties.GroupProperty;
+import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.spi.properties.HazelcastProperties;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
-import com.hazelcast.util.function.Consumer;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -43,8 +42,9 @@ import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
 import java.util.Properties;
+import java.util.function.Consumer;
 
-import static com.hazelcast.nio.Packet.FLAG_OP_RESPONSE;
+import static com.hazelcast.internal.nio.Packet.FLAG_OP_RESPONSE;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.mockito.Matchers.any;
@@ -52,7 +52,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class InboundResponseHandlerSupplierTest extends HazelcastTestSupport {
 
     private InternalSerializationService serializationService;
@@ -63,7 +63,8 @@ public class InboundResponseHandlerSupplierTest extends HazelcastTestSupport {
     @Before
     public void setup() {
         ILogger logger = Logger.getLogger(getClass());
-        invocationRegistry = new InvocationRegistry(logger, new CallIdSequenceWithoutBackpressure());
+        HazelcastProperties properties = new HazelcastProperties(new Properties());
+        invocationRegistry = new InvocationRegistry(logger, new CallIdSequenceWithoutBackpressure(), properties);
         serializationService = new DefaultSerializationServiceBuilder().build();
         nodeEngine = mock(NodeEngine.class);
         when(nodeEngine.getLogger(any(Class.class))).thenReturn(logger);
@@ -102,7 +103,7 @@ public class InboundResponseHandlerSupplierTest extends HazelcastTestSupport {
 
     private InboundResponseHandlerSupplier newSupplier(int threadCount) {
         Properties props = new Properties();
-        props.put(GroupProperty.RESPONSE_THREAD_COUNT.getName(), "" + threadCount);
+        props.put(ClusterProperty.RESPONSE_THREAD_COUNT.getName(), "" + threadCount);
         HazelcastProperties properties = new HazelcastProperties(props);
         when(nodeEngine.getProperties()).thenReturn(properties);
 
@@ -111,17 +112,17 @@ public class InboundResponseHandlerSupplierTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void whenNoProblemPacket_andZeroResponseThreads() throws Exception {
+    public void whenNoProblemPacket_andZeroResponseThreads() {
         whenNoProblemPacket(0);
     }
 
     @Test
-    public void whenNoProblemPacket_andOneResponseThreads() throws Exception {
+    public void whenNoProblemPacket_andOneResponseThreads() {
         whenNoProblemPacket(1);
     }
 
     @Test
-    public void whenNoProblemPacket_andMultipleResponseThreads() throws Exception {
+    public void whenNoProblemPacket_andMultipleResponseThreads() {
         whenNoProblemPacket(2);
     }
 
@@ -136,7 +137,7 @@ public class InboundResponseHandlerSupplierTest extends HazelcastTestSupport {
         final Packet response = new Packet(serializationService.toBytes(new NormalResponse("foo", callId, 0, false)))
                 .setPacketType(Packet.Type.OPERATION)
                 .raiseFlags(FLAG_OP_RESPONSE)
-                .setConn(mock(Connection.class));
+                .setConn(mock(ServerConnection.class));
 
         supplier.get().accept(response);
 
@@ -173,7 +174,7 @@ public class InboundResponseHandlerSupplierTest extends HazelcastTestSupport {
         // the response flag isn't set; so an exception is thrown.
         Packet badResponse = new Packet(serializationService.toBytes(new NormalResponse("bad", 1, 0, false)))
                 .setPacketType(Packet.Type.OPERATION)
-                .setConn(mock(Connection.class));
+                .setConn(mock(ServerConnection.class));
 
         Consumer<Packet> responseConsumer = supplier.get();
 
@@ -182,17 +183,14 @@ public class InboundResponseHandlerSupplierTest extends HazelcastTestSupport {
         final Packet goodResponse = new Packet(serializationService.toBytes(new NormalResponse("foo", callId, 0, false)))
                 .setPacketType(Packet.Type.OPERATION)
                 .raiseFlags(FLAG_OP_RESPONSE)
-                .setConn(mock(Connection.class));
+                .setConn(mock(ServerConnection.class));
 
         responseConsumer.accept(goodResponse);
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() {
-                Invocation inv = invocationRegistry.get(callId);
-                System.out.println(inv);
-                assertNull(inv);
-            }
+        assertTrueEventually(() -> {
+            Invocation inv = invocationRegistry.get(callId);
+            System.out.println(inv);
+            assertNull(inv);
         });
     }
 

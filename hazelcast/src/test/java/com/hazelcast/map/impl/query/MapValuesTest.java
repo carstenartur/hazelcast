@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,21 @@
 
 package com.hazelcast.map.impl.query;
 
+import com.hazelcast.config.Config;
+import com.hazelcast.config.IndexConfig;
+import com.hazelcast.config.IndexType;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
+import com.hazelcast.internal.serialization.SerializationService;
+import com.hazelcast.internal.util.collection.PartitionIdSet;
+import com.hazelcast.map.IMap;
+import com.hazelcast.map.impl.proxy.MapProxyImpl;
 import com.hazelcast.query.Predicate;
+import com.hazelcast.query.Predicates;
 import com.hazelcast.query.SampleTestObjects;
-import com.hazelcast.query.TruePredicate;
 import com.hazelcast.query.impl.predicates.InstanceOfPredicate;
-import com.hazelcast.spi.serialization.SerializationService;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -33,23 +38,32 @@ import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
 import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
+import static com.hazelcast.query.Predicates.partitionPredicate;
+import static com.hazelcast.test.Accessors.getSerializationService;
+import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class MapValuesTest extends HazelcastTestSupport {
 
+    private HazelcastInstance instance;
     private IMap<String, String> map;
     private SerializationService serializationService;
 
     @Before
     public void setup() {
-        HazelcastInstance instance = createHazelcastInstance();
-
+        Config config = regularInstanceConfig();
+        config.setProperty(QueryEngineImpl.DISABLE_MIGRATION_FALLBACK.getName(), "true");
+        config.getMapConfig("indexed").addIndexConfig(new IndexConfig(IndexType.SORTED, "this"));
+        instance = createHazelcastInstance(config);
         map = instance.getMap(randomName());
         serializationService = getSerializationService(instance);
     }
@@ -61,7 +75,7 @@ public class MapValuesTest extends HazelcastTestSupport {
 
     @Test
     public void whenMapEmpty() {
-        Collection<String> result = map.values(TruePredicate.INSTANCE);
+        Collection<String> result = map.values(Predicates.alwaysTrue());
 
         assertTrue(result.isEmpty());
     }
@@ -86,7 +100,7 @@ public class MapValuesTest extends HazelcastTestSupport {
         map.put("2", "b");
         map.put("3", "c");
 
-        Collection<String> result = map.values(TruePredicate.INSTANCE);
+        Collection<String> result = map.values(Predicates.alwaysTrue());
 
         assertEquals(3, result.size());
         assertContains(result, "a");
@@ -108,9 +122,69 @@ public class MapValuesTest extends HazelcastTestSupport {
     }
 
     @Test
+    public void whenSelectingPartitionSubset() {
+        PartitionIdSet partitionSubset = new PartitionIdSet(4, asList(1, 3));
+        Set<String> matchingKeys = new HashSet<>();
+        for (int i = 0; i < 5; i++) {
+            String key = generateKeyForPartition(instance, i);
+            map.put(key, key);
+            if (partitionSubset.contains(i)) {
+                matchingKeys.add(key);
+            }
+        }
+
+        Collection<String> result = ((MapProxyImpl<String, String>) map).values(Predicates.alwaysTrue(), partitionSubset);
+        assertEquals(matchingKeys, result);
+    }
+
+    @Test
+    public void whenSelectingPartitionSubset_withIndex() {
+        PartitionIdSet partitionSubset = new PartitionIdSet(4, asList(1, 3));
+        Set<String> matchingKeys = new HashSet<>();
+        map = instance.getMap("indexed");
+        for (int i = 0; i < 5; i++) {
+            String key = generateKeyForPartition(instance, i);
+            map.put(key, key);
+            if (partitionSubset.contains(i)) {
+                matchingKeys.add(key);
+            }
+        }
+
+        // "" is sorted before any non-null string - internally all items from all partitions are added
+        // to the result (because the index is global), but there's a code that eliminates partitions not
+        // in the subset - this test aims to test that code
+        Predicate<String, String> predicate = Predicates.greaterThan("this", "");
+        Collection<String> result =
+                ((MapProxyImpl<String, String>) map).values(predicate, partitionSubset);
+        assertEquals(2, result.size());
+        assertEquals(matchingKeys, result);
+    }
+
+    @Test
+    public void when_selectingPartitionSubset_and_partitionPredicate() {
+        PartitionIdSet partitionSubset = new PartitionIdSet(4, asList(1, 3));
+        Set<String> matchingKeys = new HashSet<>();
+        String key1 = null;
+        for (int i = 0; i < 5; i++) {
+            String key = generateKeyForPartition(instance, i);
+            if (i == 1) {
+                key1 = key;
+            }
+            map.put(key, key);
+            if (partitionSubset.contains(i)) {
+                matchingKeys.add(key);
+            }
+        }
+
+        Collection<String> result = ((MapProxyImpl<String, String>) map)
+                .values(partitionPredicate(key1, Predicates.alwaysTrue()), partitionSubset);
+        assertEquals(Collections.singleton(key1), result);
+    }
+
+    @Test
     public void testResultType() {
         map.put("1", "a");
-        Collection<String> entries = map.values(TruePredicate.INSTANCE);
+        Collection<String> entries = map.values(Predicates.alwaysTrue());
 
         QueryResultCollection collection = assertInstanceOf(QueryResultCollection.class, entries);
         QueryResultRow row = (QueryResultRow) collection.getRows().iterator().next();
@@ -120,7 +194,7 @@ public class MapValuesTest extends HazelcastTestSupport {
     }
 
     @Test
-    public void testSerializationServiceNullClassLoaderProblem() throws Exception {
+    public void testSerializationServiceNullClassLoaderProblem() {
         // if the classloader is null the following call throws NullPointerException
         map.values(new InstanceOfPredicate(SampleTestObjects.PortableEmployee.class));
     }

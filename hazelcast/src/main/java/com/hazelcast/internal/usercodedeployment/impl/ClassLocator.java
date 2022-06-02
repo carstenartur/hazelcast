@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,25 @@
 
 package com.hazelcast.internal.usercodedeployment.impl;
 
+import com.hazelcast.cluster.Member;
 import com.hazelcast.config.UserCodeDeploymentConfig;
-import com.hazelcast.core.Member;
 import com.hazelcast.internal.cluster.ClusterService;
+import com.hazelcast.internal.nio.IOUtil;
 import com.hazelcast.internal.usercodedeployment.UserCodeDeploymentClassLoader;
 import com.hazelcast.internal.usercodedeployment.UserCodeDeploymentService;
 import com.hazelcast.internal.usercodedeployment.impl.operation.ClassDataFinderOperation;
+import com.hazelcast.internal.util.ContextMutexFactory;
 import com.hazelcast.internal.util.filter.Filter;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.nio.IOUtil;
-import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.spi.OperationService;
+import com.hazelcast.spi.impl.NodeEngine;
+import com.hazelcast.spi.impl.operationservice.OperationService;
 
 import java.io.Closeable;
 import java.security.PrivilegedAction;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
@@ -58,7 +62,7 @@ public final class ClassLocator {
     private final Filter<Member> memberFilter;
     private final UserCodeDeploymentConfig.ClassCacheMode classCacheMode;
     private final NodeEngine nodeEngine;
-    private final ClassloadingMutexProvider mutexFactory = new ClassloadingMutexProvider();
+    private final ContextMutexFactory mutexFactory = new ContextMutexFactory();
     private final ILogger logger;
 
     public ClassLocator(ConcurrentMap<String, ClassSource> classSourceMap,
@@ -83,8 +87,7 @@ public final class ClassLocator {
         ThreadLocalClassCache.onFinishDeserialization();
     }
 
-    public Class<?> handleClassNotFoundException(String name)
-            throws ClassNotFoundException {
+    public Class<?> handleClassNotFoundException(String name) throws ClassNotFoundException {
         if (!classNameFilter.accept(name)) {
             throw new ClassNotFoundException("Class " + name + " is not allowed to be loaded from other members");
         }
@@ -95,12 +98,22 @@ public final class ClassLocator {
         return tryToGetClassFromRemote(name);
     }
 
-    public void defineClassFromClient(final String name, final byte[] classDef) {
+    public void defineClassesFromClient(List<Map.Entry<String, byte[]>> bundledClassDefinitions) {
+        Map<String, byte[]> bundledClassDefMap = new HashMap<>();
+        for (Map.Entry<String, byte[]> bundledClassDefinition : bundledClassDefinitions) {
+            bundledClassDefMap.put(bundledClassDefinition.getKey(), bundledClassDefinition.getValue());
+        }
+        for (Map.Entry<String, byte[]> bundledClassDefinition : bundledClassDefinitions) {
+            defineClassFromClient(bundledClassDefinition.getKey(), bundledClassDefinition.getValue(), bundledClassDefMap);
+        }
+    }
+
+    public Class<?> defineClassFromClient(final String name, final byte[] classDef, Map<String, byte[]> bundledClassDefinitions) {
         // we need to acquire a classloading lock before defining a class
         // Java 7+ can use locks with per-class granularity while Java 6 has to use a single lock
         // mutexFactory abstract these differences away
         String mainClassName = extractMainClassName(name);
-        Closeable classMutex = mutexFactory.getMutexForClass(mainClassName);
+        Closeable classMutex = mutexFactory.mutexFor(mainClassName);
         try {
             synchronized (classMutex) {
                 ClassSource classSource = clientClassSourceMap.get(mainClassName);
@@ -112,18 +125,14 @@ public final class ClassLocator {
                         } else if (logger.isFineEnabled()) {
                             logger.finest("Class " + name + " is already in local cache with equal byte code");
                         }
-                        return;
+                        return classSource.getClazz(name);
                     }
                 } else {
-                    classSource = doPrivileged(new PrivilegedAction<ClassSource>() {
-                        @Override
-                        public ClassSource run() {
-                            return new ClassSource(parent, ClassLocator.this);
-                        }
-                    });
+                    classSource = doPrivileged((PrivilegedAction<ClassSource>) ()
+                            -> new ClassSource(parent, ClassLocator.this, bundledClassDefinitions));
                     clientClassSourceMap.put(mainClassName, classSource);
                 }
-                classSource.define(name, classDef);
+                return classSource.define(name, classDef);
             }
         } finally {
             IOUtil.closeResource(classMutex);
@@ -135,7 +144,7 @@ public final class ClassLocator {
         // Java 7+ can use locks with per-class granularity while Java 6 has to use a single lock
         // mutexFactory abstract these differences away
         String mainClassName = extractMainClassName(name);
-        Closeable classMutex = mutexFactory.getMutexForClass(mainClassName);
+        Closeable classMutex = mutexFactory.mutexFor(mainClassName);
         try {
             synchronized (classMutex) {
                 ClassSource classSource = classSourceMap.get(mainClassName);
@@ -150,15 +159,16 @@ public final class ClassLocator {
                 } else if (ThreadLocalClassCache.getFromCache(mainClassName) != null) {
                     classSource = ThreadLocalClassCache.getFromCache(mainClassName);
                 } else {
-                    classSource = new ClassSource(parent, this);
+                    classSource = doPrivileged(
+                            (PrivilegedAction<ClassSource>) () -> new ClassSource(parent, this, Collections.emptyMap()));
                 }
-                ClassData classData = fetchBytecodeFromRemote(name);
+                ClassData classData = fetchBytecodeFromRemote(mainClassName);
                 if (classData == null) {
                     throw new ClassNotFoundException("Failed to load class " + name + " from other members");
                 }
 
                 Map<String, byte[]> innerClassDefinitions = classData.getInnerClassDefinitions();
-                classSource.define(name, classData.getMainClassDefinition());
+                classSource.define(mainClassName, classData.getMainClassDefinition());
                 for (Map.Entry<String, byte[]> entry : innerClassDefinitions.entrySet()) {
                     classSource.define(entry.getKey(), entry.getValue());
                 }
@@ -224,7 +234,7 @@ public final class ClassLocator {
         ClassData classData;
         boolean interrupted = false;
         for (Member member : cluster.getMembers()) {
-            if (isCandidateMember(member)) {
+            if (!isCandidateMember(member)) {
                 continue;
             }
             try {
@@ -236,7 +246,7 @@ public final class ClassLocator {
                     return classData;
                 }
             } catch (InterruptedException e) {
-                // question: should we give-up on loading at this point and simply throw ClassNotFoundException?
+                // question: should we give up on loading at this point and simply throw ClassNotFoundException?
                 interrupted = true;
             } catch (Exception e) {
                 if (logger.isFinestEnabled()) {
@@ -262,13 +272,8 @@ public final class ClassLocator {
     }
 
     private boolean isCandidateMember(Member member) {
-        if (member.localMember()) {
-            return true;
-        }
-        if (!memberFilter.accept(member)) {
-            return true;
-        }
-        return false;
+        return !member.localMember()
+                && memberFilter.accept(member);
     }
 
     public Class<?> findLoadedClass(String name) {

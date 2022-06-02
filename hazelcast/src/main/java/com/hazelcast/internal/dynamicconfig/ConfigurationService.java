@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,15 @@
 
 package com.hazelcast.internal.dynamicconfig;
 
-import com.hazelcast.config.AtomicLongConfig;
-import com.hazelcast.config.AtomicReferenceConfig;
 import com.hazelcast.config.CacheSimpleConfig;
 import com.hazelcast.config.CardinalityEstimatorConfig;
-import com.hazelcast.config.CountDownLatchConfig;
+import com.hazelcast.config.Config;
 import com.hazelcast.config.DurableExecutorConfig;
-import com.hazelcast.config.EventJournalConfig;
 import com.hazelcast.config.ExecutorConfig;
 import com.hazelcast.config.FlakeIdGeneratorConfig;
+import com.hazelcast.config.InvalidConfigurationException;
 import com.hazelcast.config.ListConfig;
-import com.hazelcast.config.LockConfig;
 import com.hazelcast.config.MapConfig;
-import com.hazelcast.config.MerkleTreeConfig;
 import com.hazelcast.config.MultiMapConfig;
 import com.hazelcast.config.PNCounterConfig;
 import com.hazelcast.config.QueueConfig;
@@ -36,12 +32,12 @@ import com.hazelcast.config.ReliableTopicConfig;
 import com.hazelcast.config.ReplicatedMapConfig;
 import com.hazelcast.config.RingbufferConfig;
 import com.hazelcast.config.ScheduledExecutorConfig;
-import com.hazelcast.config.SemaphoreConfig;
 import com.hazelcast.config.SetConfig;
 import com.hazelcast.config.TopicConfig;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Dynamic configurations.
@@ -53,14 +49,67 @@ import java.util.Map;
 @SuppressWarnings("checkstyle:methodcount")
 public interface ConfigurationService {
 
+    String SERVICE_NAME = "hz:configurationService";
+
     /**
      * Registers a dynamic configurations to all cluster members.
      *
      * @param config configuration to register
-     * @throws com.hazelcast.config.ConfigurationException when static configuration already contains the same config
-     *                                                     with the same name
+     * @throws InvalidConfigurationException when static configuration already
+     *                                       contains the same config with the
+     *                                       same name
      */
     void broadcastConfig(IdentifiedDataSerializable config);
+
+    /**
+     * Update the license for the cluster.
+     *
+     * @param licenseKey new license key to set
+     */
+    void updateLicense(String licenseKey);
+
+    /**
+     * Persists any dynamically changeable sub configuration to this member's
+     * declarative configuration. Preserves file format of the existing dynamic
+     * configuration persistence file. Also note that this method is
+     * idempotent.
+     *
+     * @param subConfig configuration to persist
+     */
+    void persist(Object subConfig);
+
+    /**
+     * Updates the configuration with the given configuration. Updating means
+     * dynamically changing all the differences dynamically changeable.
+     *
+     * @param newConfig config to find any new dynamically changeable sub configs
+     * @return update result which includes added and ignored configurations
+     */
+    ConfigUpdateResult update(Config newConfig);
+
+    /**
+     * Updates the configuration with the declarative configuration. Updating
+     * means dynamically changing all the differences dynamically changeable.
+     *
+     * @return update result which includes added and ignored configurations
+     */
+    default ConfigUpdateResult update() {
+        return update(null);
+    }
+
+    /**
+     * Starts a configuration update process asynchronously. Updates the configuration with the given configuration. Updating
+     * means dynamically changing all the differences dynamically changeable.
+     *
+     * @param configPatch string representation of the config patch, to find any new dynamically changeable sub configs
+     * @return the unique identifier of the config update process. The MC Events emitted during the process will have the same
+     * {@link com.hazelcast.internal.management.events.AbstractConfigUpdateEvent#getConfigUpdateProcessId()}.
+     */
+    UUID updateAsync(String configPatch);
+
+    default UUID updateAsync() {
+        return updateAsync(null);
+    }
 
     /**
      * Finds existing Multimap config.
@@ -127,49 +176,12 @@ public interface ConfigurationService {
     DurableExecutorConfig findDurableExecutorConfig(String name);
 
     /**
-     * Finds existing Semaphore config.
-     *
-     * @param name name of the config
-     * @return Semaphore config or {@code null} when requested Semaphore configuration does not exist
-     */
-    SemaphoreConfig findSemaphoreConfig(String name);
-
-    /**
      * Finds existing Ringbuffer config.
      *
      * @param name name of the config
      * @return Ringbuffer config or {@code null} when requested Ringbuffer configuration does not exist
      */
     RingbufferConfig findRingbufferConfig(String name);
-
-    /**
-     * Finds existing AtomicLong config.
-     *
-     * @return AtomicLong Config or {@code null} when requested AtomicLong configuration does not exist
-     */
-    AtomicLongConfig findAtomicLongConfig(String name);
-
-    /**
-     * Finds existing AtomicReference config.
-     *
-     * @return AtomicReference Config or {@code null} when requested AtomicReference configuration does not exist
-     */
-    AtomicReferenceConfig findAtomicReferenceConfig(String name);
-
-    /**
-     * Finds existing CountDownLatch config.
-     *
-     * @return CountDownLatch Config or {@code null} when requested CountDownLatch configuration does not exist
-     */
-    CountDownLatchConfig findCountDownLatchConfig(String name);
-
-    /**
-     * Finds existing Lock config.
-     *
-     * @param name name of the config
-     * @return Lock config or {@code null} when requested Lock configuration does not exist
-     */
-    LockConfig findLockConfig(String name);
 
     /**
      * Finds existing List config.
@@ -220,31 +232,6 @@ public interface ConfigurationService {
     CacheSimpleConfig findCacheSimpleConfig(String name);
 
     /**
-     * Finds existing CacheEventJournal config.
-     *
-     * @param name name of the config
-     * @return CacheEventJournal config or {@code null} when requested CacheEventJournal configuration does not exist
-     */
-    EventJournalConfig findCacheEventJournalConfig(String name);
-
-    /**
-     * Finds existing MapEventJournal config.
-     *
-     * @param name name of the config
-     * @return MapEventJournal config or {@code null} when requested MapEventJournal configuration does not exist
-     */
-    EventJournalConfig findMapEventJournalConfig(String name);
-
-    /**
-     * Finds an existing map {@link MerkleTreeConfig}.
-     *
-     * @param name name of the config
-     * @return map {@link MerkleTreeConfig} or {@code null} when the requested
-     * configuration does not exist
-     */
-    MerkleTreeConfig findMapMerkleTreeConfig(String name);
-
-    /**
      * Finds existing FlakeIdGeneratorConfig config.
      *
      * @param name name of the config
@@ -258,13 +245,6 @@ public interface ConfigurationService {
      * @return registered map configurations
      */
     Map<String, MapConfig> getMapConfigs();
-
-    /**
-     * Returns all registered lock configurations.
-     *
-     * @return registered lock configurations
-     */
-    Map<String, LockConfig> getLockConfigs();
 
     /**
      * Returns all registered queue configurations.
@@ -307,27 +287,6 @@ public interface ConfigurationService {
      * @return registered ringbuffer configurations
      */
     Map<String, RingbufferConfig> getRingbufferConfigs();
-
-    /**
-     * Returns all registered AtomicLong configurations.
-     *
-     * @return registered AtomicLong configurations
-     */
-    Map<String, AtomicLongConfig> getAtomicLongConfigs();
-
-    /**
-     * Returns all registered AtomicReference configurations.
-     *
-     * @return registered AtomicReference configurations
-     */
-    Map<String, AtomicReferenceConfig> getAtomicReferenceConfigs();
-
-    /**
-     * Returns all registered CountDownLatchConfig configurations.
-     *
-     * @return registered CountDownLatchConfig configurations
-     */
-    Map<String, CountDownLatchConfig> getCountDownLatchConfigs();
 
     /**
      * Returns all registered topic configurations.
@@ -379,39 +338,11 @@ public interface ConfigurationService {
     Map<String, PNCounterConfig> getPNCounterConfigs();
 
     /**
-     * Returns all registered semaphore configurations.
-     *
-     * @return registered semaphore configurations
-     */
-    Map<String, SemaphoreConfig> getSemaphoreConfigs();
-
-    /**
      * Returns all registered cache configurations.
      *
      * @return registered cache configurations
      */
     Map<String, CacheSimpleConfig> getCacheSimpleConfigs();
-
-    /**
-     * Returns all registered CacheEventJournal configurations.
-     *
-     * @return registered CacheEventJournal configurations
-     */
-    Map<String, EventJournalConfig> getCacheEventJournalConfigs();
-
-    /**
-     * Returns all registered MapEventJournal configurations.
-     *
-     * @return registered MapEventJournal configurations
-     */
-    Map<String, EventJournalConfig> getMapEventJournalConfigs();
-
-    /**
-     * Returns a map of all registered IMap {@link MerkleTreeConfig}s.
-     *
-     * @return a map of registered IMap {@link MerkleTreeConfig}s
-     */
-    Map<String, MerkleTreeConfig> getMapMerkleTreeConfigs();
 
     /**
      * Returns all registered FlakeIdGenerator configurations.

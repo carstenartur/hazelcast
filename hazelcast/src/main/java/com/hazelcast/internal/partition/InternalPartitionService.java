@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,31 +18,20 @@ package com.hazelcast.internal.partition;
 
 import com.hazelcast.cluster.ClusterState;
 import com.hazelcast.core.HazelcastException;
-import com.hazelcast.core.Member;
+import com.hazelcast.cluster.Member;
 import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
 import com.hazelcast.internal.partition.impl.PartitionReplicaStateChecker;
 import com.hazelcast.internal.partition.impl.PartitionStateManager;
 import com.hazelcast.internal.partition.operation.FetchPartitionStateOperation;
-import com.hazelcast.nio.Address;
-import com.hazelcast.spi.GracefulShutdownAwareService;
-import com.hazelcast.spi.ManagedService;
-import com.hazelcast.spi.partition.IPartitionService;
+import com.hazelcast.cluster.Address;
+import com.hazelcast.internal.services.GracefulShutdownAwareService;
+import com.hazelcast.internal.services.ManagedService;
 
+import javax.annotation.Nullable;
 import java.util.List;
+import java.util.UUID;
 
 public interface InternalPartitionService extends IPartitionService, ManagedService, GracefulShutdownAwareService {
-
-    /**
-     * Retry count for migration operations.
-     * <p>
-     * Current Invocation mechanism retries first 5 invocations without pausing.
-     */
-    int MIGRATION_RETRY_COUNT = 12;
-
-    /**
-     * Retry pause for migration operations in milliseconds.
-     */
-    long MIGRATION_RETRY_PAUSE = 10000;
 
     /**
      * Static constant for dispatching and listening migration events
@@ -63,7 +52,7 @@ public interface InternalPartitionService extends IPartitionService, ManagedServ
     /**
      * Number of the member groups to be used in partition assignments.
      *
-     * @see com.hazelcast.partition.membergroup.MemberGroupFactory
+     * @see com.hazelcast.internal.partition.membergroup.MemberGroupFactory
      * @see com.hazelcast.config.PartitionGroupConfig
      * @return number of member groups
      */
@@ -86,11 +75,11 @@ public interface InternalPartitionService extends IPartitionService, ManagedServ
     void memberAdded(Member member);
 
     /**
-     * Called when a member is removed from the cluster.
-     * Executes maintenance tasks, removes the member from partition table and triggers promotions.
-     * @param member removed member
+     * Called when some members are removed from the cluster.
+     * Executes maintenance tasks, removes the members from the partition table and triggers promotions.
+     * @param members removed members
      */
-    void memberRemoved(Member member);
+    void memberRemoved(Member... members);
 
     InternalPartition[] getInternalPartitions();
 
@@ -146,4 +135,7 @@ public interface InternalPartitionService extends IPartitionService, ManagedServ
     PartitionServiceProxy getPartitionServiceProxy();
 
     PartitionReplicaStateChecker getPartitionReplicaStateChecker();
+
+    @Nullable
+    PartitionTableView getLeftMemberSnapshot(UUID uuid);
 }

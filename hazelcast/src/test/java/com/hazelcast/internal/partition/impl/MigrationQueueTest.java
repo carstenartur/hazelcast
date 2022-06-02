@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.hazelcast.internal.partition.impl;
 
 import com.hazelcast.test.HazelcastSerialClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -31,7 +31,7 @@ import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 
 @RunWith(HazelcastSerialClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class MigrationQueueTest {
 
     private final MigrationQueue migrationQueue = new MigrationQueue();
@@ -46,15 +46,14 @@ public class MigrationQueueTest {
     @Test
     public void test_migrationTaskCount_notDecremented_afterMigrateTaskPolled()
             throws InterruptedException {
-        migrationQueue.add(mock(MigrationManager.MigrateTask.class));
+        migrationQueue.add(mock(MigrationRunnable.class));
         migrationQueue.poll(1, TimeUnit.SECONDS);
 
         assertTrue(migrationQueue.hasMigrationTasks());
     }
 
     @Test
-    public void test_migrateTaskCount_decremented_afterTaskCompleted()
-            throws InterruptedException {
+    public void test_migrateTaskCount_decremented_afterTaskCompleted() {
         final MigrationRunnable task = mock(MigrationRunnable.class);
 
         migrationQueue.add(task);
@@ -65,7 +64,7 @@ public class MigrationQueueTest {
 
     @Test
     public void test_migrateTaskCount_decremented_onClear() {
-        migrationQueue.add(mock(MigrationManager.MigrateTask.class));
+        migrationQueue.add(mock(MigrationRunnable.class));
         migrationQueue.clear();
 
         assertFalse(migrationQueue.hasMigrationTasks());
@@ -73,7 +72,7 @@ public class MigrationQueueTest {
 
     @Test(expected = IllegalStateException.class)
     public void test_migrateTaskCount_notDecremented_belowZero() {
-        migrationQueue.afterTaskCompletion(mock(MigrationManager.MigrateTask.class));
+        migrationQueue.afterTaskCompletion(mock(MigrationRunnable.class));
     }
 
 }

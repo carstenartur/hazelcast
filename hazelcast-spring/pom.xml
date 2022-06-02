@@ -1,5 +1,5 @@
 <!--
-  ~ Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+  ~ Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@
     <parent>
         <groupId>com.hazelcast</groupId>
         <artifactId>hazelcast-root</artifactId>
-        <version>3.13-SNAPSHOT</version>
+        <version>5.2-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -33,9 +33,11 @@
         <!-- needed for CheckStyle -->
         <main.basedir>${project.parent.basedir}</main.basedir>
 
-        <org.springframework.version>4.3.23.RELEASE</org.springframework.version>
-        <jsr250.api.version>1.0</jsr250.api.version>
-        <hazelcast.latest.version>3.8</hazelcast.latest.version>
+        <org.springframework.version>5.3.16</org.springframework.version>
+        <javax.annotation.version>1.3.2</javax.annotation.version>
+        <maven-artifact.version>3.6.3</maven-artifact.version>
+        <hazelcast.latest.version>4.0</hazelcast.latest.version>
+        <hazelcast-hibernate5.version>2.0.0</hazelcast-hibernate5.version>
     </properties>
 
     <build>
@@ -47,14 +49,14 @@
                 <configuration>
                     <signature>
                         <groupId>org.codehaus.mojo.signature</groupId>
-                        <artifactId>java16</artifactId>
+                        <artifactId>java18</artifactId>
                         <version>1.0</version>
                     </signature>
                 </configuration>
                 <executions>
                     <execution>
-                        <id>source-java6-check</id>
-                        <phase>compile</phase>
+                        <id>source-java8-check</id>
+                        <phase>test-compile</phase>
                         <goals>
                             <goal>check</goal>
                         </goals>
@@ -134,70 +136,18 @@
                     </execution>
                 </executions>
             </plugin>
+
+            <plugin>
+                <artifactId>maven-resources-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>add-notice-and-license</id>
+                        <phase>process-classes</phase>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
-
-    <profiles>
-        <profile>
-            <id>hibernate-5</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <dependencies>
-                <!--TEST DEPENDENCIES-->
-                <dependency>
-                    <groupId>com.hazelcast</groupId>
-                    <artifactId>hazelcast-hibernate5</artifactId>
-                    <version>1.2.3</version>
-                    <scope>test</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.hibernate</groupId>
-                    <artifactId>hibernate-core</artifactId>
-                    <version>5.0.9.Final</version>
-                    <scope>test</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-
-        <profile>
-            <id>hibernate-4</id>
-            <dependencies>
-                <!--TEST DEPENDENCIES-->
-                <dependency>
-                    <groupId>com.hazelcast</groupId>
-                    <artifactId>hazelcast-hibernate4</artifactId>
-                    <version>${hazelcast.latest.version}</version>
-                    <scope>test</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.hibernate</groupId>
-                    <artifactId>hibernate-core</artifactId>
-                    <version>4.3.8.Final</version>
-                    <scope>test</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-
-        <profile>
-            <id>hibernate-3</id>
-            <dependencies>
-                <!--TEST DEPENDENCIES-->
-                <dependency>
-                    <groupId>com.hazelcast</groupId>
-                    <artifactId>hazelcast-hibernate3</artifactId>
-                    <version>${hazelcast.latest.version}</version>
-                    <scope>test</scope>
-                </dependency>
-                <dependency>
-                    <groupId>org.hibernate</groupId>
-                    <artifactId>hibernate-core</artifactId>
-                    <version>3.6.10.Final</version>
-                    <scope>test</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-    </profiles>
 
     <dependencies>
         <dependency>
@@ -206,15 +156,9 @@
             <version>${project.parent.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.hazelcast</groupId>
-            <artifactId>hazelcast-client</artifactId>
-            <version>${project.parent.version}</version>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
             <groupId>javax.annotation</groupId>
-            <artifactId>jsr250-api</artifactId>
-            <version>${jsr250.api.version}</version>
+            <artifactId>javax.annotation-api</artifactId>
+            <version>${javax.annotation.version}</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -239,21 +183,15 @@
             <classifier>tests</classifier>
         </dependency>
         <dependency>
-            <groupId>org.springframework</groupId>
-            <artifactId>spring-test</artifactId>
-            <version>${org.springframework.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework</groupId>
-            <artifactId>spring-context-support</artifactId>
-            <version>${org.springframework.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>org.apache.httpcomponents</groupId>
             <artifactId>httpclient</artifactId>
             <version>${http.components.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-artifact</artifactId>
+            <version>${maven-artifact.version}</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

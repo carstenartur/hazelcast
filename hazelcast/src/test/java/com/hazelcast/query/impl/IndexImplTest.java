@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,15 @@
 
 package com.hazelcast.query.impl;
 
+import com.hazelcast.config.IndexConfig;
+import com.hazelcast.config.IndexType;
+import com.hazelcast.internal.monitor.impl.MemberPartitionStateImpl;
 import com.hazelcast.internal.serialization.InternalSerializationService;
-import com.hazelcast.monitor.impl.PerIndexStats;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.monitor.impl.PerIndexStats;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.query.impl.getters.Extractors;
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -34,7 +37,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class IndexImplTest {
 
     private static final String ATTRIBUTE_NAME = "attribute";
@@ -45,19 +48,28 @@ public class IndexImplTest {
     public void setUp() {
         InternalSerializationService mockSerializationService = mock(InternalSerializationService.class);
         Extractors mockExtractors = Extractors.newBuilder(mockSerializationService).build();
-        index = new IndexImpl(ATTRIBUTE_NAME, null, false, mockSerializationService, mockExtractors,
-                IndexCopyBehavior.COPY_ON_READ, PerIndexStats.EMPTY);
+
+        IndexConfig config = IndexUtils.createTestIndexConfig(IndexType.HASH, ATTRIBUTE_NAME);
+
+        index = new IndexImpl(
+            config,
+            mockSerializationService,
+            mockExtractors,
+            IndexCopyBehavior.COPY_ON_READ,
+            PerIndexStats.EMPTY,
+            MemberPartitionStateImpl.DEFAULT_PARTITION_COUNT
+        );
     }
 
     @Test
     public void saveEntryIndex_doNotDeserializeKey() {
-        QueryableEntry entry = createMockQueryableEntry();
-        index.putEntry(entry, null, Index.OperationSource.USER);
+        CachedQueryEntry<?, ?> entry = createMockQueryableEntry();
+        index.putEntry(entry, null, entry, Index.OperationSource.USER);
         verify(entry, never()).getKey();
     }
 
-    private QueryableEntry createMockQueryableEntry() {
-        QueryableEntry entry = mock(QueryableEntry.class);
+    private CachedQueryEntry<?, ?> createMockQueryableEntry() {
+        CachedQueryEntry<?, ?> entry = mock(CachedQueryEntry.class);
         Data keyData = mock(Data.class);
         when(entry.getKeyData()).thenReturn(keyData);
         return entry;

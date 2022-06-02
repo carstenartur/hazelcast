@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,18 +21,19 @@ import com.hazelcast.config.Config;
 import com.hazelcast.config.InMemoryFormat;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastJsonValue;
-import com.hazelcast.core.IMap;
 import com.hazelcast.internal.json.Json;
 import com.hazelcast.internal.json.JsonObject;
+import com.hazelcast.map.IMap;
 import com.hazelcast.nio.serialization.Portable;
 import com.hazelcast.nio.serialization.PortableFactory;
 import com.hazelcast.nio.serialization.PortableReader;
 import com.hazelcast.nio.serialization.PortableWriter;
 import com.hazelcast.query.Predicates;
 import com.hazelcast.test.HazelcastParallelParametersRunnerFactory;
+import com.hazelcast.test.HazelcastParametrizedRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -45,10 +46,11 @@ import java.util.Collection;
 
 import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
+import static org.junit.runners.Parameterized.UseParametersRunnerFactory;
 
-@RunWith(Parameterized.class)
-@Parameterized.UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
-@Category({QuickTest.class, ParallelTest.class})
+@RunWith(HazelcastParametrizedRunner.class)
+@UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class MapPredicateJsonMixedTypeTest extends HazelcastTestSupport {
 
     @Parameterized.Parameters(name = "inMemoryFormat:{0}")
@@ -165,14 +167,14 @@ public class MapPredicateJsonMixedTypeTest extends HazelcastTestSupport {
 
         @Override
         public void writePortable(PortableWriter writer) throws IOException {
-            writer.writeUTF("name", this.name);
+            writer.writeString("name", this.name);
             writer.writeInt("age", this.age);
             writer.writeBoolean("onDuty", this.onDuty);
         }
 
         @Override
         public void readPortable(PortableReader reader) throws IOException {
-            this.name = reader.readUTF("name");
+            this.name = reader.readString("name");
             this.age = reader.readInt("age");
             this.onDuty = reader.readBoolean("onDuty");
 

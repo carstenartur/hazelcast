@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,23 +22,26 @@ import com.hazelcast.config.MapStoreConfig;
 import com.hazelcast.config.MetadataPolicy;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastJsonValue;
-import com.hazelcast.core.IMap;
-import com.hazelcast.core.MapLoader;
 import com.hazelcast.internal.json.Json;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.internal.serialization.InternalSerializationService;
-import com.hazelcast.map.AbstractEntryProcessor;
+import com.hazelcast.map.EntryProcessor;
+import com.hazelcast.map.IMap;
+import com.hazelcast.map.MapLoader;
 import com.hazelcast.map.impl.MapService;
+import com.hazelcast.map.impl.proxy.MapProxyImpl;
 import com.hazelcast.map.impl.record.Record;
+import com.hazelcast.map.impl.recordstore.JsonMetadataStore;
 import com.hazelcast.map.impl.recordstore.RecordStore;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.query.Metadata;
+import com.hazelcast.query.impl.JsonMetadata;
 import com.hazelcast.spi.impl.NodeEngineImpl;
-import com.hazelcast.spi.properties.GroupProperty;
+import com.hazelcast.spi.properties.ClusterProperty;
 import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelParametersRunnerFactory;
+import com.hazelcast.test.HazelcastParametrizedRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import com.hazelcast.test.backup.MapBackupAccessor;
 import com.hazelcast.test.backup.TestBackupUtils;
@@ -55,14 +58,19 @@ import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
+import static com.hazelcast.test.Accessors.getBackupInstance;
+import static com.hazelcast.test.Accessors.getNodeEngineImpl;
+import static com.hazelcast.test.Accessors.getPartitionService;
+import static com.hazelcast.test.Accessors.getSerializationService;
 import static java.util.Arrays.asList;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.runners.Parameterized.UseParametersRunnerFactory;
 
-@RunWith(Parameterized.class)
-@Parameterized.UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
-@Category({QuickTest.class, ParallelTest.class})
+@RunWith(HazelcastParametrizedRunner.class)
+@UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class JsonMetadataCreationTest extends HazelcastTestSupport {
 
     private static final int ENTRY_COUNT = 1000;
@@ -152,7 +160,7 @@ public class JsonMetadataCreationTest extends HazelcastTestSupport {
     @Test
     public void testPutAsyncCreatesMetadataForJson() throws ExecutionException, InterruptedException {
         for (int i = 0; i < ENTRY_COUNT; i++) {
-            map.putAsync(createJsonValue("key", i), createJsonValue("value", i)).get();
+            map.putAsync(createJsonValue("key", i), createJsonValue("value", i)).toCompletableFuture().get();
         }
         assertMetadataCreated(map.getName());
     }
@@ -177,6 +185,16 @@ public class JsonMetadataCreationTest extends HazelcastTestSupport {
     public void testPutIfAbsentCreatesMetadataForJson() {
         for (int i = 0; i < ENTRY_COUNT; i++) {
             map.putIfAbsent(createJsonValue("key", i), createJsonValue("value", i));
+        }
+        assertMetadataCreated(map.getName());
+    }
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public void testPutIfAbsentAsyncCreatesMetadataForJson() throws ExecutionException, InterruptedException {
+        for (int i = 0; i < ENTRY_COUNT; i++) {
+            ((MapProxyImpl) map)
+                    .putIfAbsentAsync(createJsonValue("key", i), createJsonValue("value", i)).toCompletableFuture().get();
         }
         assertMetadataCreated(map.getName());
     }
@@ -259,7 +277,7 @@ public class JsonMetadataCreationTest extends HazelcastTestSupport {
             map.put(createJsonValue("key", i), "not-json-value");
         }
         for (int i = 0; i < ENTRY_COUNT; i++) {
-            map.setAsync(createJsonValue("key", i), createJsonValue("value", i)).get();
+            map.setAsync(createJsonValue("key", i), createJsonValue("value", i)).toCompletableFuture().get();
         }
         assertMetadataCreated(map.getName());
     }
@@ -278,7 +296,7 @@ public class JsonMetadataCreationTest extends HazelcastTestSupport {
 
     protected Config getConfig() {
         Config config = new Config();
-        config.setProperty(GroupProperty.PARTITION_COUNT.getName(), "" + getPartitionCount());
+        config.setProperty(ClusterProperty.PARTITION_COUNT.getName(), "" + getPartitionCount());
         config.getMapConfig("default")
                 .setBackupCount(getNodeCount() - 1)
                 .setAsyncBackupCount(0)
@@ -295,8 +313,8 @@ public class JsonMetadataCreationTest extends HazelcastTestSupport {
         return config;
     }
 
-    protected Metadata getMetadata(String mapName, Object key, int replicaIndex) {
-        HazelcastInstance[] instances = factory.getAllHazelcastInstances().toArray(new HazelcastInstance[] { null });
+    protected JsonMetadata getMetadata(String mapName, Object key, int replicaIndex) {
+        HazelcastInstance[] instances = factory.getAllHazelcastInstances().toArray(new HazelcastInstance[]{null});
         HazelcastInstance instance = factory.getAllHazelcastInstances().iterator().next();
         InternalSerializationService serializationService = getSerializationService(instance);
         Data keyData = serializationService.toData(key);
@@ -304,8 +322,8 @@ public class JsonMetadataCreationTest extends HazelcastTestSupport {
         NodeEngineImpl nodeEngine = getNodeEngineImpl(getBackupInstance(instances, partitionId, replicaIndex));
         MapService mapService = nodeEngine.getService(MapService.SERVICE_NAME);
         RecordStore recordStore = mapService.getMapServiceContext().getPartitionContainer(partitionId).getRecordStore(mapName);
-        Record record = recordStore.getRecordOrNull(keyData);
-        return record.getMetadata();
+        JsonMetadataStore metadataStore = recordStore.getOrCreateMetadataStore();
+        return metadataStore.get(keyData);
     }
 
     private void assertMetadataCreatedEventually(final String mapName) {
@@ -320,13 +338,16 @@ public class JsonMetadataCreationTest extends HazelcastTestSupport {
     private void assertMetadataCreated(String mapName) {
         assertMetadataCreated(mapName, NODE_COUNT);
     }
+
     private void assertMetadataCreated(String mapName, int replicaCount) {
         for (int i = 0; i < replicaCount; i++) {
             MapBackupAccessor mapBackupAccessor = (MapBackupAccessor) TestBackupUtils.newMapAccessor(instances, mapName, i);
             for (int j = 0; j < ENTRY_COUNT; j++) {
                 Record record = mapBackupAccessor.getRecord(createJsonValue("key", j));
                 assertNotNull(record);
-                assertMetadata(getMetadata(mapName, createJsonValue("key", j), i));
+                HazelcastJsonValue jsonValue = createJsonValue("key", j);
+                JsonMetadata metadata = getMetadata(mapName, jsonValue, i);
+                assertMetadata("Replica index=" + i, metadata);
             }
         }
     }
@@ -346,8 +367,8 @@ public class JsonMetadataCreationTest extends HazelcastTestSupport {
         }
     }
 
-    private void assertMetadata(Metadata metadata) {
-        assertNotNull(metadata);
+    private void assertMetadata(String msg, JsonMetadata metadata) {
+        assertNotNull(msg, metadata);
         JsonSchemaNode keyNode = (JsonSchemaNode) metadata.getKeyMetadata();
         assertNotNull(keyNode);
         assertTrue(!keyNode.isTerminal());
@@ -397,7 +418,7 @@ public class JsonMetadataCreationTest extends HazelcastTestSupport {
                 .toString());
     }
 
-    static class ModifyingEntryProcessor extends AbstractEntryProcessor<HazelcastJsonValue, Object> {
+    static class ModifyingEntryProcessor implements EntryProcessor<HazelcastJsonValue, Object, Object> {
         @Override
         public Object process(Map.Entry<HazelcastJsonValue, Object> entry) {
             HazelcastJsonValue key = entry.getKey();

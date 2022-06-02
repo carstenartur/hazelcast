@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,13 @@
 
 package com.hazelcast.cache.impl;
 
+import com.hazelcast.spi.impl.tenantcontrol.TenantContextual;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.internal.diagnostics.StoreLatencyPlugin;
+import com.hazelcast.spi.tenantcontrol.TenantControl;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -32,12 +34,13 @@ import javax.cache.integration.CacheWriter;
 import java.util.Collection;
 import java.util.LinkedList;
 
+import static com.hazelcast.test.Accessors.getNodeEngineImpl;
 import static org.junit.Assert.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class LatencyTrackingCacheWriterTest extends HazelcastTestSupport {
 
     private static final String NAME = "someCache";
@@ -52,7 +55,9 @@ public class LatencyTrackingCacheWriterTest extends HazelcastTestSupport {
         HazelcastInstance hz = createHazelcastInstance();
         plugin = new StoreLatencyPlugin(getNodeEngineImpl(hz));
         delegate = mock(CacheWriter.class);
-        cacheWriter = new LatencyTrackingCacheWriter<Integer, String>(delegate, plugin, NAME);
+        TenantContextual<CacheWriter<Integer, String>> contextual = TenantContextual.create(() -> delegate,
+                () -> true, TenantControl.NOOP_TENANT_CONTROL);
+        cacheWriter = new LatencyTrackingCacheWriter<Integer, String>(contextual, plugin, NAME);
     }
 
     @Test

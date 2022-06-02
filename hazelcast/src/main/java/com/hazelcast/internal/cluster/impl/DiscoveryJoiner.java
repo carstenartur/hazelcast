@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,23 @@
 
 package com.hazelcast.internal.cluster.impl;
 
-import com.hazelcast.cluster.impl.TcpIpJoiner;
-import com.hazelcast.instance.MemberImpl;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Address;
+import com.hazelcast.cluster.impl.MemberImpl;
+import com.hazelcast.instance.EndpointQualifier;
+import com.hazelcast.instance.ProtocolType;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.cluster.Address;
 import com.hazelcast.spi.discovery.DiscoveryNode;
 import com.hazelcast.spi.discovery.integration.DiscoveryService;
-import com.hazelcast.util.concurrent.BackoffIdleStrategy;
-import com.hazelcast.util.concurrent.IdleStrategy;
+import com.hazelcast.internal.util.concurrent.BackoffIdleStrategy;
+import com.hazelcast.internal.util.concurrent.IdleStrategy;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Set;
 
-import static com.hazelcast.spi.properties.GroupProperty.WAIT_SECONDS_BEFORE_JOIN;
-import static com.hazelcast.util.Preconditions.checkNotNull;
+import static com.hazelcast.spi.properties.ClusterProperty.WAIT_SECONDS_BEFORE_JOIN;
+import static com.hazelcast.internal.util.Preconditions.checkNotNull;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
@@ -71,16 +73,35 @@ public class DiscoveryJoiner
                 "Discovered nodes cannot be null!");
 
         MemberImpl localMember = node.nodeEngine.getLocalMember();
-        Address localAddress = localMember.getAddress();
+        Set<Address> localAddresses = node.getLocalAddressRegistry().getLocalAddresses();
 
-        Collection<Address> possibleMembers = new ArrayList<Address>();
+        Collection<Address> possibleMembers = new ArrayList<>();
         for (DiscoveryNode discoveryNode : discoveredNodes) {
             Address discoveredAddress = usePublicAddress ? discoveryNode.getPublicAddress() : discoveryNode.getPrivateAddress();
-            if (localAddress.equals(discoveredAddress)) {
+            if (localAddresses.contains(discoveredAddress)) {
+                if (!usePublicAddress && discoveryNode.getPublicAddress() != null) {
+                    // enrich member with client public address
+                    localMember.getAddressMap().put(EndpointQualifier.resolve(ProtocolType.CLIENT, "public"),
+                            publicAddress(localMember, discoveryNode));
+                }
                 continue;
             }
             possibleMembers.add(discoveredAddress);
         }
         return possibleMembers;
+    }
+
+    private Address publicAddress(MemberImpl localMember, DiscoveryNode discoveryNode) {
+        if (localMember.getAddressMap().containsKey(EndpointQualifier.CLIENT)) {
+            try {
+                String publicHost = discoveryNode.getPublicAddress().getHost();
+                int clientPort = localMember.getAddressMap().get(EndpointQualifier.CLIENT).getPort();
+                return new Address(publicHost, clientPort);
+            } catch (Exception e) {
+                logger.fine(e);
+                // Return default public address since public host with the (advanced network) client port cannot be resolved
+            }
+        }
+        return discoveryNode.getPublicAddress();
     }
 }

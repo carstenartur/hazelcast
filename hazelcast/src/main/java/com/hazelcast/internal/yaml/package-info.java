@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 /**
  * Contains classes for loading, parsing YAML documents and building a
  * YAML specific DOM of {@link com.hazelcast.internal.yaml.YamlNode} instances
- * <p/>
+ * <p>
  * The YAML documents are loaded and parsed with the external SnakeYaml
  * parser, which supports YAML 1.2 documents, and the JSON schema.
  */

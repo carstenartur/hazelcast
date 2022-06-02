@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,19 +19,19 @@ package com.hazelcast.client.impl.protocol.task.replicatedmap;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.ReplicatedMapEntrySetCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractPartitionMessageTask;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
+import com.hazelcast.map.impl.MapEntries;
 import com.hazelcast.replicatedmap.impl.ReplicatedMapService;
-import com.hazelcast.replicatedmap.impl.client.ReplicatedMapEntries;
 import com.hazelcast.replicatedmap.impl.operation.EntrySetOperation;
 import com.hazelcast.security.permission.ActionConstants;
 import com.hazelcast.security.permission.ReplicatedMapPermission;
-import com.hazelcast.spi.Operation;
+import com.hazelcast.spi.impl.operationservice.Operation;
 
 import java.security.Permission;
 
 public class ReplicatedMapEntrySetMessageTask
-        extends AbstractPartitionMessageTask<ReplicatedMapEntrySetCodec.RequestParameters> {
+        extends AbstractPartitionMessageTask<String> {
 
     public ReplicatedMapEntrySetMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -39,17 +39,17 @@ public class ReplicatedMapEntrySetMessageTask
 
     @Override
     protected Operation prepareOperation() {
-        return new EntrySetOperation(parameters.name);
+        return new EntrySetOperation(parameters);
     }
 
     @Override
-    protected ReplicatedMapEntrySetCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+    protected String decodeClientMessage(ClientMessage clientMessage) {
         return ReplicatedMapEntrySetCodec.decodeRequest(clientMessage);
     }
 
     @Override
     protected ClientMessage encodeResponse(Object response) {
-        ReplicatedMapEntries entries = (ReplicatedMapEntries) response;
+        MapEntries entries = (MapEntries) response;
         return ReplicatedMapEntrySetCodec.encodeResponse(entries.entries());
     }
 
@@ -59,12 +59,12 @@ public class ReplicatedMapEntrySetMessageTask
     }
 
     public Permission getRequiredPermission() {
-        return new ReplicatedMapPermission(parameters.name, ActionConstants.ACTION_READ);
+        return new ReplicatedMapPermission(parameters, ActionConstants.ACTION_READ);
     }
 
     @Override
     public String getDistributedObjectName() {
-        return parameters.name;
+        return parameters;
     }
 
     @Override

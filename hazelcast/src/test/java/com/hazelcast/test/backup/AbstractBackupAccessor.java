@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,15 @@
 
 package com.hazelcast.test.backup;
 
+import com.hazelcast.cluster.Address;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.internal.partition.IPartition;
 import com.hazelcast.internal.partition.InternalPartition;
 import com.hazelcast.internal.partition.InternalPartitionService;
-import com.hazelcast.nio.Address;
-import com.hazelcast.spi.partition.IPartition;
 
 import java.util.Arrays;
 
-import static com.hazelcast.test.HazelcastTestSupport.getNode;
+import static com.hazelcast.test.Accessors.getNode;
 
 /**
  * Base class for {@link BackupAccessor} implementations.
@@ -79,5 +79,11 @@ abstract class AbstractBackupAccessor<K, V> implements BackupAccessor<K, V> {
             }
         }
         throw new IllegalStateException("Address " + address + " not found in the cluster");
+    }
+
+    @Override
+    public String toString() {
+        return "AbstractBackupAccessor{"
+                + "replicaIndex=" + replicaIndex + '}';
     }
 }

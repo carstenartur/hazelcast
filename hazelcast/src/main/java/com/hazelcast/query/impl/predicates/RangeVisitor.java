@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ package com.hazelcast.query.impl.predicates;
 
 import com.hazelcast.core.TypeConverter;
 import com.hazelcast.query.Predicate;
+import com.hazelcast.query.Predicates;
 import com.hazelcast.query.impl.Comparables;
-import com.hazelcast.query.impl.FalsePredicate;
 import com.hazelcast.query.impl.Indexes;
 import com.hazelcast.query.impl.TypeConverters;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -28,7 +28,6 @@ import java.util.HashMap;
 
 import static com.hazelcast.query.impl.AbstractIndex.NULL;
 import static com.hazelcast.query.impl.predicates.PredicateUtils.isNull;
-import static com.hazelcast.query.impl.predicates.PredicateUtils.isRangePredicate;
 
 /**
  * Performs range predicates optimization.
@@ -36,8 +35,8 @@ import static com.hazelcast.query.impl.predicates.PredicateUtils.isRangePredicat
  * The basic idea is to reduce all predicates for a certain attribute into a
  * single predicate verifying its satisfiability on the go. For instance:
  * <ul>
- * <li>"a = 1 and a = 2" and "a > 10 and a < 5" are unsatisfiable.
- * <li>"a > 0 and a < 10" and "a > 0 and a > 10" can be reduced into a single
+ * <li>"a = 1 and a = 2" and "a &gt; 10 and a &lt; 5" are unsatisfiable.
+ * <li>"a &gt; 0 and a &lt; 10" and "a &gt; 0 and a &gt; 10" can be reduced into a single
  * range predicate.
  * </ul>
  * {@link CompositeIndexVisitor} is highly dependent on the work of this class
@@ -53,7 +52,7 @@ public class RangeVisitor extends AbstractVisitor {
         for (int i = 0; i < predicates.length; ++i) {
             ranges = intersect(predicates, i, ranges, indexes);
             if (ranges == Ranges.UNSATISFIABLE) {
-                return FalsePredicate.INSTANCE;
+                return Predicates.alwaysFalse();
             }
         }
 
@@ -74,9 +73,9 @@ public class RangeVisitor extends AbstractVisitor {
             case LESS:
                 return predicate;
             case EQUAL:
-                return new EqualPredicate(predicate.attributeName, from);
+                return Predicates.equal(predicate.attributeName, from);
             case GREATER:
-                return FalsePredicate.INSTANCE;
+                return Predicates.alwaysFalse();
 
             default:
                 throw new IllegalStateException("Unexpected order: " + order);
@@ -88,7 +87,7 @@ public class RangeVisitor extends AbstractVisitor {
 
         if (predicate instanceof FalsePredicate) {
             return Ranges.UNSATISFIABLE;
-        } else if (!isRangePredicate(predicate)) {
+        } else if (!isSupportedPredicate(predicate)) {
             return ranges;
         }
 
@@ -109,6 +108,16 @@ public class RangeVisitor extends AbstractVisitor {
         ranges.addRange(attribute, range, existingRange, predicateIndex);
 
         return ranges;
+    }
+
+    private static boolean isSupportedPredicate(Predicate predicate) {
+        if (!(predicate instanceof RangePredicate)) {
+            return false;
+        }
+
+        RangePredicate rangePredicate = (RangePredicate) predicate;
+        // we are unable to reason about multi-value attributes currently
+        return !rangePredicate.getAttribute().contains("[any]");
     }
 
     private static Range intersect(RangePredicate predicate, Range range, Indexes indexes) {
@@ -150,7 +159,7 @@ public class RangeVisitor extends AbstractVisitor {
 
         private int reduction;
 
-        public Ranges(int predicateCount) {
+        Ranges(int predicateCount) {
             super(predicateCount);
             this.rangesByPredicateIndex = new Range[predicateCount];
         }
@@ -235,7 +244,7 @@ public class RangeVisitor extends AbstractVisitor {
         private boolean intersected;
         private boolean generated;
 
-        public Range(RangePredicate predicate, TypeConverter converter) {
+        Range(RangePredicate predicate, TypeConverter converter) {
             this.attribute = predicate.getAttribute();
             this.converter = converter;
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,14 +18,17 @@ package com.hazelcast.query.impl.predicates;
 
 import com.hazelcast.config.Config;
 import com.hazelcast.config.InMemoryFormat;
-import com.hazelcast.core.IMap;
+import com.hazelcast.config.IndexConfig;
+import com.hazelcast.config.IndexType;
+import com.hazelcast.map.IMap;
 import com.hazelcast.query.Predicate;
 import com.hazelcast.query.impl.CompositeValue;
-import com.hazelcast.query.impl.SkipIndexPredicate;
+import com.hazelcast.query.impl.IndexUtils;
 import com.hazelcast.test.HazelcastParallelParametersRunnerFactory;
+import com.hazelcast.test.HazelcastParametrizedRunner;
 import com.hazelcast.test.HazelcastTestSupport;
 import com.hazelcast.test.ObjectTestUtils;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -41,19 +44,20 @@ import java.util.Random;
 import static com.hazelcast.query.impl.AbstractIndex.NULL;
 import static com.hazelcast.query.impl.CompositeValue.NEGATIVE_INFINITY;
 import static com.hazelcast.query.impl.CompositeValue.POSITIVE_INFINITY;
-import static com.hazelcast.query.impl.predicates.PredicateUtils.constructCanonicalCompositeIndexName;
 import static java.util.Arrays.asList;
 import static org.junit.Assert.assertEquals;
+import static org.junit.runners.Parameterized.UseParametersRunnerFactory;
 
-@RunWith(Parameterized.class)
-@Parameterized.UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
-@Category({QuickTest.class, ParallelTest.class})
+@RunWith(HazelcastParametrizedRunner.class)
+@UseParametersRunnerFactory(HazelcastParallelParametersRunnerFactory.class)
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class CompositeRangePredicateTest extends HazelcastTestSupport {
 
     @Parameterized.Parameter
     public InMemoryFormat inMemoryFormat;
     private Random random;
     private IMap<Integer, Person> map;
+    private String indexName;
 
     @Parameterized.Parameters(name = "format:{0}")
     public static Collection<Object[]> parameters() {
@@ -70,7 +74,12 @@ public class CompositeRangePredicateTest extends HazelcastTestSupport {
         config.getMapConfig("persons").setInMemoryFormat(inMemoryFormat);
 
         map = createHazelcastInstance(config).getMap("persons");
-        map.addIndex("age, height, __key", true);
+
+        IndexConfig indexConfig = IndexUtils.createTestIndexConfig(IndexType.SORTED, "age", "height", "__key");
+
+        indexName = indexConfig.getName();
+
+        map.addIndex(indexConfig);
 
         for (int i = 0; i < 500; ++i) {
             map.put(i, new Person(randomAge(), randomHeight()));
@@ -117,7 +126,10 @@ public class CompositeRangePredicateTest extends HazelcastTestSupport {
                     throw new IllegalStateException();
             }
 
-            assertPredicate(expected, predicate(from, false, to, false, prefixLength, "age", "height", "__key"));
+            assertPredicate(
+                expected,
+                predicate(indexName, from, false, to, false, prefixLength, "age", "height", "__key")
+            );
         }
 
         assertEquals(100, map.getLocalMapStats().getIndexedQueryCount());
@@ -253,7 +265,10 @@ public class CompositeRangePredicateTest extends HazelcastTestSupport {
                     throw new IllegalStateException();
             }
 
-            assertPredicate(expected, predicate(from, fromInclusive, to, toInclusive, prefixLength, "age", "height", "__key"));
+            assertPredicate(
+                expected,
+                predicate(indexName, from, fromInclusive, to, toInclusive, prefixLength, "age", "height", "__key")
+            );
         }
 
         assertEquals(100, map.getLocalMapStats().getIndexedQueryCount());
@@ -294,10 +309,17 @@ public class CompositeRangePredicateTest extends HazelcastTestSupport {
         return value == 0 && allowNull ? null : value;
     }
 
-    private static Predicate predicate(CompositeValue from, boolean fromInclusive, CompositeValue to, boolean toInclusive,
-                                       int prefixLength, String... components) {
-        return new CompositeRangePredicate(constructCanonicalCompositeIndexName(components), components, from, fromInclusive, to,
-                toInclusive, prefixLength);
+    private static Predicate predicate(String indexName, CompositeValue from, boolean fromInclusive, CompositeValue to,
+        boolean toInclusive, int prefixLength, String... components) {
+        return new CompositeRangePredicate(
+            indexName,
+            components,
+            from,
+            fromInclusive,
+            to,
+            toInclusive,
+            prefixLength
+        );
     }
 
     private static CompositeValue value(Comparable... values) {

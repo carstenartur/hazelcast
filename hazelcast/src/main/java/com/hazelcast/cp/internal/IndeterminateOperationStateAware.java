@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,7 @@ import com.hazelcast.core.IndeterminateOperationStateException;
  * - the failed leader did not append the operation,
  * - the failed leader appended the operation but not committed yet,
  * - the failed leader committed the operation.
- * <p/>
+ * <p>
  * In this case, we check if the operation is safe to retry. The operation is
  * considered to be safe to retry only if it implements this interface and
  * {@link #isRetryableOnIndeterminateOperationState()} method returns

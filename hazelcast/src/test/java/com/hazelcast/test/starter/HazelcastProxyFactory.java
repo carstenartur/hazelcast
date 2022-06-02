@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,9 @@
 
 package com.hazelcast.test.starter;
 
-import com.hazelcast.core.IFunction;
+import com.hazelcast.internal.util.ConcurrentReferenceHashMap;
+import com.hazelcast.internal.util.ConstructorFunction;
 import com.hazelcast.test.starter.constructor.EnumConstructor;
-import com.hazelcast.util.ConcurrentReferenceHashMap;
-import com.hazelcast.util.ConstructorFunction;
 import net.bytebuddy.ByteBuddy;
 import net.bytebuddy.description.method.MethodDescription;
 import net.bytebuddy.description.method.MethodList;
@@ -48,16 +47,16 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static com.hazelcast.nio.ClassLoaderUtil.getAllInterfaces;
+import static com.hazelcast.internal.nio.ClassLoaderUtil.getAllInterfaces;
+import static com.hazelcast.internal.util.ConcurrentReferenceHashMap.ReferenceType.STRONG;
 import static com.hazelcast.test.starter.HazelcastAPIDelegatingClassloader.DELEGATION_WHITE_LIST;
 import static com.hazelcast.test.starter.HazelcastProxyFactory.ProxyPolicy.RETURN_SAME;
 import static com.hazelcast.test.starter.HazelcastStarterUtils.debug;
 import static com.hazelcast.test.starter.HazelcastStarterUtils.newCollectionFor;
 import static com.hazelcast.test.starter.ReflectionUtils.getConstructor;
 import static com.hazelcast.test.starter.ReflectionUtils.getReflectionsForTestPackage;
-import static com.hazelcast.util.ConcurrentReferenceHashMap.ReferenceType.STRONG;
-import static java.lang.System.arraycopy;
 import static java.util.Arrays.asList;
+import static java.util.Arrays.copyOf;
 import static net.bytebuddy.jar.asm.Opcodes.ACC_PUBLIC;
 import static net.bytebuddy.matcher.ElementMatchers.is;
 import static net.bytebuddy.matcher.ElementMatchers.isConstructor;
@@ -278,60 +277,53 @@ public class HazelcastProxyFactory {
 
     private static Object proxyWithSubclass(ClassLoader targetClassLoader, final Object delegate) {
         ProxySource proxySource = ProxySource.of(delegate.getClass(), targetClassLoader);
-        Class<?> targetClass = PROXIES.applyIfAbsent(proxySource, new IFunction<ProxySource, Class<?>>() {
-            @Override
-            public Class<?> apply(ProxySource input) {
-                return new ByteBuddy().subclass(input.getToProxy(), AllAsPublicConstructorStrategy.INSTANCE)
+        Class<?> targetClass = PROXIES.applyIfAbsent(proxySource,
+                input -> new ByteBuddy().subclass(input.getToProxy(), AllAsPublicConstructorStrategy.INSTANCE)
                         .method(ElementMatchers.isDeclaredBy(input.getToProxy()))
                         .intercept(InvocationHandlerAdapter.of(new ProxyInvocationHandler(delegate)))
                         .make()
                         .load(input.getTargetClassLoader())
-                        .getLoaded();
-            }
-        });
+                        .getLoaded());
         return construct(targetClass, delegate);
     }
 
     private static Object construct(Class<?> clazz, Object delegate) {
-        ConstructorFunction<Object, Object> constructorFunction = CONSTRUCTORS.applyIfAbsent(clazz,
-                new IFunction<Class<?>, ConstructorFunction<Object, Object>>() {
-                    @Override
-                    public ConstructorFunction<Object, Object> apply(Class<?> input) {
-                        String className = input.getName();
-                        Constructor<ConstructorFunction<Object, Object>> constructor = NO_PROXYING_WHITELIST.get(className);
-                        if (constructor != null) {
-                            try {
-                                return constructor.newInstance(input);
-                            } catch (Exception e) {
-                                throw new IllegalStateException(e);
-                            }
-                        } else if (input.isEnum()) {
-                            return new EnumConstructor(input);
-                        }
-                        throw new UnsupportedOperationException("Cannot construct target object for target " + input
-                                + " on classloader " + input.getClassLoader());
-                    }
-                });
+        ConstructorFunction<Object, Object> constructorFunction = CONSTRUCTORS.applyIfAbsent(clazz, input -> {
+            String className = input.getName();
+            Constructor<ConstructorFunction<Object, Object>> constructor = NO_PROXYING_WHITELIST.get(className);
+            if (constructor != null) {
+                try {
+                    return constructor.newInstance(input);
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
+            } else if (input.isEnum()) {
+                return new EnumConstructor(input);
+            }
+            throw new UnsupportedOperationException("Cannot construct target object for target " + input
+                    + " on classloader " + input.getClassLoader());
+        });
 
         return constructorFunction.createNew(delegate);
     }
 
     private static Object toArray(ClassLoader targetClassLoader, Object arg) throws ClassNotFoundException {
         if (arg instanceof byte[]) {
-            byte[] srcArray = ((byte[]) arg);
-            byte[] targetArray = new byte[srcArray.length];
-            arraycopy(srcArray, 0, targetArray, 0, srcArray.length);
-            return targetArray;
+            return copyOf((byte[]) arg, ((byte[]) arg).length);
         } else if (arg instanceof int[]) {
-            int[] srcArray = ((int[]) arg);
-            int[] targetArray = new int[srcArray.length];
-            arraycopy(srcArray, 0, targetArray, 0, srcArray.length);
-            return targetArray;
+            return copyOf((int[]) arg, ((int[]) arg).length);
         } else if (arg instanceof long[]) {
-            long[] srcArray = ((long[]) arg);
-            long[] targetArray = new long[srcArray.length];
-            arraycopy(srcArray, 0, targetArray, 0, srcArray.length);
-            return targetArray;
+            return copyOf((long[]) arg, ((long[]) arg).length);
+        } else if (arg instanceof boolean[]) {
+            return copyOf((boolean[]) arg, ((boolean[]) arg).length);
+        } else if (arg instanceof short[]) {
+            return copyOf((short[]) arg, ((short[]) arg).length);
+        } else if (arg instanceof float[]) {
+            return copyOf((float[]) arg, ((float[]) arg).length);
+        } else if (arg instanceof double[]) {
+            return copyOf((double[]) arg, ((double[]) arg).length);
+        } else if (arg instanceof char[]) {
+            return copyOf((char[]) arg, ((char[]) arg).length);
         }
         Object[] srcArray = ((Object[]) arg);
         Class<?> targetClass = targetClassLoader.loadClass(srcArray.getClass().getComponentType().getName());

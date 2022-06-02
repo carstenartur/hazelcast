@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,19 @@
 
 package com.hazelcast.query.impl.getters;
 
-
 import java.lang.reflect.Field;
 
-public class FieldGetter extends AbstractMultiValueGetter {
+public final class FieldGetter extends AbstractMultiValueGetter {
+
     private final Field field;
 
-    public FieldGetter(Getter parent, Field field, String modifierSuffix, Class resultType) {
-        super(parent, modifierSuffix, field.getType(), resultType);
+    // for testing purposes only
+    public FieldGetter(Getter parent, Field field, String modifier, Class elementType) {
+        this(parent, field, modifier, field.getType(), elementType);
+    }
+
+    public FieldGetter(Getter parent, Field field, String modifier, Class type, Class elementType) {
+        super(parent, modifier, type, elementType);
         this.field = field;
     }
 
@@ -45,4 +50,5 @@ public class FieldGetter extends AbstractMultiValueGetter {
     public String toString() {
         return "FieldGetter [parent=" + parent + ", field=" + field + ", modifier = " + getModifier() + "]";
     }
+
 }

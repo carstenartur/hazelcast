@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,12 +21,12 @@ import com.hazelcast.cache.ICache;
 import com.hazelcast.core.ManagedContext;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.spi.EventRegistration;
-import com.hazelcast.spi.ListenerWrapperEventFilter;
-import com.hazelcast.spi.NotifiableEventListener;
-import com.hazelcast.spi.serialization.SerializationService;
+import com.hazelcast.spi.impl.eventservice.EventRegistration;
+import com.hazelcast.internal.services.ListenerWrapperEventFilter;
+import com.hazelcast.internal.services.NotifiableEventListener;
+import com.hazelcast.internal.serialization.SerializationService;
 
 import javax.cache.configuration.CacheEntryListenerConfiguration;
 import javax.cache.configuration.Factory;
@@ -47,7 +47,7 @@ import java.util.HashSet;
  * types into a single listener.
  * <p>JCache has multiple {@link CacheEntryListener} sub-interfaces for each event type. This adapter
  * implementation delegates to the correct subtype using the event type.</p>
- * <p/>
+ * <p>
  * <p>Another responsibility of this implementation is filtering events by using the already configured
  * event filters.</p>
  *
@@ -108,7 +108,7 @@ public class CacheEventListenerAdaptor<K, V>
         } else {
             this.cacheEntryExpiredListener = null;
         }
-        injectDependencies(cacheEntryListener);
+        cacheEntryListener = injectDependencies(cacheEntryListener);
 
         Factory<CacheEntryEventFilter<? super K, ? super V>> filterFactory =
                 cacheEntryListenerConfiguration.getCacheEntryEventFilterFactory();
@@ -117,7 +117,7 @@ public class CacheEventListenerAdaptor<K, V>
         } else {
             this.filter = null;
         }
-        injectDependencies(filter);
+        filter = injectDependencies(filter);
 
         this.isOldValueRequired = cacheEntryListenerConfiguration.isOldValueRequired();
     }
@@ -126,14 +126,15 @@ public class CacheEventListenerAdaptor<K, V>
             CacheEntryListenerConfiguration<K, V> cacheEntryListenerConfiguration) {
         Factory<CacheEntryListener<? super K, ? super V>> cacheEntryListenerFactory =
                 cacheEntryListenerConfiguration.getCacheEntryListenerFactory();
-        injectDependencies(cacheEntryListenerFactory);
+        cacheEntryListenerFactory = injectDependencies(cacheEntryListenerFactory);
 
         return (CacheEntryListener<K, V>) cacheEntryListenerFactory.create();
     }
 
-    private void injectDependencies(Object obj) {
+    @SuppressWarnings("unchecked")
+    private <T> T injectDependencies(Object obj) {
         ManagedContext managedContext = serializationService.getManagedContext();
-        managedContext.initialize(obj);
+        return (T) managedContext.initialize(obj);
     }
 
     @Override
@@ -263,7 +264,7 @@ public class CacheEventListenerAdaptor<K, V>
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return CacheDataSerializerHook.CACHE_EVENT_LISTENER_ADAPTOR;
     }
 

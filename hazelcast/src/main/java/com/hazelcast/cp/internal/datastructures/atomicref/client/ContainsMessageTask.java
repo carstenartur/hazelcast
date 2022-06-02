@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,24 +17,23 @@
 package com.hazelcast.cp.internal.datastructures.atomicref.client;
 
 import com.hazelcast.client.impl.protocol.ClientMessage;
-import com.hazelcast.client.impl.protocol.codec.CPAtomicRefContainsCodec;
-import com.hazelcast.client.impl.protocol.task.AbstractMessageTask;
-import com.hazelcast.core.ExecutionCallback;
-import com.hazelcast.cp.internal.RaftService;
-import com.hazelcast.cp.internal.datastructures.atomicref.RaftAtomicRefService;
+import com.hazelcast.client.impl.protocol.codec.AtomicRefContainsCodec;
+import com.hazelcast.cp.internal.client.AbstractCPMessageTask;
+import com.hazelcast.cp.internal.datastructures.atomicref.AtomicRefService;
 import com.hazelcast.cp.internal.datastructures.atomicref.operation.ContainsOp;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
 import com.hazelcast.security.permission.ActionConstants;
 import com.hazelcast.security.permission.AtomicReferencePermission;
 
 import java.security.Permission;
 
+import static com.hazelcast.cp.internal.raft.QueryPolicy.LINEARIZABLE;
+
 /**
  * Client message task for {@link ContainsOp}
  */
-public class ContainsMessageTask extends AbstractMessageTask<CPAtomicRefContainsCodec.RequestParameters>
-        implements ExecutionCallback<Boolean> {
+public class ContainsMessageTask extends AbstractCPMessageTask<AtomicRefContainsCodec.RequestParameters> {
 
     public ContainsMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -42,26 +41,23 @@ public class ContainsMessageTask extends AbstractMessageTask<CPAtomicRefContains
 
     @Override
     protected void processMessage() {
-        RaftService service = nodeEngine.getService(RaftService.SERVICE_NAME);
-        service.getInvocationManager()
-               .<Boolean>invoke(parameters.groupId, new ContainsOp(parameters.name, parameters.value))
-               .andThen(this);
+        query(parameters.groupId, new ContainsOp(parameters.name, parameters.value), LINEARIZABLE);
     }
 
     @Override
-    protected CPAtomicRefContainsCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
-        return CPAtomicRefContainsCodec.decodeRequest(clientMessage);
+    protected AtomicRefContainsCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+        return AtomicRefContainsCodec.decodeRequest(clientMessage);
     }
 
     @Override
     protected ClientMessage encodeResponse(Object response) {
-        return CPAtomicRefContainsCodec.encodeResponse((Boolean) response);
+        return AtomicRefContainsCodec.encodeResponse((Boolean) response);
     }
 
 
     @Override
     public String getServiceName() {
-        return RaftAtomicRefService.SERVICE_NAME;
+        return AtomicRefService.SERVICE_NAME;
     }
 
     @Override
@@ -82,16 +78,5 @@ public class ContainsMessageTask extends AbstractMessageTask<CPAtomicRefContains
     @Override
     public Object[] getParameters() {
         return new Object[]{parameters.value};
-    }
-
-
-    @Override
-    public void onResponse(Boolean response) {
-        sendResponse(response);
-    }
-
-    @Override
-    public void onFailure(Throwable t) {
-        handleProcessingFailure(t);
     }
 }

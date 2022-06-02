@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,15 +20,14 @@ import com.hazelcast.cache.impl.CacheService;
 import com.hazelcast.cache.impl.operation.CacheListenerRegistrationOperation;
 import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.CacheListenerRegistrationCodec;
-import com.hazelcast.client.impl.protocol.task.AbstractInvocationMessageTask;
-import com.hazelcast.instance.Node;
-import com.hazelcast.nio.Connection;
-import com.hazelcast.spi.InvocationBuilder;
-import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.impl.operationservice.InternalOperationService;
+import com.hazelcast.client.impl.protocol.task.AbstractTargetMessageTask;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.internal.nio.Connection;
+import com.hazelcast.spi.impl.operationservice.Operation;
 
 import javax.cache.configuration.CacheEntryListenerConfiguration;
 import java.security.Permission;
+import java.util.UUID;
 
 /**
  * This client request  specifically calls {@link CacheListenerRegistrationOperation} on the server side.
@@ -36,34 +35,31 @@ import java.security.Permission;
  * @see CacheListenerRegistrationOperation
  */
 public class CacheListenerRegistrationMessageTask
-        extends AbstractInvocationMessageTask<CacheListenerRegistrationCodec.RequestParameters> {
+        extends AbstractTargetMessageTask<CacheListenerRegistrationCodec.RequestParameters> {
 
     public CacheListenerRegistrationMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
     }
 
     @Override
+    protected UUID getTargetUuid() {
+        return parameters.uuid;
+    }
+
+    @Override
     protected Operation prepareOperation() {
-        CacheEntryListenerConfiguration conf = (CacheEntryListenerConfiguration) nodeEngine.toObject(parameters.listenerConfig);
+        CacheEntryListenerConfiguration conf = nodeEngine.toObject(parameters.listenerConfig);
         return new CacheListenerRegistrationOperation(parameters.name, conf, parameters.shouldRegister);
     }
 
     @Override
     protected CacheListenerRegistrationCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
-        parameters = CacheListenerRegistrationCodec.decodeRequest(clientMessage);
-        parameters.address = clientEngine.memberAddressOf(parameters.address);
-        return parameters;
+        return CacheListenerRegistrationCodec.decodeRequest(clientMessage);
     }
 
     @Override
     protected ClientMessage encodeResponse(Object response) {
         return CacheListenerRegistrationCodec.encodeResponse();
-    }
-
-    @Override
-    protected InvocationBuilder getInvocationBuilder(Operation op) {
-        final InternalOperationService operationService = nodeEngine.getOperationService();
-        return operationService.createInvocationBuilder(getServiceName(), op, parameters.address);
     }
 
     @Override

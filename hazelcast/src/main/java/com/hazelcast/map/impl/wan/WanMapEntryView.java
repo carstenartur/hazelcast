@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,59 +17,99 @@
 package com.hazelcast.map.impl.wan;
 
 import com.hazelcast.core.EntryView;
-import com.hazelcast.map.impl.MapDataSerializerHook;
-import com.hazelcast.nio.IOUtil;
+import com.hazelcast.internal.nio.IOUtil;
+import com.hazelcast.internal.serialization.Data;
+import com.hazelcast.internal.serialization.SerializationService;
+import com.hazelcast.internal.serialization.SerializationServiceAware;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.BinaryInterface;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.wan.impl.WanDataSerializerHook;
 
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.io.IOException;
+import java.util.Objects;
+
+import static com.hazelcast.internal.util.Preconditions.checkNotNull;
 
 /**
- * WAN heap based implementation of {@link EntryView} for keeping
- * compatibility when sending to older (3.8+) clusters.
+ * WAN heap based implementation of {@link EntryView}.
+ * <p>
+ * It is lazy because you intialise it with serialized formats
+ * of key and value and it will deserialise only if {@link #getKey()} or
+ * {@link #getValue()} are invoked.
  *
  * @param <K> the type of key.
  * @param <V> the type of value.
  */
-@BinaryInterface
-public class WanMapEntryView<K, V> implements EntryView<K, V>, IdentifiedDataSerializable {
+@SuppressWarnings("checkstyle:methodcount")
+public class WanMapEntryView<K, V> implements EntryView<K, V>, IdentifiedDataSerializable, SerializationServiceAware {
+    private SerializationService serializationService;
+    private K key;
+    private V value;
+    private Data dataKey;
+    private Data dataValue;
+    private Data trimmedDataKey;
+    private Data trimmedDataValue;
+    private long cost;
+    private long creationTime;
+    private long expirationTime;
+    private long hits;
+    private long lastAccessTime;
+    private long lastStoredTime;
+    private long lastUpdateTime;
+    private long version;
+    private long ttl;
+    private long maxIdle;
 
-    private final K key;
-    private final V value;
-    private final long cost;
-    private final long creationTime;
-    private final long expirationTime;
-    private final long hits;
-    private final long lastAccessTime;
-    private final long lastStoredTime;
-    private final long lastUpdateTime;
-    private final long version;
-    private final long ttl;
+    public WanMapEntryView() {
+    }
 
-    public WanMapEntryView(EntryView<K, V> entryView) {
-        this.key = entryView.getKey();
-        this.value = entryView.getValue();
-        this.cost = entryView.getCost();
-        this.version = entryView.getVersion();
-        this.hits = entryView.getHits();
-        this.lastAccessTime = entryView.getLastAccessTime();
-        this.lastUpdateTime = entryView.getLastUpdateTime();
-        this.ttl = entryView.getTtl();
-        this.creationTime = entryView.getCreationTime();
-        this.expirationTime = entryView.getExpirationTime();
-        this.lastStoredTime = entryView.getLastStoredTime();
+    public WanMapEntryView(@Nonnull Data dataKey,
+                           @Nullable Data dataValue,
+                           @Nonnull SerializationService serializationService) {
+        checkNotNull(dataKey);
+        checkNotNull(serializationService);
+        this.dataKey = serializationService.toDataWithSchema(dataKey);
+        this.dataValue = serializationService.toDataWithSchema(dataValue);
+        this.serializationService = serializationService;
     }
 
     @Override
     public K getKey() {
+        if (key == null) {
+            key = serializationService.toObject(dataKey);
+        }
         return key;
+    }
+
+    /**
+     * Returns the serialised format of the entry key.
+     */
+    public Data getDataKey() {
+        if (trimmedDataKey == null) {
+            trimmedDataKey = serializationService.trimSchema(dataKey);
+        }
+        return trimmedDataKey;
     }
 
     @Override
     public V getValue() {
+        if (value == null) {
+            value = serializationService.toObject(dataValue);
+        }
         return value;
+    }
+
+    /**
+     * Returns the serialised format of the entry value.
+     */
+    public Data getDataValue() {
+        if (trimmedDataValue == null) {
+            trimmedDataValue = serializationService.trimSchema(dataValue);
+        }
+        return trimmedDataValue;
     }
 
     @Override
@@ -118,15 +158,64 @@ public class WanMapEntryView<K, V> implements EntryView<K, V>, IdentifiedDataSer
     }
 
     @Override
-    public Long getMaxIdle() {
-        return null;
+    public long getMaxIdle() {
+        return maxIdle;
+    }
+
+    public WanMapEntryView<K, V> withCost(long cost) {
+        this.cost = cost;
+        return this;
+    }
+
+    public WanMapEntryView<K, V> withCreationTime(long creationTime) {
+        this.creationTime = creationTime;
+        return this;
+    }
+
+    public WanMapEntryView<K, V> withExpirationTime(long expirationTime) {
+        this.expirationTime = expirationTime;
+        return this;
+    }
+
+    public WanMapEntryView<K, V> withHits(long hits) {
+        this.hits = hits;
+        return this;
+    }
+
+    public WanMapEntryView<K, V> withLastAccessTime(long lastAccessTime) {
+        this.lastAccessTime = lastAccessTime;
+        return this;
+    }
+
+    public WanMapEntryView<K, V> withLastStoredTime(long lastStoredTime) {
+        this.lastStoredTime = lastStoredTime;
+        return this;
+    }
+
+    public WanMapEntryView<K, V> withLastUpdateTime(long lastUpdateTime) {
+        this.lastUpdateTime = lastUpdateTime;
+        return this;
+    }
+
+    public WanMapEntryView<K, V> withVersion(long version) {
+        this.version = version;
+        return this;
+    }
+
+    public WanMapEntryView<K, V> withTtl(long ttl) {
+        this.ttl = ttl;
+        return this;
+    }
+
+    public WanMapEntryView<K, V> withMaxIdle(long maxIdle) {
+        this.maxIdle = maxIdle;
+        return this;
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        // the serialized format must match the serialized format for a 3.8 SimpleEntryView
-        IOUtil.writeObject(out, key);
-        IOUtil.writeObject(out, value);
+        IOUtil.writeData(out, dataKey);
+        IOUtil.writeData(out, dataValue);
         out.writeLong(cost);
         out.writeLong(creationTime);
         out.writeLong(expirationTime);
@@ -135,31 +224,38 @@ public class WanMapEntryView<K, V> implements EntryView<K, V>, IdentifiedDataSer
         out.writeLong(lastStoredTime);
         out.writeLong(lastUpdateTime);
         out.writeLong(version);
-        out.writeLong(0);
         out.writeLong(ttl);
+        out.writeLong(maxIdle);
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        throw new UnsupportedOperationException(getClass().getName() + " should not be deserialized!");
+        dataKey = IOUtil.readData(in);
+        dataValue = IOUtil.readData(in);
+        cost = in.readLong();
+        creationTime = in.readLong();
+        expirationTime = in.readLong();
+        hits = in.readLong();
+        lastAccessTime = in.readLong();
+        lastStoredTime = in.readLong();
+        lastUpdateTime = in.readLong();
+        version = in.readLong();
+        ttl = in.readLong();
+        maxIdle = in.readLong();
     }
 
     @Override
     public int getFactoryId() {
-        // needs to have same factoryId and ID as SimpleEntryView
-        // for backwards compatibility when sending to a 3.8+ cluster
-        return MapDataSerializerHook.F_ID;
+        return WanDataSerializerHook.F_ID;
     }
 
     @Override
-    public int getId() {
-        // needs to have same factoryId and ID as SimpleEntryView
-        // for backwards compatibility when sending to a 3.8+ cluster
-        return MapDataSerializerHook.ENTRY_VIEW;
+    public int getClassId() {
+        return WanDataSerializerHook.WAN_MAP_ENTRY_VIEW;
     }
 
     @Override
-    @SuppressWarnings({"checkstyle:cyclomaticcomplexity", "checkstyle:npathcomplexity"})
+    @SuppressWarnings("checkstyle:cyclomaticcomplexity")
     public boolean equals(Object o) {
         if (this == o) {
             return true;
@@ -167,61 +263,36 @@ public class WanMapEntryView<K, V> implements EntryView<K, V>, IdentifiedDataSer
         if (o == null || getClass() != o.getClass()) {
             return false;
         }
-
         WanMapEntryView<?, ?> that = (WanMapEntryView<?, ?>) o;
-        if (cost != that.cost) {
-            return false;
-        }
-        if (creationTime != that.creationTime) {
-            return false;
-        }
-        if (expirationTime != that.expirationTime) {
-            return false;
-        }
-        if (hits != that.hits) {
-            return false;
-        }
-        if (lastAccessTime != that.lastAccessTime) {
-            return false;
-        }
-        if (lastStoredTime != that.lastStoredTime) {
-            return false;
-        }
-        if (lastUpdateTime != that.lastUpdateTime) {
-            return false;
-        }
-        if (version != that.version) {
-            return false;
-        }
-        if (ttl != that.ttl) {
-            return false;
-        }
-        if (key != null ? !key.equals(that.key) : that.key != null) {
-            return false;
-        }
-        return value != null ? value.equals(that.value) : that.value == null;
+        return cost == that.cost
+                && creationTime == that.creationTime
+                && expirationTime == that.expirationTime
+                && hits == that.hits
+                && lastAccessTime == that.lastAccessTime
+                && lastStoredTime == that.lastStoredTime
+                && lastUpdateTime == that.lastUpdateTime
+                && version == that.version
+                && ttl == that.ttl
+                && maxIdle == that.maxIdle
+                && Objects.equals(key, that.key)
+                && Objects.equals(value, that.value)
+                && dataKey.equals(that.dataKey)
+                && dataValue.equals(that.dataValue);
     }
 
     @Override
     public int hashCode() {
-        int result = key != null ? key.hashCode() : 0;
-        result = 31 * result + (value != null ? value.hashCode() : 0);
-        result = 31 * result + (int) (cost ^ (cost >>> 32));
-        result = 31 * result + (int) (creationTime ^ (creationTime >>> 32));
-        result = 31 * result + (int) (expirationTime ^ (expirationTime >>> 32));
-        result = 31 * result + (int) (hits ^ (hits >>> 32));
-        result = 31 * result + (int) (lastAccessTime ^ (lastAccessTime >>> 32));
-        result = 31 * result + (int) (lastStoredTime ^ (lastStoredTime >>> 32));
-        result = 31 * result + (int) (lastUpdateTime ^ (lastUpdateTime >>> 32));
-        result = 31 * result + (int) (version ^ (version >>> 32));
-        result = 31 * result + (int) (ttl ^ (ttl >>> 32));
-        return result;
+        return Objects.hash(key, value, dataKey, dataValue, cost,
+                creationTime, expirationTime, hits, lastAccessTime, lastStoredTime,
+                lastUpdateTime, version, ttl, maxIdle);
     }
 
     @Override
     public String toString() {
         return "WanMapEntryView{"
-                + "key=" + key
+                + "dataKey=" + dataKey
+                + ", key=" + key
+                + ", dataValue=" + dataValue
                 + ", value=" + value
                 + ", cost=" + cost
                 + ", creationTime=" + creationTime
@@ -232,6 +303,12 @@ public class WanMapEntryView<K, V> implements EntryView<K, V>, IdentifiedDataSer
                 + ", lastUpdateTime=" + lastUpdateTime
                 + ", version=" + version
                 + ", ttl=" + ttl
+                + ", maxIdle=" + maxIdle
                 + '}';
+    }
+
+    @Override
+    public void setSerializationService(SerializationService serializationService) {
+        this.serializationService = serializationService;
     }
 }

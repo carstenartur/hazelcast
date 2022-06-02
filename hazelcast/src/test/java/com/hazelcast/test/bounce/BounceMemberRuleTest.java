@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,9 @@
 package com.hazelcast.test.bounce;
 
 import com.hazelcast.config.Config;
-import com.hazelcast.core.IMap;
+import com.hazelcast.map.IMap;
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.After;
 import org.junit.Before;
@@ -37,13 +37,14 @@ import static org.junit.Assert.assertTrue;
  * Test basic BounceMemberRule functionality
  */
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class BounceMemberRuleTest {
 
     private String mapName = randomMapName();
 
     @Rule
-    public BounceMemberRule bounceMemberRule = BounceMemberRule.with(new Config()).clusterSize(3).build();
+    public BounceMemberRule bounceMemberRule = BounceMemberRule.with(new Config()).clusterSize(3)
+            .driverType(BounceTestConfiguration.DriverType.MEMBER).build();
 
     @Before
     public void setup() {

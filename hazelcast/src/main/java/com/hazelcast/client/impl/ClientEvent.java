@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,25 +16,25 @@
 
 package com.hazelcast.client.impl;
 
-import com.hazelcast.core.Client;
-import com.hazelcast.core.ClientType;
+import com.hazelcast.client.Client;
 
 import java.net.InetSocketAddress;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Event used for notification of client connection and disconnection
  */
 public class ClientEvent implements Client {
 
-    private final String uuid;
+    private final UUID uuid;
     private final ClientEventType eventType;
     private final InetSocketAddress address;
-    private final ClientType clientType;
+    private final String clientType;
     private final String name;
     private final Set<String> labels;
 
-    public ClientEvent(String uuid, ClientEventType eventType, InetSocketAddress address, ClientType clientType, String name,
+    public ClientEvent(UUID uuid, ClientEventType eventType, InetSocketAddress address, String clientType, String name,
                        Set<String> labels) {
         this.uuid = uuid;
         this.eventType = eventType;
@@ -45,7 +45,7 @@ public class ClientEvent implements Client {
     }
 
     @Override
-    public String getUuid() {
+    public UUID getUuid() {
         return uuid;
     }
 
@@ -55,7 +55,7 @@ public class ClientEvent implements Client {
     }
 
     @Override
-    public ClientType getClientType() {
+    public String getClientType() {
         return clientType;
     }
 

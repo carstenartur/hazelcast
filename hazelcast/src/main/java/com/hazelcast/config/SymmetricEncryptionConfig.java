@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,44 +20,30 @@ import static java.util.Arrays.copyOf;
 
 /**
  * Contains configuration for symmetric encryption
+ * @deprecated since 4.2
  */
-public class SymmetricEncryptionConfig {
+@Deprecated
+public class SymmetricEncryptionConfig
+        extends AbstractSymmetricEncryptionConfig<SymmetricEncryptionConfig> {
+
+    /**
+     * Default symmetric encryption algorithm
+     */
+    public static final String DEFAULT_SYMMETRIC_ALGORITHM = "PBEWithMD5AndDES";
 
     /**
      * Default symmetric encryption password
      */
     public static final String DEFAULT_SYMMETRIC_PASSWORD = "thepassword";
 
-    /**
-     * Default symmetric encryption salt
-     */
-    public static final String DEFAULT_SYMMETRIC_SALT = "thesalt";
+    private static final int DEFAULT_ITERATION_COUNT = 19;
 
-    private static final int ITERATION_COUNT = 19;
-
-    private boolean enabled;
-    private String algorithm = "PBEWithMD5AndDES";
+    private int iterationCount = DEFAULT_ITERATION_COUNT;
     private String password = DEFAULT_SYMMETRIC_PASSWORD;
-    private String salt = DEFAULT_SYMMETRIC_SALT;
-    private int iterationCount = ITERATION_COUNT;
     private byte[] key;
 
-    public boolean isEnabled() {
-        return enabled;
-    }
-
-    public SymmetricEncryptionConfig setEnabled(boolean enabled) {
-        this.enabled = enabled;
-        return this;
-    }
-
-    public String getAlgorithm() {
-        return algorithm;
-    }
-
-    public SymmetricEncryptionConfig setAlgorithm(String algorithm) {
-        this.algorithm = algorithm;
-        return this;
+    public SymmetricEncryptionConfig() {
+        algorithm = DEFAULT_SYMMETRIC_ALGORITHM;
     }
 
     public String getPassword() {
@@ -66,15 +52,6 @@ public class SymmetricEncryptionConfig {
 
     public SymmetricEncryptionConfig setPassword(String password) {
         this.password = password;
-        return this;
-    }
-
-    public String getSalt() {
-        return salt;
-    }
-
-    public SymmetricEncryptionConfig setSalt(String salt) {
-        this.salt = salt;
         return this;
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@
 
 package com.hazelcast.cp.internal.operation;
 
-import com.hazelcast.core.ICompletableFuture;
 import com.hazelcast.cp.CPGroupId;
 import com.hazelcast.cp.internal.IndeterminateOperationStateAware;
 import com.hazelcast.cp.internal.RaftServiceDataSerializerHook;
 import com.hazelcast.cp.internal.raft.command.DestroyRaftGroupCmd;
 import com.hazelcast.cp.internal.raft.impl.RaftNode;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.spi.impl.InternalCompletableFuture;
 
 /**
  * Replicates a {@link DestroyRaftGroupCmd} to a Raft group.
@@ -37,7 +37,7 @@ public class DestroyRaftGroupOp extends RaftReplicateOp implements Indeterminate
     }
 
     @Override
-    protected ICompletableFuture replicate(RaftNode raftNode) {
+    protected InternalCompletableFuture replicate(RaftNode raftNode) {
         return raftNode.replicate(new DestroyRaftGroupCmd());
     }
 
@@ -52,7 +52,7 @@ public class DestroyRaftGroupOp extends RaftReplicateOp implements Indeterminate
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftServiceDataSerializerHook.DESTROY_RAFT_GROUP_OP;
     }
 }

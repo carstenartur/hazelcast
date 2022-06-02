@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,7 @@ public class PaxExamTestRunner extends JUnit4TestRunner {
         return new Statement() {
             @Override
             public void evaluate() throws Throwable {
-                Assume.assumeTrue(JavaVersion.isAtMost(JavaVersion.JAVA_1_8));
+                Assume.assumeTrue(JavaVersion.isAtMost(JavaVersion.JAVA_8));
                 statement.evaluate();
             }
         };

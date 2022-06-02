@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,14 +20,14 @@ import com.hazelcast.internal.journal.EventJournal;
 import com.hazelcast.internal.journal.EventJournalReadOperation;
 import com.hazelcast.map.impl.MapDataSerializerHook;
 import com.hazelcast.map.impl.MapService;
-import com.hazelcast.map.journal.EventJournalMapEvent;
+import com.hazelcast.map.EventJournalMapEvent;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.ringbuffer.impl.ReadResultSetImpl;
-import com.hazelcast.util.function.Function;
-import com.hazelcast.util.function.Predicate;
 
 import java.io.IOException;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
  * Reads from the map event journal in batches. You may specify the start sequence,
@@ -63,7 +63,7 @@ public class MapEventJournalReadOperation<K, V, T> extends EventJournalReadOpera
 
     @Override
     protected ReadResultSetImpl<InternalEventJournalMapEvent, T> createResultSet() {
-        return new MapEventJournalReadResultSetImpl<K, V, T>(
+        return new MapEventJournalReadResultSetImpl<>(
                 minSize, maxSize, getNodeEngine().getSerializationService(), predicate, projection);
     }
 
@@ -80,7 +80,7 @@ public class MapEventJournalReadOperation<K, V, T> extends EventJournalReadOpera
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return MapDataSerializerHook.EVENT_JOURNAL_READ;
     }
 

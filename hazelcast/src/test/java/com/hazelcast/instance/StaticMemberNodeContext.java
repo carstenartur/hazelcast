@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,22 +16,29 @@
 
 package com.hazelcast.instance;
 
-import com.hazelcast.cluster.Joiner;
-import com.hazelcast.core.Member;
-import com.hazelcast.internal.networking.ServerSocketRegistry;
-import com.hazelcast.nio.Address;
-import com.hazelcast.nio.NetworkingService;
+import com.hazelcast.internal.cluster.Joiner;
+import com.hazelcast.cluster.Member;
+import com.hazelcast.instance.impl.DefaultNodeExtension;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.instance.impl.NodeContext;
+import com.hazelcast.instance.impl.NodeExtension;
+import com.hazelcast.internal.server.tcp.LocalAddressRegistry;
+import com.hazelcast.internal.server.tcp.ServerSocketRegistry;
+import com.hazelcast.cluster.Address;
+import com.hazelcast.internal.server.Server;
 import com.hazelcast.test.TestHazelcastInstanceFactory;
+
+import java.util.UUID;
 
 public class StaticMemberNodeContext implements NodeContext {
     private final NodeContext delegate;
-    private final String uuid;
+    private final UUID uuid;
 
     public StaticMemberNodeContext(TestHazelcastInstanceFactory factory, Member member) {
         this(factory, member.getUuid(), member.getAddress());
     }
 
-    public StaticMemberNodeContext(TestHazelcastInstanceFactory factory, String uuid, Address address) {
+    public StaticMemberNodeContext(TestHazelcastInstanceFactory factory, UUID uuid, Address address) {
         this.uuid = uuid;
         delegate = factory.getRegistry().createNodeContext(address);
     }
@@ -40,7 +47,7 @@ public class StaticMemberNodeContext implements NodeContext {
     public NodeExtension createNodeExtension(Node node) {
         return new DefaultNodeExtension(node) {
             @Override
-            public String createMemberUuid(Address address) {
+            public UUID createMemberUuid() {
                 return uuid;
             }
         };
@@ -57,7 +64,7 @@ public class StaticMemberNodeContext implements NodeContext {
     }
 
     @Override
-    public NetworkingService createNetworkingService(Node node, ServerSocketRegistry registry) {
-        return delegate.createNetworkingService(node, registry);
+    public Server createServer(Node node, ServerSocketRegistry registry, LocalAddressRegistry addressRegistry) {
+        return delegate.createServer(node, registry, addressRegistry);
     }
 }

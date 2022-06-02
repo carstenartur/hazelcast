@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import com.hazelcast.config.Config;
 import com.hazelcast.config.RestServerEndpointConfig;
 import com.hazelcast.config.ServerSocketEndpointConfig;
 import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.nio.IOUtil;
+import com.hazelcast.internal.nio.IOUtil;
 import com.hazelcast.test.HazelcastSerialClassRunner;
 import com.hazelcast.test.TestAwareInstanceFactory;
 import com.hazelcast.test.annotation.SlowTest;
@@ -28,12 +28,10 @@ import net.spy.memcached.ConnectionFactory;
 import net.spy.memcached.ConnectionFactoryBuilder;
 import net.spy.memcached.FailureMode;
 import net.spy.memcached.MemcachedClient;
-import org.apache.http.HttpEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
-import org.apache.http.util.EntityUtils;
 import org.junit.After;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
@@ -48,6 +46,7 @@ import java.util.concurrent.ExecutionException;
 import static com.hazelcast.instance.EndpointQualifier.MEMCACHE;
 import static com.hazelcast.instance.EndpointQualifier.REST;
 import static com.hazelcast.test.HazelcastTestSupport.ignore;
+import static com.hazelcast.test.MemcacheTestUtil.shutdownQuietly;
 import static org.junit.Assert.fail;
 
 @RunWith(HazelcastSerialClassRunner.class)
@@ -115,6 +114,8 @@ public class InvalidEndpointTest {
         } catch (ExecutionException e) {
             ignore(e);
         }
+
+        shutdownQuietly(client);
     }
 
     protected Config createRestEndpointConfig() {
@@ -138,10 +139,7 @@ public class InvalidEndpointTest {
             HttpGet request = new HttpGet(url);
             request.setHeader("Content-type", "text/xml; charset=" + "UTF-8");
             response = client.execute(request);
-            int responseCode = response.getStatusLine().getStatusCode();
-            HttpEntity entity = response.getEntity();
-            String responseStr = entity != null ? EntityUtils.toString(entity, "UTF-8") : "";
-            return new HTTPCommunicator.ConnectionResponse(responseStr, responseCode);
+            return new HTTPCommunicator.ConnectionResponse(response);
         } finally {
             IOUtil.closeResource(response);
             IOUtil.closeResource(client);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ package com.hazelcast.cp.internal;
 
 import com.hazelcast.cp.CPGroupId;
 import com.hazelcast.cp.internal.raft.MembershipChangeMode;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
@@ -26,14 +27,13 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 
-import static com.hazelcast.util.Preconditions.checkNotNull;
+import static com.hazelcast.internal.util.Preconditions.checkNotNull;
 import static java.util.Collections.unmodifiableList;
 
 /**
- * When there is a membership change in the CP subsystem,
+ * When there is a membership change in CP Subsystem,
  * all decided membership changes of Raft groups are maintained here.
  * {@link RaftGroupMembershipManager} realizes these membership changes.
  *
@@ -45,7 +45,7 @@ public class MembershipChangeSchedule implements IdentifiedDataSerializable {
     private List<Long> membershipChangeCommitIndices;
     private CPMemberInfo member;
     private MembershipChangeMode membershipChangeMode;
-    private final List<CPGroupMembershipChange> changes = new ArrayList<CPGroupMembershipChange>();
+    private final List<CPGroupMembershipChange> changes = new ArrayList<>();
 
     MembershipChangeSchedule() {
     }
@@ -73,14 +73,8 @@ public class MembershipChangeSchedule implements IdentifiedDataSerializable {
     MembershipChangeSchedule excludeCompletedChanges(Collection<CPGroupId> completedGroupIds) {
         checkNotNull(completedGroupIds);
 
-        List<CPGroupMembershipChange> remainingChanges = new ArrayList<CPGroupMembershipChange>(changes);
-        Iterator<CPGroupMembershipChange> it = remainingChanges.iterator();
-        while (it.hasNext()) {
-            CPGroupMembershipChange change = it.next();
-            if (completedGroupIds.contains(change.groupId)) {
-                it.remove();
-            }
-        }
+        List<CPGroupMembershipChange> remainingChanges = new ArrayList<>(changes);
+        remainingChanges.removeIf(change -> completedGroupIds.contains(change.groupId));
 
         return new MembershipChangeSchedule(membershipChangeCommitIndices, member, membershipChangeMode, remainingChanges);
     }
@@ -90,7 +84,7 @@ public class MembershipChangeSchedule implements IdentifiedDataSerializable {
     }
 
     MembershipChangeSchedule addRetriedCommitIndex(long commitIndex) {
-        List<Long> membershipChangeCommitIndices = new ArrayList<Long>(this.membershipChangeCommitIndices);
+        List<Long> membershipChangeCommitIndices = new ArrayList<>(this.membershipChangeCommitIndices);
         membershipChangeCommitIndices.add(commitIndex);
         return new MembershipChangeSchedule(membershipChangeCommitIndices, member, membershipChangeMode, changes);
     }
@@ -114,17 +108,17 @@ public class MembershipChangeSchedule implements IdentifiedDataSerializable {
 
         private long membersCommitIndex;
 
-        private Collection<CPMemberInfo> members;
+        private Collection<RaftEndpoint> members;
 
-        private CPMemberInfo memberToAdd;
+        private RaftEndpoint memberToAdd;
 
-        private CPMemberInfo memberToRemove;
+        private RaftEndpoint memberToRemove;
 
         CPGroupMembershipChange() {
         }
 
-        CPGroupMembershipChange(CPGroupId groupId, long membersCommitIndex, Collection<CPMemberInfo> members,
-                                CPMemberInfo memberToAdd, CPMemberInfo memberToRemove) {
+        CPGroupMembershipChange(CPGroupId groupId, long membersCommitIndex, Collection<RaftEndpoint> members,
+                                RaftEndpoint memberToAdd, RaftEndpoint memberToRemove) {
             this.groupId = groupId;
             this.membersCommitIndex = membersCommitIndex;
             this.members = members;
@@ -140,23 +134,24 @@ public class MembershipChangeSchedule implements IdentifiedDataSerializable {
             return membersCommitIndex;
         }
 
-        Collection<CPMemberInfo> getMembers() {
+        Collection<RaftEndpoint> getMembers() {
             return members;
         }
 
-        CPMemberInfo getMemberToAdd() {
+        RaftEndpoint getMemberToAdd() {
             return memberToAdd;
         }
 
-        CPMemberInfo getMemberToRemove() {
+        RaftEndpoint getMemberToRemove() {
             return memberToRemove;
         }
 
         @Override
         public void writeData(ObjectDataOutput out) throws IOException {
+            out.writeObject(groupId);
             out.writeLong(membersCommitIndex);
             out.writeInt(members.size());
-            for (CPMemberInfo member : members) {
+            for (RaftEndpoint member : members) {
                 out.writeObject(member);
             }
             out.writeObject(memberToAdd);
@@ -165,11 +160,12 @@ public class MembershipChangeSchedule implements IdentifiedDataSerializable {
 
         @Override
         public void readData(ObjectDataInput in) throws IOException {
+            groupId = in.readObject();
             membersCommitIndex = in.readLong();
             int len = in.readInt();
-            members = new HashSet<CPMemberInfo>(len);
+            members = new HashSet<>(len);
             for (int i = 0; i < len; i++) {
-                CPMemberInfo member = in.readObject();
+                RaftEndpoint member = in.readObject();
                 members.add(member);
             }
             memberToAdd = in.readObject();
@@ -182,7 +178,7 @@ public class MembershipChangeSchedule implements IdentifiedDataSerializable {
         }
 
         @Override
-        public int getId() {
+        public int getClassId() {
             return RaftServiceDataSerializerHook.GROUP_MEMBERSHIP_CHANGE;
         }
 
@@ -199,7 +195,7 @@ public class MembershipChangeSchedule implements IdentifiedDataSerializable {
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftServiceDataSerializerHook.MEMBERSHIP_CHANGE_SCHEDULE;
     }
 
@@ -210,7 +206,7 @@ public class MembershipChangeSchedule implements IdentifiedDataSerializable {
             out.writeLong(commitIndex);
         }
         out.writeObject(member);
-        out.writeUTF(membershipChangeMode.name());
+        out.writeString(membershipChangeMode.name());
         out.writeInt(changes.size());
         for (CPGroupMembershipChange change : changes) {
             out.writeObject(change);
@@ -220,13 +216,13 @@ public class MembershipChangeSchedule implements IdentifiedDataSerializable {
     @Override
     public void readData(ObjectDataInput in) throws IOException {
         int membershipChangeCommitIndexCount = in.readInt();
-        membershipChangeCommitIndices = new ArrayList<Long>(membershipChangeCommitIndexCount);
+        membershipChangeCommitIndices = new ArrayList<>(membershipChangeCommitIndexCount);
         for (int i = 0; i < membershipChangeCommitIndexCount; i++) {
             long commitIndex = in.readLong();
             membershipChangeCommitIndices.add(commitIndex);
         }
         member = in.readObject();
-        membershipChangeMode = MembershipChangeMode.valueOf(in.readUTF());
+        membershipChangeMode = MembershipChangeMode.valueOf(in.readString());
         int groupCount = in.readInt();
         for (int i = 0; i < groupCount; i++) {
             CPGroupMembershipChange change = in.readObject();

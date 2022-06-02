@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,8 +51,7 @@ class MigrationPlanner {
 
     private final ILogger logger;
     private final PartitionReplica[] state = new PartitionReplica[InternalPartition.MAX_REPLICA_COUNT];
-    private final Set<PartitionReplica> verificationSet = ASSERTION_ENABLED
-            ? new HashSet<PartitionReplica>() : Collections.<PartitionReplica>emptySet();
+    private final Set<PartitionReplica> verificationSet = ASSERTION_ENABLED ? new HashSet<>() : Collections.emptySet();
 
     MigrationPlanner() {
         logger = Logger.getLogger(getClass());

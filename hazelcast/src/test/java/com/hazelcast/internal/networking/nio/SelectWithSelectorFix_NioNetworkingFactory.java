@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,29 +18,29 @@ package com.hazelcast.internal.networking.nio;
 
 import com.hazelcast.internal.metrics.MetricsRegistry;
 import com.hazelcast.logging.LoggingService;
-import com.hazelcast.nio.tcp.MockIOService;
-import com.hazelcast.nio.tcp.NetworkingFactory;
-import com.hazelcast.nio.tcp.TcpIpConnectionChannelErrorHandler;
+import com.hazelcast.internal.server.MockServerContext;
+import com.hazelcast.internal.server.NetworkingFactory;
+import com.hazelcast.internal.server.tcp.TcpServerConnectionChannelErrorHandler;
 import com.hazelcast.spi.properties.HazelcastProperties;
 
-import static com.hazelcast.spi.properties.GroupProperty.IO_BALANCER_INTERVAL_SECONDS;
-import static com.hazelcast.spi.properties.GroupProperty.IO_INPUT_THREAD_COUNT;
-import static com.hazelcast.spi.properties.GroupProperty.IO_OUTPUT_THREAD_COUNT;
+import static com.hazelcast.spi.properties.ClusterProperty.IO_BALANCER_INTERVAL_SECONDS;
+import static com.hazelcast.spi.properties.ClusterProperty.IO_INPUT_THREAD_COUNT;
+import static com.hazelcast.spi.properties.ClusterProperty.IO_OUTPUT_THREAD_COUNT;
 
 public class SelectWithSelectorFix_NioNetworkingFactory implements NetworkingFactory {
 
     @Override
-    public NioNetworking create(final MockIOService ioService, MetricsRegistry metricsRegistry) {
-        HazelcastProperties properties = ioService.properties();
-        LoggingService loggingService = ioService.loggingService;
+    public NioNetworking create(final MockServerContext serverContext, MetricsRegistry metricsRegistry) {
+        HazelcastProperties properties = serverContext.properties();
+        LoggingService loggingService = serverContext.loggingService;
         return new NioNetworking(
                 new NioNetworking.Context()
                         .loggingService(loggingService)
                         .metricsRegistry(metricsRegistry)
-                        .threadNamePrefix(ioService.getHazelcastName())
+                        .threadNamePrefix(serverContext.getHazelcastName())
                         .errorHandler(
-                                new TcpIpConnectionChannelErrorHandler(
-                                        loggingService.getLogger(TcpIpConnectionChannelErrorHandler.class)))
+                                new TcpServerConnectionChannelErrorHandler(
+                                        loggingService.getLogger(TcpServerConnectionChannelErrorHandler.class)))
                         .inputThreadCount(properties.getInteger(IO_INPUT_THREAD_COUNT))
                         .outputThreadCount(properties.getInteger(IO_OUTPUT_THREAD_COUNT))
                         .balancerIntervalSeconds(properties.getInteger(IO_BALANCER_INTERVAL_SECONDS))

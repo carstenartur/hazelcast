@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,18 @@
 
 package com.hazelcast.internal.partition.operation;
 
-import com.hazelcast.internal.cluster.Versions;
-import com.hazelcast.internal.cluster.impl.operations.JoinOperation;
+import com.hazelcast.cluster.Address;
+import com.hazelcast.core.MemberLeftException;
 import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.internal.partition.MigrationCycleOperation;
 import com.hazelcast.internal.partition.PartitionRuntimeState;
 import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
 import com.hazelcast.internal.partition.impl.PartitionDataSerializerHook;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.nio.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.serialization.impl.Versioned;
-import com.hazelcast.version.Version;
+import com.hazelcast.spi.exception.TargetNotMemberException;
+import com.hazelcast.spi.impl.operationservice.ExceptionAction;
 
 import java.io.IOException;
 
@@ -38,8 +37,7 @@ import java.io.IOException;
  * @see InternalPartitionServiceImpl#publishPartitionRuntimeState
  * @see InternalPartitionServiceImpl#syncPartitionRuntimeState
  */
-public final class PartitionStateOperation extends AbstractPartitionOperation
-        implements MigrationCycleOperation, JoinOperation, Versioned {
+public final class PartitionStateOperation extends AbstractPartitionOperation implements MigrationCycleOperation {
 
     private PartitionRuntimeState partitionState;
     private boolean sync;
@@ -63,7 +61,7 @@ public final class PartitionStateOperation extends AbstractPartitionOperation
         ILogger logger = getLogger();
         if (logger.isFineEnabled()) {
             String message = (success ? "Applied" : "Rejected")
-                    + " new partition state. Version: " + partitionState.getVersion() + ", caller: " + callerAddress;
+                    + " new partition state. Stamp: " + partitionState.getStamp() + ", caller: " + callerAddress;
             logger.fine(message);
         }
     }
@@ -84,34 +82,30 @@ public final class PartitionStateOperation extends AbstractPartitionOperation
     }
 
     @Override
+    public ExceptionAction onInvocationException(Throwable throwable) {
+        if (throwable instanceof MemberLeftException
+                || throwable instanceof TargetNotMemberException) {
+            return ExceptionAction.THROW_EXCEPTION;
+        }
+        return super.onInvocationException(throwable);
+    }
+
+    @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
         super.readInternal(in);
-        // RU_COMPAT_3_11
-        Version version = in.getVersion();
-        if (version.isGreaterOrEqual(Versions.V3_12)) {
-            partitionState = in.readObject();
-        } else {
-            partitionState = new PartitionRuntimeState();
-            partitionState.readData(in);
-        }
+        partitionState = in.readObject();
         sync = in.readBoolean();
     }
 
     @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         super.writeInternal(out);
-        // RU_COMPAT_3_11
-        Version version = out.getVersion();
-        if (version.isGreaterOrEqual(Versions.V3_12)) {
-            out.writeObject(partitionState);
-        } else {
-            partitionState.writeData(out);
-        }
+        out.writeObject(partitionState);
         out.writeBoolean(sync);
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return PartitionDataSerializerHook.PARTITION_STATE_OP;
     }
 }

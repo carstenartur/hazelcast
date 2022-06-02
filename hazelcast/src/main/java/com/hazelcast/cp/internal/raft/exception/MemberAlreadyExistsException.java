@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,8 +16,8 @@
 
 package com.hazelcast.cp.internal.raft.exception;
 
-import com.hazelcast.core.Endpoint;
 import com.hazelcast.cp.exception.CPSubsystemException;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 
 /**
  * A {@code CPSubsystemException} which is thrown when a member, which is
@@ -28,7 +28,16 @@ public class MemberAlreadyExistsException extends CPSubsystemException {
 
     private static final long serialVersionUID = -4895279676261366826L;
 
-    public MemberAlreadyExistsException(Endpoint member) {
+    public MemberAlreadyExistsException(RaftEndpoint member) {
         super("Member already exists: " + member, null);
+    }
+
+    private MemberAlreadyExistsException(String message, Throwable cause) {
+        super(message, cause, null);
+    }
+
+    @Override
+    public MemberAlreadyExistsException wrap() {
+        return new MemberAlreadyExistsException(getMessage(), this);
     }
 }

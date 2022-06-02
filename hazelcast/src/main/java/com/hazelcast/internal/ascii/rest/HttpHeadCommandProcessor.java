@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,8 @@
 package com.hazelcast.internal.ascii.rest;
 
 import com.hazelcast.cluster.ClusterState;
-import com.hazelcast.instance.Node;
-import com.hazelcast.instance.NodeState;
+import com.hazelcast.instance.impl.Node;
+import com.hazelcast.instance.impl.NodeState;
 import com.hazelcast.internal.ascii.TextCommandService;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
 import com.hazelcast.internal.partition.InternalPartitionService;
@@ -26,10 +26,12 @@ import com.hazelcast.internal.partition.InternalPartitionService;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import static com.hazelcast.internal.ascii.rest.HttpStatusCode.SC_200;
+
 public class HttpHeadCommandProcessor extends HttpCommandProcessor<HttpHeadCommand> {
 
     public HttpHeadCommandProcessor(TextCommandService textCommandService) {
-        super(textCommandService);
+        super(textCommandService, textCommandService.getNode().getLogger(HttpPostCommandProcessor.class));
     }
 
     @Override
@@ -39,11 +41,15 @@ public class HttpHeadCommandProcessor extends HttpCommandProcessor<HttpHeadComma
             command.send200();
         } else if (uri.startsWith(URI_QUEUES)) {
             command.send200();
+        } else if (uri.startsWith(URI_INSTANCE)) {
+            command.send200();
         } else if (uri.startsWith(URI_CLUSTER)) {
             command.send200();
         } else if (uri.equals(URI_HEALTH_URL)) {
             handleHealthcheck(command);
         } else if (uri.startsWith(URI_CLUSTER_VERSION_URL)) {
+            command.send200();
+        } else if (uri.startsWith(URI_LOG_LEVEL)) {
             command.send200();
         } else {
             command.send404();
@@ -62,13 +68,13 @@ public class HttpHeadCommandProcessor extends HttpCommandProcessor<HttpHeadComma
         InternalPartitionService partitionService = node.getPartitionService();
         long migrationQueueSize = partitionService.getMigrationQueueSize();
 
-        Map<String, Object> headervals = new LinkedHashMap<String, Object>();
+        Map<String, Object> headervals = new LinkedHashMap<>();
         headervals.put("NodeState", nodeState);
         headervals.put("ClusterState", clusterState);
         headervals.put("MigrationQueueSize", migrationQueueSize);
         headervals.put("ClusterSize", clusterSize);
 
-        command.setResponse(headervals);
+        command.setResponse(SC_200, headervals);
     }
 
     @Override

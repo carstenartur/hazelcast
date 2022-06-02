@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,12 @@
 
 package com.hazelcast.config;
 
+import com.hazelcast.internal.config.ConfigDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
+import com.hazelcast.spi.impl.executionservice.ExecutionService;
+import com.hazelcast.topic.ITopic;
 import com.hazelcast.topic.TopicOverloadPolicy;
 
 import java.io.IOException;
@@ -28,13 +31,13 @@ import java.util.concurrent.Executor;
 
 import static com.hazelcast.internal.serialization.impl.SerializationUtil.readNullableList;
 import static com.hazelcast.internal.serialization.impl.SerializationUtil.writeNullableList;
+import static com.hazelcast.internal.util.Preconditions.checkHasText;
+import static com.hazelcast.internal.util.Preconditions.checkNotNull;
+import static com.hazelcast.internal.util.Preconditions.checkPositive;
 import static com.hazelcast.topic.TopicOverloadPolicy.BLOCK;
-import static com.hazelcast.util.Preconditions.checkHasText;
-import static com.hazelcast.util.Preconditions.checkNotNull;
-import static com.hazelcast.util.Preconditions.checkPositive;
 
 /**
- * Configuration for a reliable {@link com.hazelcast.core.ITopic}.
+ * Configuration for a reliable {@link ITopic}.
  * <p>
  * The reliable topic makes use of a {@link com.hazelcast.ringbuffer.Ringbuffer}
  * to store the actual messages.
@@ -89,7 +92,7 @@ public class ReliableTopicConfig implements IdentifiedDataSerializable, NamedCon
      *
      * @param config the ReliableTopicConfig to clone
      */
-    ReliableTopicConfig(ReliableTopicConfig config) {
+    public ReliableTopicConfig(ReliableTopicConfig config) {
         this.name = config.name;
         this.statisticsEnabled = config.statisticsEnabled;
         this.readBatchSize = config.readBatchSize;
@@ -150,7 +153,7 @@ public class ReliableTopicConfig implements IdentifiedDataSerializable, NamedCon
      * Gets the Executor that is going to process the events.
      * <p>
      * If no Executor is selected, then the
-     * {@link com.hazelcast.spi.ExecutionService#ASYNC_EXECUTOR} is used.
+     * {@link ExecutionService#ASYNC_EXECUTOR} is used.
      *
      * @return the Executor used to process events
      * @see #setExecutor(java.util.concurrent.Executor)
@@ -172,7 +175,7 @@ public class ReliableTopicConfig implements IdentifiedDataSerializable, NamedCon
      * executor only needs to have a single thread.
      *
      * @param executor the executor. if the executor is null, the
-     *                 {@link com.hazelcast.spi.ExecutionService#ASYNC_EXECUTOR} will be used
+     *                 {@link ExecutionService#ASYNC_EXECUTOR} will be used
      *                 to process the event
      * @return the updated config
      */
@@ -226,7 +229,7 @@ public class ReliableTopicConfig implements IdentifiedDataSerializable, NamedCon
      * @throws IllegalArgumentException if the {@code readBatchSize} is smaller than 1
      */
     public ReliableTopicConfig setReadBatchSize(int readBatchSize) {
-        this.readBatchSize = checkPositive(readBatchSize, "readBatchSize should be positive");
+        this.readBatchSize = checkPositive("readBatchSize", readBatchSize);
         return this;
     }
 
@@ -300,23 +303,13 @@ public class ReliableTopicConfig implements IdentifiedDataSerializable, NamedCon
                 + '}';
     }
 
-    /**
-     * Gets immutable version of this configuration.
-     *
-     * @return immutable version of this configuration
-     * @deprecated this method will be removed in 4.0; it is meant for internal usage only
-     */
-    public ReliableTopicConfig getAsReadOnly() {
-        return new ReliableTopicConfigReadOnly(this);
-    }
-
     @Override
     public int getFactoryId() {
         return ConfigDataSerializerHook.F_ID;
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return ConfigDataSerializerHook.RELIABLE_TOPIC_CONFIG;
     }
 
@@ -324,20 +317,20 @@ public class ReliableTopicConfig implements IdentifiedDataSerializable, NamedCon
     public void writeData(ObjectDataOutput out) throws IOException {
         out.writeObject(executor);
         out.writeInt(readBatchSize);
-        out.writeUTF(name);
+        out.writeString(name);
         out.writeBoolean(statisticsEnabled);
         writeNullableList(listenerConfigs, out);
-        out.writeUTF(topicOverloadPolicy.name());
+        out.writeString(topicOverloadPolicy.name());
     }
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
         executor = in.readObject();
         readBatchSize = in.readInt();
-        name = in.readUTF();
+        name = in.readString();
         statisticsEnabled = in.readBoolean();
         listenerConfigs = readNullableList(in);
-        topicOverloadPolicy = TopicOverloadPolicy.valueOf(in.readUTF());
+        topicOverloadPolicy = TopicOverloadPolicy.valueOf(in.readString());
     }
 
     @Override
@@ -379,37 +372,5 @@ public class ReliableTopicConfig implements IdentifiedDataSerializable, NamedCon
         result = 31 * result + (listenerConfigs != null ? listenerConfigs.hashCode() : 0);
         result = 31 * result + (topicOverloadPolicy != null ? topicOverloadPolicy.hashCode() : 0);
         return result;
-    }
-
-    static class ReliableTopicConfigReadOnly extends ReliableTopicConfig {
-
-        ReliableTopicConfigReadOnly(ReliableTopicConfig config) {
-            super(config);
-        }
-
-        @Override
-        public ReliableTopicConfig setExecutor(Executor executor) {
-            throw new UnsupportedOperationException("This config is read-only");
-        }
-
-        @Override
-        public ReliableTopicConfig setReadBatchSize(int readBatchSize) {
-            throw new UnsupportedOperationException("This config is read-only");
-        }
-
-        @Override
-        public ReliableTopicConfig setStatisticsEnabled(boolean statisticsEnabled) {
-            throw new UnsupportedOperationException("This config is read-only");
-        }
-
-        @Override
-        public ReliableTopicConfig addMessageListenerConfig(ListenerConfig listenerConfig) {
-            throw new UnsupportedOperationException("This config is read-only");
-        }
-
-        @Override
-        public ReliableTopicConfig setTopicOverloadPolicy(TopicOverloadPolicy topicOverloadPolicy) {
-            throw new UnsupportedOperationException("This config is read-only");
-        }
     }
 }

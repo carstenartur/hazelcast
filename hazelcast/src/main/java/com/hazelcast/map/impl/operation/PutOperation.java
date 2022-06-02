@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,21 +17,33 @@
 package com.hazelcast.map.impl.operation;
 
 import com.hazelcast.map.impl.MapDataSerializerHook;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.impl.MutatingOperation;
+import com.hazelcast.internal.serialization.Data;
+import com.hazelcast.spi.impl.operationservice.MutatingOperation;
+
+import static com.hazelcast.map.impl.record.Record.UNSET;
 
 public class PutOperation extends BasePutOperation implements MutatingOperation {
 
     public PutOperation() {
     }
 
-    public PutOperation(String name, Data dataKey, Data value, long ttl, long maxIdle) {
-        super(name, dataKey, value, ttl, maxIdle);
+    public PutOperation(String name, Data dataKey, Data value) {
+        super(name, dataKey, value);
     }
 
     @Override
-    public void run() {
-        oldValue = mapServiceContext.toData(recordStore.put(dataKey, dataValue, ttl, maxIdle));
+    protected void runInternal() {
+        oldValue = mapServiceContext.toData(recordStore.put(dataKey, dataValue, getTtl(), getMaxIdle()));
+    }
+
+    // overridden in extension classes
+    protected long getTtl() {
+        return UNSET;
+    }
+
+    // overridden in extension classes
+    protected long getMaxIdle() {
+        return UNSET;
     }
 
     @Override
@@ -40,7 +52,7 @@ public class PutOperation extends BasePutOperation implements MutatingOperation 
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return MapDataSerializerHook.PUT;
     }
 }

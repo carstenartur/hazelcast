@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,14 @@
 
 package com.hazelcast.query.impl;
 
+import com.hazelcast.config.IndexType;
+import com.hazelcast.internal.monitor.impl.MemberPartitionStateImpl;
+import com.hazelcast.internal.monitor.impl.PerIndexStats;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
-import com.hazelcast.monitor.impl.PerIndexStats;
-import com.hazelcast.nio.serialization.Data;
 import com.hazelcast.query.impl.getters.Extractors;
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -32,27 +33,41 @@ import org.junit.runner.RunWith;
 import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class IndexFirstComponentDecoratorTest {
 
     private InternalSerializationService serializationService;
+    Extractors extractors;
     private InternalIndex expected;
     private InternalIndex actual;
 
     @Before
     public void before() {
         serializationService = new DefaultSerializationServiceBuilder().build();
-        Extractors extractors = Extractors.newBuilder(serializationService).build();
-        expected = new IndexImpl("this", null, true, serializationService, extractors, IndexCopyBehavior.COPY_ON_READ,
-                PerIndexStats.EMPTY);
-        InternalIndex compositeIndex =
-                new IndexImpl("this, __key", new String[]{"this", "__key"}, true, serializationService, extractors,
-                        IndexCopyBehavior.COPY_ON_READ, PerIndexStats.EMPTY);
+        extractors = Extractors.newBuilder(serializationService).build();
+        expected = new IndexImpl(
+            IndexUtils.createTestIndexConfig(IndexType.SORTED, "this"),
+            serializationService,
+            extractors,
+            IndexCopyBehavior.COPY_ON_READ,
+            PerIndexStats.EMPTY,
+            MemberPartitionStateImpl.DEFAULT_PARTITION_COUNT
+        );
+
+        InternalIndex compositeIndex = new IndexImpl(
+            IndexUtils.createTestIndexConfig(IndexType.SORTED, "this", "__key"),
+            serializationService,
+            extractors,
+            IndexCopyBehavior.COPY_ON_READ,
+            PerIndexStats.EMPTY,
+            MemberPartitionStateImpl.DEFAULT_PARTITION_COUNT
+        );
+
         actual = new AttributeIndexRegistry.FirstComponentDecorator(compositeIndex);
 
         for (int i = 0; i < 100; ++i) {
-            expected.putEntry(new Entry(i, i), null, Index.OperationSource.USER);
-            compositeIndex.putEntry(new Entry(i, i), null, Index.OperationSource.USER);
+            expected.putEntry(entry(i, i), null, entry(i, i), Index.OperationSource.USER);
+            compositeIndex.putEntry(entry(i, i), null, entry(i, i), Index.OperationSource.USER);
         }
     }
 
@@ -73,9 +88,6 @@ public class IndexFirstComponentDecoratorTest {
         assertEquals(expected.getRecords(new Comparable[]{-1, -2, -3}), actual.getRecords(new Comparable[]{-1, -2, -3}));
         assertEquals(expected.getRecords(new Comparable[]{100, 101, 102}), actual.getRecords(new Comparable[]{100, 101, 102}));
         assertEquals(expected.getRecords(new Comparable[]{10, 20, 30, 30}), actual.getRecords(new Comparable[]{10, 20, 30, 30}));
-
-        assertEquals(expected.getRecords(Comparison.NOT_EQUAL, 50), actual.getRecords(Comparison.NOT_EQUAL, 50));
-        assertEquals(expected.getRecords(Comparison.NOT_EQUAL, -1), actual.getRecords(Comparison.NOT_EQUAL, -1));
 
         assertEquals(expected.getRecords(Comparison.LESS, 50), actual.getRecords(Comparison.LESS, 50));
         assertEquals(expected.getRecords(Comparison.LESS, 99), actual.getRecords(Comparison.LESS, 99));
@@ -137,46 +149,8 @@ public class IndexFirstComponentDecoratorTest {
         assertEquals(expected.getRecords(-100, true, 200, true), actual.getRecords(-100, true, 200, true));
     }
 
-    private class Entry extends QueryableEntry<Integer, Long> {
-
-        private final int key;
-        private final long value;
-
-        public Entry(int key, long value) {
-            this.key = key;
-            this.value = value;
-        }
-
-        @Override
-        public Long getValue() {
-            return value;
-        }
-
-        @Override
-        public Long setValue(Long value) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public Integer getKey() {
-            return key;
-        }
-
-        @Override
-        public Data getKeyData() {
-            return IndexFirstComponentDecoratorTest.this.serializationService.toData(key);
-        }
-
-        @Override
-        public Data getValueData() {
-            return IndexFirstComponentDecoratorTest.this.serializationService.toData(value);
-        }
-
-        @Override
-        protected Object getTargetObject(boolean key) {
-            return key ? this.key : value;
-        }
-
+    private CachedQueryEntry<?, ?> entry(Object key, Object value) {
+        return new CachedQueryEntry<>(serializationService, serializationService.toData(key), value, extractors);
     }
 
 }

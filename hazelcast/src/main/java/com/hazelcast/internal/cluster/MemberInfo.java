@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,39 +16,34 @@
 
 package com.hazelcast.internal.cluster;
 
+import com.hazelcast.cluster.Address;
+import com.hazelcast.cluster.impl.MemberImpl;
 import com.hazelcast.instance.EndpointQualifier;
-import com.hazelcast.instance.MemberImpl;
 import com.hazelcast.internal.cluster.impl.ClusterDataSerializerHook;
-import com.hazelcast.nio.Address;
+import com.hazelcast.internal.util.UUIDSerializationUtil;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.nio.VersionAware;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.nio.serialization.impl.Versioned;
 import com.hazelcast.version.MemberVersion;
 
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
-import static com.hazelcast.instance.BuildInfoProvider.getBuildInfo;
-import static com.hazelcast.instance.EndpointQualifier.MEMBER;
-import static com.hazelcast.instance.MemberImpl.NA_MEMBER_LIST_JOIN_VERSION;
-import static com.hazelcast.internal.cluster.Versions.V3_10;
-import static com.hazelcast.internal.cluster.Versions.V3_12;
+import static com.hazelcast.cluster.impl.MemberImpl.NA_MEMBER_LIST_JOIN_VERSION;
 import static com.hazelcast.internal.serialization.impl.SerializationUtil.readMap;
 import static com.hazelcast.internal.serialization.impl.SerializationUtil.writeMap;
-import static com.hazelcast.util.MapUtil.createHashMap;
-import static java.util.Collections.singletonMap;
+import static com.hazelcast.internal.util.MapUtil.createHashMap;
 
-public class MemberInfo implements IdentifiedDataSerializable, Versioned {
+public class MemberInfo implements IdentifiedDataSerializable {
 
     private Address address;
-    private String uuid;
+    private UUID uuid;
     private boolean liteMember;
     private MemberVersion version;
-    private Map<String, Object> attributes;
+    private Map<String, String> attributes;
     private int memberListJoinVersion = NA_MEMBER_LIST_JOIN_VERSION;
     // since 3.12
     private Map<EndpointQualifier, Address> addressMap;
@@ -56,22 +51,25 @@ public class MemberInfo implements IdentifiedDataSerializable, Versioned {
     public MemberInfo() {
     }
 
-    public MemberInfo(Address address, String uuid, Map<String, Object> attributes, MemberVersion version) {
-        this(address, uuid, attributes, false, version, NA_MEMBER_LIST_JOIN_VERSION,
-                Collections.<EndpointQualifier, Address>emptyMap());
+    public MemberInfo(Address address, UUID uuid, Map<String, String> attributes, boolean liteMember, MemberVersion version) {
+        this(address, uuid, attributes, liteMember, version, NA_MEMBER_LIST_JOIN_VERSION, Collections.emptyMap());
     }
 
-    public MemberInfo(Address address, String uuid, Map<String, Object> attributes, boolean liteMember, MemberVersion version,
+    public MemberInfo(Address address, UUID uuid, Map<String, String> attributes, boolean liteMember, MemberVersion version,
                       Map<EndpointQualifier, Address> addressMap) {
         this(address, uuid, attributes, liteMember, version, NA_MEMBER_LIST_JOIN_VERSION, addressMap);
     }
 
-    public MemberInfo(Address address, String uuid, Map<String, Object> attributes, boolean liteMember, MemberVersion version,
+    public MemberInfo(Address address, UUID uuid, Map<String, String> attributes, boolean liteMember, MemberVersion version,
+                      boolean isAddressMapExists, Map<EndpointQualifier, Address> addressMap) {
+        this(address, uuid, attributes, liteMember, version, NA_MEMBER_LIST_JOIN_VERSION, addressMap);
+    }
+
+    public MemberInfo(Address address, UUID uuid, Map<String, String> attributes, boolean liteMember, MemberVersion version,
                       int memberListJoinVersion, Map<EndpointQualifier, Address> addressMap) {
         this.address = address;
         this.uuid = uuid;
-        this.attributes = attributes == null || attributes.isEmpty()
-                ? Collections.<String, Object>emptyMap() : new HashMap<String, Object>(attributes);
+        this.attributes = attributes == null || attributes.isEmpty() ? Collections.emptyMap() : new HashMap<>(attributes);
         this.liteMember = liteMember;
         this.version = version;
         this.memberListJoinVersion = memberListJoinVersion;
@@ -91,11 +89,11 @@ public class MemberInfo implements IdentifiedDataSerializable, Versioned {
         return version;
     }
 
-    public String getUuid() {
+    public UUID getUuid() {
         return uuid;
     }
 
-    public Map<String, Object> getAttributes() {
+    public Map<String, String> getAttributes() {
         return attributes;
     }
 
@@ -112,7 +110,7 @@ public class MemberInfo implements IdentifiedDataSerializable, Versioned {
     }
 
     public MemberImpl toMember() {
-        return new MemberImpl.Builder(singletonMap(MEMBER, address))
+        return new MemberImpl.Builder(address)
                 .version(version)
                 .uuid(uuid)
                 .attributes(attributes)
@@ -123,93 +121,62 @@ public class MemberInfo implements IdentifiedDataSerializable, Versioned {
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        address = new Address();
-        address.readData(in);
-        if (in.readBoolean()) {
-            uuid = in.readUTF();
-        }
+        address = in.readObject();
+        uuid = UUIDSerializationUtil.readUUID(in);
         liteMember = in.readBoolean();
         int size = in.readInt();
         if (size > 0) {
             attributes = createHashMap(size);
         }
         for (int i = 0; i < size; i++) {
-            String key = in.readUTF();
-            Object value = in.readObject();
+            String key = in.readString();
+            String value = in.readString();
             attributes.put(key, value);
         }
         version = in.readObject();
-        // RU_COMPAT_3_10
-        // MemberInfo we read may originate:
-        // - from OS/EE 3.11 member -> memberListJoinversion is available
-        // - from EE 3.10:
-        //   - FinalizeJoinOp / MembersUpdateOp: in this case, memberListJoinVersion is available because container
-        //   operations are Versioned themselves
-        //   - as a MembersView response within a NormalResponse from FetchMembersViewOp which is expected to not contain
-        //   memberListJoinVersion because the container object (MembersView) was not Versioned (-> in.getVersion
-        //   is UNKNOWN)
-        if (mustReadMemberListJoinVersion(in)) {
-            memberListJoinVersion = in.readInt();
-        }
-        if (in.getVersion().isGreaterOrEqual(V3_12)) {
-            addressMap = readMap(in);
-        }
+        memberListJoinVersion = in.readInt();
+        addressMap = readMap(in);
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        address.writeData(out);
-        boolean hasUuid = uuid != null;
-        out.writeBoolean(hasUuid);
-        if (hasUuid) {
-            out.writeUTF(uuid);
-        }
+        out.writeObject(address);
+        UUIDSerializationUtil.writeUUID(out, uuid);
         out.writeBoolean(liteMember);
         out.writeInt(attributes == null ? 0 : attributes.size());
         if (attributes != null) {
-            for (Map.Entry<String, Object> entry : attributes.entrySet()) {
-                out.writeUTF(entry.getKey());
-                out.writeObject(entry.getValue());
+            for (Map.Entry<String, String> entry : attributes.entrySet()) {
+                out.writeString(entry.getKey());
+                out.writeString(entry.getValue());
             }
         }
         out.writeObject(version);
-        // MemberInfo always serializes memberListJoinVersion. The output stream will include the
-        // cluster version, since all containing objects are Versioned (including MembersView)
-        // -> a 3.10 member will be able to deserialize it.
         out.writeInt(memberListJoinVersion);
-        if (out.getVersion().isGreaterOrEqual(V3_12)) {
-            writeMap(addressMap, out);
+        writeMap(addressMap, out);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
         }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+
+        MemberInfo that = (MemberInfo) o;
+
+        if (!address.equals(that.address)) {
+            return false;
+        }
+        return uuid != null ? uuid.equals(that.uuid) : that.uuid == null;
     }
 
     @Override
     public int hashCode() {
-        final int prime = 31;
-        int result = 1;
-        result = prime * result + ((address == null) ? 0 : address.hashCode());
+        int result = address.hashCode();
+        result = 31 * result + (uuid != null ? uuid.hashCode() : 0);
         return result;
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-        if (this == obj) {
-            return true;
-        }
-        if (obj == null) {
-            return false;
-        }
-        if (getClass() != obj.getClass()) {
-            return false;
-        }
-        MemberInfo other = (MemberInfo) obj;
-        if (address == null) {
-            if (other.address != null) {
-                return false;
-            }
-        } else if (!address.equals(other.address)) {
-            return false;
-        }
-        return true;
     }
 
     @Override
@@ -228,15 +195,7 @@ public class MemberInfo implements IdentifiedDataSerializable, Versioned {
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return ClusterDataSerializerHook.MEMBER_INFO;
-    }
-
-    // memberListJoinVersion must be read when:
-    // - open source or
-    // - enterprise && stream version >= 3.10
-    private boolean mustReadMemberListJoinVersion(VersionAware versionAware) {
-        return (!getBuildInfo().isEnterprise()
-                || versionAware.getVersion().isGreaterOrEqual(V3_10));
     }
 }

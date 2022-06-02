@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,52 +16,95 @@
 
 package com.hazelcast.query.impl;
 
+import com.hazelcast.config.IndexConfig;
+import com.hazelcast.internal.monitor.impl.PerIndexStats;
 import com.hazelcast.internal.serialization.InternalSerializationService;
-import com.hazelcast.monitor.impl.PerIndexStats;
+import com.hazelcast.query.impl.GlobalIndexPartitionTracker.PartitionStamp;
 import com.hazelcast.query.impl.getters.Extractors;
-
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-
-import static java.util.Collections.newSetFromMap;
 
 /**
  * Provides implementation of on-heap indexes.
  */
 public class IndexImpl extends AbstractIndex {
 
-    private final Set<Integer> indexedPartitions = newSetFromMap(new ConcurrentHashMap<Integer, Boolean>());
+    private final GlobalIndexPartitionTracker partitionTracker;
 
-    public IndexImpl(String name, String[] components, boolean ordered, InternalSerializationService ss, Extractors extractors,
-                     IndexCopyBehavior copyBehavior, PerIndexStats stats) {
-        super(name, components, ordered, ss, extractors, copyBehavior, stats);
+    public IndexImpl(
+            IndexConfig config,
+            InternalSerializationService ss,
+            Extractors extractors,
+            IndexCopyBehavior copyBehavior,
+            PerIndexStats stats,
+            int partitionCount
+    ) {
+        super(config, ss, extractors, copyBehavior, stats);
+
+        partitionTracker = new GlobalIndexPartitionTracker(partitionCount);
     }
 
     @Override
-    protected IndexStore createIndexStore(boolean ordered, PerIndexStats stats) {
-        return ordered ? new OrderedIndexStore(copyBehavior) : new UnorderedIndexStore(copyBehavior);
+    protected IndexStore createIndexStore(IndexConfig config, PerIndexStats stats) {
+        switch (config.getType()) {
+            case SORTED:
+                return new OrderedIndexStore(copyBehavior);
+            case HASH:
+                return new UnorderedIndexStore(copyBehavior);
+            case BITMAP:
+                return new BitmapIndexStore(config);
+            default:
+                throw new IllegalArgumentException("unexpected index type: " + config.getType());
+        }
     }
 
     @Override
-    public void clear() {
+    public final boolean hasPartitionIndexed(int partitionId) {
+        return partitionTracker.isIndexed(partitionId);
+    }
+
+    @Override
+    public final boolean allPartitionsIndexed(int ownedPartitionCount) {
+        // This check guarantees that all partitions are indexed
+        // only if there is no concurrent migrations. Check migration stamp
+        // to detect concurrent migrations if needed.
+        return ownedPartitionCount < 0 || partitionTracker.indexedCount() == ownedPartitionCount;
+    }
+
+    @Override
+    public final void beginPartitionUpdate() {
+        partitionTracker.beginPartitionUpdate();
+    }
+
+    @Override
+    public final void markPartitionAsIndexed(int partitionId) {
+        partitionTracker.partitionIndexed(partitionId);
+    }
+
+    @Override
+    public final void markPartitionAsUnindexed(int partitionId) {
+        partitionTracker.partitionUnindexed(partitionId);
+    }
+
+    @Override
+    public final void clear() {
+        partitionTracker.clear();
+
         super.clear();
-        indexedPartitions.clear();
     }
 
     @Override
-    public boolean hasPartitionIndexed(int partitionId) {
-        return indexedPartitions.contains(partitionId);
+    public final PartitionStamp getPartitionStamp() {
+        return partitionTracker.getPartitionStamp();
     }
 
     @Override
-    public void markPartitionAsIndexed(int partitionId) {
-        assert !indexedPartitions.contains(partitionId);
-        indexedPartitions.add(partitionId);
+    public final boolean validatePartitionStamp(long stamp) {
+        return partitionTracker.validatePartitionStamp(stamp);
     }
 
     @Override
-    public void markPartitionAsUnindexed(int partitionId) {
-        indexedPartitions.remove(partitionId);
+    public String toString() {
+        return "IndexImpl{"
+                + "partitionTracker=" + partitionTracker
+                + "} " + super.toString();
     }
-
 }

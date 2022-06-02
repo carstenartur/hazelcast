@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,11 @@
 
 package com.hazelcast.executor;
 
+import com.hazelcast.cluster.Member;
 import com.hazelcast.core.ExecutionCallback;
 import com.hazelcast.core.IExecutorService;
-import com.hazelcast.core.Member;
-import com.hazelcast.core.MemberSelector;
-import com.hazelcast.monitor.LocalExecutorStats;
-import com.hazelcast.test.AssertTask;
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -52,7 +49,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class SingleNodeTest extends ExecutorServiceTestSupport {
 
     private IExecutorService executor;
@@ -81,19 +78,14 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
     @Test
     public void submitBasicTask() throws Exception {
         Callable<String> task = new BasicTestCallable();
-        Future future = executor.submit(task);
+        Future<String> future = executor.submit(task);
         assertEquals(future.get(), BasicTestCallable.RESULT);
     }
 
     @Test(expected = RejectedExecutionException.class)
     public void alwaysFalseMemberSelector_expectRejection() {
         HazelcastInstanceAwareRunnable task = new HazelcastInstanceAwareRunnable();
-        executor.execute(task, new MemberSelector() {
-            @Override
-            public boolean select(Member member) {
-                return false;
-            }
-        });
+        executor.execute(task, member -> false);
     }
 
     @Test
@@ -131,7 +123,7 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
     @Test(expected = CancellationException.class)
     public void timeOut_thenCancel() throws ExecutionException, InterruptedException {
         SleepingTask task = new SleepingTask(1);
-        Future future = executor.submit(task);
+        Future<?> future = executor.submit(task);
         try {
             future.get(1, TimeUnit.MILLISECONDS);
             fail("Should throw TimeoutException!");
@@ -147,13 +139,13 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
 
     @Test(expected = CancellationException.class)
     public void cancelWhileQueued() throws ExecutionException, InterruptedException {
-        Callable task1 = new SleepingTask(100);
-        Future inProgressFuture = executor.submit(task1);
+        Callable<?> task1 = new SleepingTask(100);
+        Future<?> inProgressFuture = executor.submit(task1);
 
-        Callable task2 = new BasicTestCallable();
+        Callable<?> task2 = new BasicTestCallable();
         // this future should not be an instance of CompletedFuture,
         // because even if we get an exception, isDone is returning true
-        Future queuedFuture = executor.submit(task2);
+        Future<?> queuedFuture = executor.submit(task2);
 
         try {
             assertFalse(queuedFuture.isDone());
@@ -170,7 +162,7 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
     @Test
     public void isDoneAfterGet() throws Exception {
         Callable<String> task = new BasicTestCallable();
-        Future future = executor.submit(task);
+        Future<String> future = executor.submit(task);
         assertEquals(future.get(), BasicTestCallable.RESULT);
         assertTrue(future.isDone());
     }
@@ -191,7 +183,7 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
 
     @Test
     public void issue292() throws Exception {
-        final BlockingQueue<Member> qResponse = new ArrayBlockingQueue<Member>(1);
+        final BlockingQueue<Member> qResponse = new ArrayBlockingQueue<>(1);
         executor.submit(new MemberCheck(), new ExecutionCallback<Member>() {
             public void onResponse(Member response) {
                 qResponse.offer(response);
@@ -222,7 +214,7 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
     @Test
     public void invokeAll() throws Exception {
         // only one task
-        ArrayList<Callable<String>> tasks = new ArrayList<Callable<String>>();
+        ArrayList<Callable<String>> tasks = new ArrayList<>();
         tasks.add(new BasicTestCallable());
         List<Future<String>> futures = executor.invokeAll(tasks);
         assertEquals(futures.size(), 1);
@@ -246,7 +238,7 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
         assertEquals(futures.size(), 1);
         assertEquals(futures.get(0).get(), Boolean.TRUE);
 
-        List<Callable<Boolean>> tasks = new ArrayList<Callable<Boolean>>();
+        List<Callable<Boolean>> tasks = new ArrayList<>();
         for (int i = 0; i < 1000; i++) {
             tasks.add(new SleepingTask(i < 2 ? 0 : 20));
         }
@@ -269,7 +261,7 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
     @Test
     public void invokeAllTimeoutSuccess() throws Exception {
         // only one task
-        ArrayList<Callable<String>> tasks = new ArrayList<Callable<String>>();
+        ArrayList<Callable<String>> tasks = new ArrayList<>();
         tasks.add(new BasicTestCallable());
         List<Future<String>> futures = executor.invokeAll(tasks, 5, TimeUnit.SECONDS);
         assertEquals(futures.size(), 1);
@@ -346,15 +338,12 @@ public class SingleNodeTest extends ExecutorServiceTestSupport {
         } catch (CancellationException ignored) {
         }
 
-        assertTrueEventually(new AssertTask() {
-            @Override
-            public void run() {
-                LocalExecutorStats stats = executor.getLocalExecutorStats();
-                assertEquals(iterations + 1, stats.getStartedTaskCount());
-                assertEquals(iterations, stats.getCompletedTaskCount());
-                assertEquals(0, stats.getPendingTaskCount());
-                assertEquals(1, stats.getCancelledTaskCount());
-            }
+        assertTrueEventually(() -> {
+            LocalExecutorStats stats = executor.getLocalExecutorStats();
+            assertEquals(iterations + 1, stats.getStartedTaskCount());
+            assertEquals(iterations, stats.getCompletedTaskCount());
+            assertEquals(0, stats.getPendingTaskCount());
+            assertEquals(1, stats.getCancelledTaskCount());
         });
     }
 

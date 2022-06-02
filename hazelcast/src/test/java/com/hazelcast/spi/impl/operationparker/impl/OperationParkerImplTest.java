@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,11 @@ package com.hazelcast.spi.impl.operationparker.impl;
 
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
-import com.hazelcast.core.ILock;
+import com.hazelcast.map.IMap;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Assert;
 import org.junit.Test;
@@ -32,8 +32,10 @@ import org.junit.runner.RunWith;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.locks.LockSupport;
 
+import static com.hazelcast.test.Accessors.getNode;
+
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class OperationParkerImplTest extends HazelcastTestSupport {
 
     @Test
@@ -64,7 +66,7 @@ public class OperationParkerImplTest extends HazelcastTestSupport {
         private final int keyCount;
         private final CountDownLatch latch;
 
-        public LockWaitAndUnlockTask(HazelcastInstance hz, int keyCount, CountDownLatch latch) {
+        LockWaitAndUnlockTask(HazelcastInstance hz, int keyCount, CountDownLatch latch) {
             this.hz = hz;
             this.keyCount = keyCount;
             this.latch = latch;
@@ -73,11 +75,12 @@ public class OperationParkerImplTest extends HazelcastTestSupport {
         @Override
         public void run() {
             for (int i = 0; i < keyCount; i++) {
+                IMap<Object, Object> map = hz.getMap("map");
                 try {
-                    ILock lock = hz.getLock("key" + i);
-                    lock.lock();
+                    String key = "key" + i;
+                    map.lock(key);
                     LockSupport.parkNanos(1);
-                    lock.unlock();
+                    map.unlock(key);
                 } catch (HazelcastInstanceNotActiveException ignored) {
                 }
             }

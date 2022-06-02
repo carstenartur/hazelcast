@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,8 @@
 package com.hazelcast.internal.serialization.impl;
 
 import com.hazelcast.internal.cluster.Versions;
+import com.hazelcast.internal.nio.DataReader;
+import com.hazelcast.internal.nio.DataWriter;
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
@@ -24,8 +26,9 @@ import com.hazelcast.nio.VersionAware;
 import com.hazelcast.nio.serialization.DataSerializable;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.nio.serialization.impl.Versioned;
+import com.hazelcast.spi.impl.SerializationServiceSupport;
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.Test;
@@ -40,17 +43,18 @@ import java.util.Set;
 import static com.hazelcast.test.ReflectionsHelper.REFLECTIONS;
 import static com.hazelcast.test.ReflectionsHelper.filterNonConcreteClasses;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
 
 /**
  * Iterates over all {@link DataSerializable} and {@link IdentifiedDataSerializable} classes
  * and checks if they have to implement {@link Versioned}.
  */
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 @SuppressWarnings("WeakerAccess")
 public class DataSerializableImplementsVersionedTest {
 
@@ -135,12 +139,11 @@ public class DataSerializableImplementsVersionedTest {
 
     private boolean isGetVersionCalledOnWrite(DataSerializable dataSerializable) throws IOException {
         ObjectDataOutput out = getObjectDataOutput();
-        when(out.getVersion()).thenReturn(Versions.V3_10);
+        when(out.getVersion()).thenReturn(Versions.V4_0);
 
         try {
             dataSerializable.writeData(out);
-        } catch (NullPointerException ignored) {
-        } catch (UnsupportedOperationException ignored) {
+        } catch (NullPointerException | UnsupportedOperationException | AssertionError ignored) {
         }
 
         return isGetVersionCalled(out);
@@ -148,14 +151,12 @@ public class DataSerializableImplementsVersionedTest {
 
     private boolean isGetVersionCalledOnRead(DataSerializable dataSerializable) throws IOException {
         ObjectDataInput in = getObjectDataInput();
-        when(in.getVersion()).thenReturn(Versions.V3_10);
+        when(in.getVersion()).thenReturn(Versions.V4_0);
 
         try {
             dataSerializable.readData(in);
-        } catch (NullPointerException ignored) {
-        } catch (UnsupportedOperationException ignored) {
-        } catch (IllegalArgumentException ignored) {
-        } catch (ArithmeticException ignored) {
+        } catch (NullPointerException | UnsupportedOperationException
+                | IllegalArgumentException | ArithmeticException ignored) {
         }
 
         return isGetVersionCalled(in);
@@ -172,13 +173,19 @@ public class DataSerializableImplementsVersionedTest {
 
     // overridden in EE
     protected ObjectDataOutput getObjectDataOutput() {
-        ObjectDataOutput output = spy(ObjectDataOutput.class);
-        when(output.getSerializationService()).thenReturn(serializationService);
+        ObjectDataOutput output = mock(ObjectDataOutput.class,
+                withSettings().extraInterfaces(SerializationServiceSupport.class, DataWriter.class));
+        when(((SerializationServiceSupport) output).getSerializationService())
+                .thenReturn(serializationService);
         return output;
     }
 
     // overridden in EE
     protected ObjectDataInput getObjectDataInput() {
-        return spy(ObjectDataInput.class);
+        ObjectDataInput input = mock(ObjectDataInput.class,
+                withSettings().extraInterfaces(SerializationServiceSupport.class, DataReader.class));
+        when(((SerializationServiceSupport) input).getSerializationService())
+                .thenReturn(serializationService);
+        return input;
     }
 }

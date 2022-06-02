@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.internal.management.events;
 
-import com.hazelcast.util.Clock;
+import com.hazelcast.internal.util.Clock;
 
 public abstract class AbstractEventBase implements Event {
     private final long timestamp;

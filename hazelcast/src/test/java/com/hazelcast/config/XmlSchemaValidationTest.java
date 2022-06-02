@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 package com.hazelcast.config;
 
 import com.hazelcast.test.HazelcastParallelClassRunner;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Rule;
 import org.junit.Test;
@@ -32,20 +32,16 @@ import static com.hazelcast.config.XMLConfigBuilderTest.HAZELCAST_START_TAG;
 import static org.hamcrest.Matchers.containsString;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class XmlSchemaValidationTest {
     @Rule
     public ExpectedException rule = ExpectedException.none();
 
     @Test
-    public void testXmlDeniesDuplicateGroupConfig() {
-        expectDuplicateElementError("group");
-        String groupConfig = ""
-                + "    <group>\n"
-                + "        <name>foobar</name>\n"
-                + "        <password>dev-pass</password>\n"
-                + "    </group>\n";
-        buildConfig(HAZELCAST_START_TAG + groupConfig + groupConfig + HAZELCAST_END_TAG);
+    public void testXmlDeniesDuplicateClusterNameConfig() {
+        expectDuplicateElementError("cluster-name");
+        String clusterName = "<cluster-name>foobar</cluster-name>";
+        buildConfig(HAZELCAST_START_TAG + clusterName + clusterName + HAZELCAST_END_TAG);
     }
 
     @Test
@@ -124,19 +120,6 @@ public class XmlSchemaValidationTest {
     }
 
     @Test
-    public void testXmlDeniesDuplicateServicesConfig() {
-        expectDuplicateElementError("services");
-        String servicesConfig = ""
-                + "   <services>\n"
-                + "       <service enabled=\"true\">\n"
-                + "            <name>custom-service</name>\n"
-                + "            <class-name>com.hazelcast.examples.MyService</class-name>\n"
-                + "        </service>\n"
-                + "   </services>";
-        buildConfig(HAZELCAST_START_TAG + servicesConfig + servicesConfig + HAZELCAST_END_TAG);
-    }
-
-    @Test
     public void testXmlDeniesDuplicateSecurityConfig() {
         expectDuplicateElementError("security");
         String securityConfig = "   <security/>\n";
@@ -148,7 +131,7 @@ public class XmlSchemaValidationTest {
         expectDuplicateElementError("member-attributes");
         String memberAttConfig = ""
                 + "    <member-attributes>\n"
-                + "        <attribute name=\"attribute.float\" type=\"float\">1234.5678</attribute>\n"
+                + "        <attribute name=\"attribute\">1234.5678</attribute>\n"
                 + "    </member-attributes>\n";
         buildConfig(HAZELCAST_START_TAG + memberAttConfig + memberAttConfig + HAZELCAST_END_TAG);
     }

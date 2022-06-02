@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,5 +55,9 @@ public final class TestEnvironment {
 
     public static String getSerializedClassNamesPath() {
         return System.getProperty(SAMPLE_SERIALIZED_OBJECTS);
+    }
+
+    public static boolean isSolaris() {
+        return System.getProperty("os.name").startsWith("SunOS");
     }
 }

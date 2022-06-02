@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.hazelcast.aggregation;
 
 import com.hazelcast.internal.serialization.InternalSerializationService;
 import com.hazelcast.map.impl.MapEntrySimple;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.query.impl.QueryableEntry;
 import com.hazelcast.query.impl.getters.Extractors;
 
@@ -240,8 +240,28 @@ final class TestSamples {
             this.key = key;
         }
 
-        void setSerializationService(InternalSerializationService serializationService) {
+        public void setSerializationService(InternalSerializationService serializationService) {
             this.serializationService = serializationService;
+        }
+
+        @Override
+        public K getKeyIfPresent() {
+            throw new UnsupportedOperationException("Should not be called.");
+        }
+
+        @Override
+        public Data getKeyDataIfPresent() {
+            throw new UnsupportedOperationException("Should not be called.");
+        }
+
+        @Override
+        public V getValueIfPresent() {
+            throw new UnsupportedOperationException("Should not be called.");
+        }
+
+        @Override
+        public Data getValueDataIfPresent() {
+            throw new UnsupportedOperationException("Should not be called.");
         }
 
         @Override

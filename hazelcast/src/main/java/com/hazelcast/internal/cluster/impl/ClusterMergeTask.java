@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,14 +17,15 @@
 package com.hazelcast.internal.cluster.impl;
 
 import com.hazelcast.core.HazelcastInstanceNotActiveException;
-import com.hazelcast.instance.LifecycleServiceImpl;
-import com.hazelcast.instance.Node;
+import com.hazelcast.instance.impl.LifecycleServiceImpl;
+import com.hazelcast.instance.impl.Node;
 import com.hazelcast.internal.cluster.ClusterService;
-import com.hazelcast.nio.Disposable;
-import com.hazelcast.spi.CoreService;
-import com.hazelcast.spi.ManagedService;
-import com.hazelcast.spi.SplitBrainHandlerService;
-import com.hazelcast.util.ExceptionUtil;
+import com.hazelcast.internal.nio.Disposable;
+import com.hazelcast.internal.services.CoreService;
+import com.hazelcast.internal.services.ManagedService;
+import com.hazelcast.internal.services.SplitBrainHandlerService;
+import com.hazelcast.internal.util.ExceptionUtil;
+import com.hazelcast.logging.ILogger;
 
 import java.util.Collection;
 import java.util.LinkedList;
@@ -33,7 +34,7 @@ import java.util.concurrent.Future;
 import static com.hazelcast.core.LifecycleEvent.LifecycleState.MERGED;
 import static com.hazelcast.core.LifecycleEvent.LifecycleState.MERGE_FAILED;
 import static com.hazelcast.core.LifecycleEvent.LifecycleState.MERGING;
-import static com.hazelcast.util.EmptyStatement.ignore;
+import static com.hazelcast.internal.util.EmptyStatement.ignore;
 
 /**
  * ClusterMergeTask prepares {@code Node}'s internal state and its services
@@ -77,6 +78,11 @@ class ClusterMergeTask implements Runnable {
                     disposeTasks(coreTasks, nonCoreTasks);
                 }
             }
+
+            ILogger logger = node.getLogger(getClass());
+            if (logger.isFineEnabled()) {
+                logger.fine("Finished merge tasks.");
+            }
         } finally {
             lifecycleService.fireLifecycleEvent(joined ? MERGED : MERGE_FAILED);
         }
@@ -108,7 +114,7 @@ class ClusterMergeTask implements Runnable {
         // - all socket connections will be closed
         // - connection listening thread will stop
         // - no new connection will be established
-        node.networkingService.stop();
+        node.getServer().stop();
 
         // clear waiting operations in queue and notify invocations to retry
         node.nodeEngine.reset();
@@ -117,7 +123,7 @@ class ClusterMergeTask implements Runnable {
     private Collection<Runnable> collectMergeTasks(boolean coreServices) {
         // gather merge tasks from services
         Collection<SplitBrainHandlerService> services = node.nodeEngine.getServices(SplitBrainHandlerService.class);
-        Collection<Runnable> tasks = new LinkedList<Runnable>();
+        Collection<Runnable> tasks = new LinkedList<>();
         for (SplitBrainHandlerService service : services) {
             if (coreServices != isCoreService(service)) {
                 continue;
@@ -148,13 +154,13 @@ class ClusterMergeTask implements Runnable {
 
     private void rejoin() {
         // start connection-manager to setup and accept new connections
-        node.networkingService.start();
+        node.getServer().start();
         // re-join to the target cluster
         node.join();
     }
 
     private void executeMergeTasks(Collection<Runnable> tasks) {
-        Collection<Future> futures = new LinkedList<Future>();
+        Collection<Future> futures = new LinkedList<>();
 
         for (Runnable task : tasks) {
             Future f = node.nodeEngine.getExecutionService().submit(MERGE_TASKS_EXECUTOR, task);

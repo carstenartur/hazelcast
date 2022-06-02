@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,14 +21,9 @@ import com.hazelcast.internal.serialization.impl.ArrayDataSerializableFactory;
 import com.hazelcast.internal.serialization.impl.FactoryIdHelper;
 import com.hazelcast.nio.serialization.DataSerializableFactory;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
-import com.hazelcast.query.PagingPredicate;
-import com.hazelcast.query.PartitionPredicate;
-import com.hazelcast.query.SqlPredicate;
-import com.hazelcast.query.TruePredicate;
 import com.hazelcast.query.impl.CompositeValue;
-import com.hazelcast.query.impl.FalsePredicate;
 import com.hazelcast.query.impl.IndexImpl;
-import com.hazelcast.util.ConstructorFunction;
+import com.hazelcast.internal.util.ConstructorFunction;
 
 import static com.hazelcast.internal.serialization.impl.FactoryIdHelper.PREDICATE_DS_FACTORY;
 import static com.hazelcast.internal.serialization.impl.FactoryIdHelper.PREDICATE_DS_FACTORY_ID;
@@ -149,12 +144,12 @@ public class PredicateDataSerializerHook implements DataSerializerHook {
         };
         constructors[PAGING_PREDICATE] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
             public IdentifiedDataSerializable createNew(Integer arg) {
-                return new PagingPredicate();
+                return new PagingPredicateImpl();
             }
         };
         constructors[PARTITION_PREDICATE] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {
             public IdentifiedDataSerializable createNew(Integer arg) {
-                return new PartitionPredicate();
+                return new PartitionPredicateImpl();
             }
         };
         constructors[NULL_OBJECT] = new ConstructorFunction<Integer, IdentifiedDataSerializable>() {

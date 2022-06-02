@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,13 +20,11 @@ import com.hazelcast.client.impl.protocol.ClientMessage;
 import com.hazelcast.client.impl.protocol.codec.ScheduledExecutorGetAllScheduledFuturesCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractMessageTask;
 import com.hazelcast.client.impl.protocol.task.BlockingMessageTask;
-import com.hazelcast.core.Member;
-import com.hazelcast.instance.EndpointQualifier;
-import com.hazelcast.instance.MemberImpl;
-import com.hazelcast.instance.Node;
+import com.hazelcast.cluster.impl.MemberImpl;
+import com.hazelcast.instance.impl.Node;
 import com.hazelcast.internal.cluster.ClusterService;
-import com.hazelcast.nio.Address;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.internal.nio.Connection;
+import com.hazelcast.internal.partition.IPartitionService;
 import com.hazelcast.scheduledexecutor.ScheduledTaskHandler;
 import com.hazelcast.scheduledexecutor.impl.DistributedScheduledExecutorService;
 import com.hazelcast.scheduledexecutor.impl.InvokeOnMembers;
@@ -35,47 +33,42 @@ import com.hazelcast.scheduledexecutor.impl.operations.GetAllScheduledOnMemberOp
 import com.hazelcast.scheduledexecutor.impl.operations.GetAllScheduledOnPartitionOperationFactory;
 import com.hazelcast.security.permission.ActionConstants;
 import com.hazelcast.security.permission.ScheduledExecutorPermission;
-import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.partition.IPartitionService;
-import com.hazelcast.util.function.Supplier;
+import com.hazelcast.spi.impl.operationservice.Operation;
 
 import java.security.Permission;
 import java.util.Collection;
-import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
-import static com.hazelcast.util.ExceptionUtil.rethrow;
+import static com.hazelcast.internal.util.ExceptionUtil.rethrow;
 
 public class ScheduledExecutorGetAllScheduledMessageTask
-        extends AbstractMessageTask<ScheduledExecutorGetAllScheduledFuturesCodec.RequestParameters>
+        extends AbstractMessageTask<String>
         implements BlockingMessageTask {
-
-    private final boolean advancedNetworkEnabled;
 
     public ScheduledExecutorGetAllScheduledMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
-        this.advancedNetworkEnabled = isAdvancedNetworkEnabled();
     }
 
     @Override
-    protected void processMessage()
-            throws Throwable {
-        Map<Member, List<ScheduledTaskHandler>> scheduledTasks = new LinkedHashMap<Member, List<ScheduledTaskHandler>>();
+    protected void processMessage() {
+        List<ScheduledTaskHandler> scheduledTasks = new LinkedList<>();
         retrieveAllMemberOwnedScheduled(scheduledTasks);
         retrieveAllPartitionOwnedScheduled(scheduledTasks);
-        sendResponse(scheduledTasks.entrySet());
+        sendResponse(scheduledTasks);
     }
 
     @Override
-    protected ScheduledExecutorGetAllScheduledFuturesCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+    protected String decodeClientMessage(ClientMessage clientMessage) {
         return ScheduledExecutorGetAllScheduledFuturesCodec.decodeRequest(clientMessage);
     }
 
     @Override
     protected ClientMessage encodeResponse(Object response) {
         return ScheduledExecutorGetAllScheduledFuturesCodec
-                .encodeResponse((Collection<Map.Entry<Member, List<ScheduledTaskHandler>>>) response);
+                .encodeResponse((Collection<ScheduledTaskHandler>) response);
     }
 
     @Override
@@ -85,12 +78,12 @@ public class ScheduledExecutorGetAllScheduledMessageTask
 
     @Override
     public Permission getRequiredPermission() {
-        return new ScheduledExecutorPermission(parameters.schedulerName, ActionConstants.ACTION_READ);
+        return new ScheduledExecutorPermission(parameters, ActionConstants.ACTION_READ);
     }
 
     @Override
     public String getDistributedObjectName() {
-        return parameters.schedulerName;
+        return parameters;
     }
 
     @Override
@@ -100,13 +93,13 @@ public class ScheduledExecutorGetAllScheduledMessageTask
 
     @Override
     public Object[] getParameters() {
-        return new Object[]{parameters.schedulerName};
+        return new Object[]{parameters};
     }
 
-    private void retrieveAllMemberOwnedScheduled(Map<Member, List<ScheduledTaskHandler>> accumulator) {
+    private void retrieveAllMemberOwnedScheduled(List<ScheduledTaskHandler> accumulator) {
         try {
             InvokeOnMembers invokeOnMembers = new InvokeOnMembers(nodeEngine, getServiceName(),
-                    new GetAllScheduledOnMemberOperationFactory(parameters.schedulerName),
+                    new GetAllScheduledOnMemberOperationFactory(parameters),
                     nodeEngine.getClusterService().getMembers());
             accumulateTaskHandlersAsUrnValues(accumulator, invokeOnMembers.invoke());
         } catch (Exception e) {
@@ -114,17 +107,17 @@ public class ScheduledExecutorGetAllScheduledMessageTask
         }
     }
 
-    private void retrieveAllPartitionOwnedScheduled(Map<Member, List<ScheduledTaskHandler>> accumulator) {
+    private void retrieveAllPartitionOwnedScheduled(List<ScheduledTaskHandler> accumulator) {
         try {
             accumulateTaskHandlersAsUrnValues(accumulator, nodeEngine.getOperationService().invokeOnAllPartitions(
-                    getServiceName(), new GetAllScheduledOnPartitionOperationFactory(parameters.schedulerName)));
+                    getServiceName(), new GetAllScheduledOnPartitionOperationFactory(parameters)));
         } catch (Throwable t) {
             throw rethrow(t);
         }
     }
 
     @SuppressWarnings("unchecked")
-    private void accumulateTaskHandlersAsUrnValues(Map<Member, List<ScheduledTaskHandler>> accumulator,
+    private void accumulateTaskHandlersAsUrnValues(List<ScheduledTaskHandler> accumulator,
                                                    Map<?, ?> taskHandlersMap) {
 
         ClusterService clusterService = nodeEngine.getClusterService();
@@ -138,49 +131,11 @@ public class ScheduledExecutorGetAllScheduledMessageTask
             } else {
                 owner = (MemberImpl) key;
             }
-
-            owner = translateMemberAddress(owner);
-
             List<ScheduledTaskHandler> handlers = (List<ScheduledTaskHandler>) entry.getValue();
-            translateTaskHandlerAddresses(handlers);
-
-            if (accumulator.containsKey(owner)) {
-                List<ScheduledTaskHandler> memberUrns = accumulator.get(owner);
-                memberUrns.addAll(handlers);
-            } else {
-                accumulator.put(owner, handlers);
+            for (ScheduledTaskHandler handler : handlers) {
+                ScheduledTaskHandlerAccessor.setUuid(handler, owner.getUuid());
             }
-        }
-    }
-
-    private MemberImpl translateMemberAddress(MemberImpl member) {
-        if (!advancedNetworkEnabled) {
-            return member;
-        }
-
-        Address clientAddress = member.getAddressMap().get(EndpointQualifier.CLIENT);
-
-        MemberImpl result = new MemberImpl.Builder(clientAddress)
-                .version(member.getVersion())
-                .uuid(member.getUuid())
-                .localMember(member.localMember())
-                .liteMember(member.isLiteMember())
-                .memberListJoinVersion(member.getMemberListJoinVersion())
-                .attributes(member.getAttributes())
-                .build();
-        return result;
-    }
-
-    private void translateTaskHandlerAddresses(List<ScheduledTaskHandler> handlers) {
-        if (!advancedNetworkEnabled) {
-            return;
-        }
-
-        for (ScheduledTaskHandler handler : handlers) {
-            if (handler.getAddress() != null) {
-                ScheduledTaskHandlerAccessor.setAddress(handler,
-                        clientEngine.clientAddressOf(handler.getAddress()));
-            }
+            accumulator.addAll(handlers);
         }
     }
 

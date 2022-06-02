@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,26 +16,26 @@
 
 package com.hazelcast.spi.impl.operationservice.impl;
 
-import com.hazelcast.instance.Node;
+import com.hazelcast.instance.impl.Node;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
 import com.hazelcast.internal.partition.InternalPartition;
 import com.hazelcast.internal.partition.InternalPartitionService;
 import com.hazelcast.internal.partition.PartitionReplica;
 import com.hazelcast.internal.partition.PartitionReplicaVersionManager;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.nio.serialization.Data;
-import com.hazelcast.spi.BackupAwareOperation;
-import com.hazelcast.spi.FragmentedMigrationAwareService;
-import com.hazelcast.spi.Operation;
-import com.hazelcast.spi.ServiceNamespace;
-import com.hazelcast.spi.ServiceNamespaceAware;
+import com.hazelcast.internal.serialization.Data;
+import com.hazelcast.internal.partition.FragmentedMigrationAwareService;
+import com.hazelcast.spi.impl.operationservice.BackupAwareOperation;
+import com.hazelcast.spi.impl.operationservice.Operation;
+import com.hazelcast.internal.services.ServiceNamespace;
+import com.hazelcast.internal.services.ServiceNamespaceAware;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 import com.hazelcast.spi.impl.operationservice.TargetAware;
 import com.hazelcast.spi.impl.operationservice.impl.operations.Backup;
 
 import static com.hazelcast.internal.partition.InternalPartition.MAX_BACKUP_COUNT;
-import static com.hazelcast.spi.OperationAccessor.hasActiveInvocation;
-import static com.hazelcast.spi.OperationAccessor.setCallId;
+import static com.hazelcast.spi.impl.operationservice.OperationAccessor.hasActiveInvocation;
+import static com.hazelcast.spi.impl.operationservice.OperationAccessor.setCallId;
 import static java.lang.Math.min;
 
 /**
@@ -66,9 +66,8 @@ final class OperationBackupHandler {
      *
      * @param op the Operation to backup.
      * @return the number of ACKS required to complete the invocation.
-     * @throws Exception if there is any exception sending the backups.
      */
-    int sendBackups(Operation op) throws Exception {
+    int sendBackups(Operation op) {
         if (!(op instanceof BackupAwareOperation)) {
             return 0;
         }
@@ -81,7 +80,7 @@ final class OperationBackupHandler {
         return backupAcks;
     }
 
-    int sendBackups0(BackupAwareOperation backupAwareOp) throws Exception {
+    int sendBackups0(BackupAwareOperation backupAwareOp) {
         int requestedSyncBackups = requestedSyncBackups(backupAwareOp);
         int requestedAsyncBackups = requestedAsyncBackups(backupAwareOp);
         int requestedTotalBackups = requestedTotalBackups(backupAwareOp);
@@ -278,7 +277,7 @@ final class OperationBackupHandler {
     private Operation getBackupOperation(BackupAwareOperation backupAwareOp) {
         Operation backupOp = backupAwareOp.getBackupOperation();
         if (backupOp == null) {
-            throw new IllegalArgumentException("Backup operation should not be null! " + backupAwareOp);
+            throw new IllegalArgumentException("Backup operation must not be null! " + backupAwareOp);
         }
         if (ASSERTION_ENABLED) {
             checkServiceNamespaces(backupAwareOp, backupOp);
@@ -327,14 +326,14 @@ final class OperationBackupHandler {
         Operation op = (Operation) backupAwareOp;
         Backup backup;
         if (backupOp instanceof Operation) {
-            backup = new Backup((Operation) backupOp, op.getCallerAddress(), replicaVersions, respondBack);
+            backup = new Backup((Operation) backupOp, op.getCallerAddress(), replicaVersions, respondBack, op.getClientCallId());
         } else if (backupOp instanceof Data) {
-            backup = new Backup((Data) backupOp, op.getCallerAddress(), replicaVersions, respondBack);
+            backup = new Backup((Data) backupOp, op.getCallerAddress(), replicaVersions, respondBack, op.getClientCallId());
         } else {
             throw new IllegalArgumentException("Only 'Data' or 'Operation' typed backup operation is supported!");
         }
 
-        backup.setPartitionId(op.getPartitionId()).setReplicaIndex(replicaIndex);
+        backup.setPartitionId(op.getPartitionId()).setReplicaIndex(replicaIndex).setCallerUuid(op.getCallerUuid());
         if (hasActiveInvocation(op)) {
             setCallId(backup, op.getCallId());
         }

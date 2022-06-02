@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,11 @@
 package com.hazelcast.internal.cluster.impl;
 
 import com.hazelcast.instance.BuildInfoProvider;
-import com.hazelcast.instance.MemberImpl;
-import com.hazelcast.nio.Address;
+import com.hazelcast.cluster.impl.MemberImpl;
+import com.hazelcast.cluster.Address;
 import com.hazelcast.test.HazelcastParallelClassRunner;
 import com.hazelcast.test.HazelcastTestSupport;
-import com.hazelcast.test.annotation.ParallelTest;
+import com.hazelcast.test.annotation.ParallelJVMTest;
 import com.hazelcast.test.annotation.QuickTest;
 import com.hazelcast.version.MemberVersion;
 import org.junit.Before;
@@ -39,11 +39,11 @@ import static com.hazelcast.cluster.memberselector.MemberSelectors.DATA_MEMBER_S
 import static com.hazelcast.cluster.memberselector.MemberSelectors.LITE_MEMBER_SELECTOR;
 import static com.hazelcast.cluster.memberselector.MemberSelectors.NON_LOCAL_MEMBER_SELECTOR;
 import static com.hazelcast.cluster.memberselector.MemberSelectors.and;
-import static com.hazelcast.util.UuidUtil.newUnsecureUuidString;
+import static com.hazelcast.internal.util.UuidUtil.newUnsecureUUID;
 import static org.junit.Assert.assertEquals;
 
 @RunWith(HazelcastParallelClassRunner.class)
-@Category({QuickTest.class, ParallelTest.class})
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class MemberSelectingIteratorTest extends HazelcastTestSupport {
 
     private MemberImpl thisMember;
@@ -59,17 +59,17 @@ public class MemberSelectingIteratorTest extends HazelcastTestSupport {
             throws Exception {
         MemberVersion version = new MemberVersion(BuildInfoProvider.getBuildInfo().getVersion());
         thisMember = new MemberImpl.Builder(new Address("localhost", 5701)).version(version).localMember(true)
-                .uuid(newUnsecureUuidString()).liteMember(true).build();
-        matchingMember = new MemberImpl.Builder(new Address("localhost", 5702)).version(version).uuid(newUnsecureUuidString())
+                .uuid(newUnsecureUUID()).liteMember(true).build();
+        matchingMember = new MemberImpl.Builder(new Address("localhost", 5702)).version(version).uuid(newUnsecureUUID())
                 .liteMember(true).build();
-        matchingMember2 = new MemberImpl.Builder(new Address("localhost", 5703)).version(version).uuid(newUnsecureUuidString())
+        matchingMember2 = new MemberImpl.Builder(new Address("localhost", 5703)).version(version).uuid(newUnsecureUUID())
                 .liteMember(true).build();
-        nonMatchingMember = new MemberImpl.Builder(new Address("localhost", 5704)).version(version).uuid(newUnsecureUuidString())
+        nonMatchingMember = new MemberImpl.Builder(new Address("localhost", 5704)).version(version).uuid(newUnsecureUUID())
                 .build();
     }
 
     private Set<MemberImpl> createMembers() {
-        final Set<MemberImpl> members = new LinkedHashSet<MemberImpl>();
+        Set<MemberImpl> members = new LinkedHashSet<>();
         members.add(thisMember);
         members.add(matchingMember);
         members.add(nonMatchingMember);
@@ -79,9 +79,9 @@ public class MemberSelectingIteratorTest extends HazelcastTestSupport {
 
     @Test
     public void testSelectingLiteMembersWithThisAddress() {
-        final Set<MemberImpl> members = createMembers();
-        final Iterator<MemberImpl> iterator = new MemberSelectingCollection<MemberImpl>(members, LITE_MEMBER_SELECTOR).iterator();
-        final Set<MemberImpl> filteredMembers = new HashSet<MemberImpl>();
+        Set<MemberImpl> members = createMembers();
+        Iterator<MemberImpl> iterator = new MemberSelectingCollection<>(members, LITE_MEMBER_SELECTOR).iterator();
+        Set<MemberImpl> filteredMembers = new HashSet<>();
 
         while (iterator.hasNext()) {
             filteredMembers.add(iterator.next());
@@ -95,10 +95,10 @@ public class MemberSelectingIteratorTest extends HazelcastTestSupport {
 
     @Test
     public void testSelectingLiteMembersWithoutThisAddress() {
-        final Set<MemberImpl> members = createMembers();
-        final Iterator<MemberImpl> iterator = new MemberSelectingCollection<MemberImpl>(members,
+        Set<MemberImpl> members = createMembers();
+        Iterator<MemberImpl> iterator = new MemberSelectingCollection<>(members,
                 and(LITE_MEMBER_SELECTOR, NON_LOCAL_MEMBER_SELECTOR)).iterator();
-        final Set<MemberImpl> filteredMembers = new HashSet<MemberImpl>();
+        Set<MemberImpl> filteredMembers = new HashSet<>();
 
         while (iterator.hasNext()) {
             filteredMembers.add(iterator.next());
@@ -111,9 +111,9 @@ public class MemberSelectingIteratorTest extends HazelcastTestSupport {
 
     @Test
     public void testSelectingMembersWithThisAddress() {
-        final Set<MemberImpl> members = createMembers();
-        final Iterator<MemberImpl> iterator = new MemberSelectingCollection<MemberImpl>(members, DATA_MEMBER_SELECTOR).iterator();
-        final Set<MemberImpl> filteredMembers = new HashSet<MemberImpl>();
+        Set<MemberImpl> members = createMembers();
+        Iterator<MemberImpl> iterator = new MemberSelectingCollection<>(members, DATA_MEMBER_SELECTOR).iterator();
+        Set<MemberImpl> filteredMembers = new HashSet<>();
 
         while (iterator.hasNext()) {
             filteredMembers.add(iterator.next());
@@ -125,10 +125,10 @@ public class MemberSelectingIteratorTest extends HazelcastTestSupport {
 
     @Test
     public void testSelectingMembersWithoutThisAddress() {
-        final Set<MemberImpl> members = createMembers();
-        final Iterator<MemberImpl> iterator = new MemberSelectingCollection<MemberImpl>(members,
+        Set<MemberImpl> members = createMembers();
+        Iterator<MemberImpl> iterator = new MemberSelectingCollection<>(members,
                 and(DATA_MEMBER_SELECTOR, NON_LOCAL_MEMBER_SELECTOR)).iterator();
-        final Set<MemberImpl> filteredMembers = new HashSet<MemberImpl>();
+        Set<MemberImpl> filteredMembers = new HashSet<>();
 
         while (iterator.hasNext()) {
             filteredMembers.add(iterator.next());
@@ -140,8 +140,8 @@ public class MemberSelectingIteratorTest extends HazelcastTestSupport {
 
     @Test
     public void testHasNextCalledTwice() {
-        final Set<MemberImpl> members = createMembers();
-        final Iterator<MemberImpl> iterator = new MemberSelectingCollection<MemberImpl>(members,
+        Set<MemberImpl> members = createMembers();
+        Iterator<MemberImpl> iterator = new MemberSelectingCollection<>(members,
                 and(LITE_MEMBER_SELECTOR, NON_LOCAL_MEMBER_SELECTOR)).iterator();
 
         while (iterator.hasNext()) {
@@ -152,8 +152,8 @@ public class MemberSelectingIteratorTest extends HazelcastTestSupport {
 
     @Test(expected = NoSuchElementException.class)
     public void testIterationFailsAfterConsumed() {
-        final Set<MemberImpl> members = createMembers();
-        final Iterator<MemberImpl> iterator = new MemberSelectingCollection<MemberImpl>(members,
+        Set<MemberImpl> members = createMembers();
+        Iterator<MemberImpl> iterator = new MemberSelectingCollection<>(members,
                 and(LITE_MEMBER_SELECTOR, NON_LOCAL_MEMBER_SELECTOR)).iterator();
 
         while (iterator.hasNext()) {

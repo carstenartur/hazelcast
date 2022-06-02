@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,51 @@
 
 package com.hazelcast.nio.serialization.compatibility;
 
+import com.hazelcast.aggregation.Aggregators;
 import com.hazelcast.core.EntryEventType;
 import com.hazelcast.internal.serialization.impl.HeapData;
-import com.hazelcast.nio.serialization.Data;
+import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.nio.serialization.Portable;
+import com.hazelcast.projection.Projections;
+import com.hazelcast.query.Predicates;
+import com.hazelcast.query.SampleTestObjects;
 
 import java.io.Externalizable;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.CharBuffer;
+import java.time.LocalTime;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.AbstractMap;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
+import java.util.Optional;
+import java.util.PriorityQueue;
+import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.DelayQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.LinkedTransferQueue;
+import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.SynchronousQueue;
 
 import static java.util.Arrays.asList;
 
@@ -67,6 +98,9 @@ class ReferenceObjects {
     static int anInt = 56789;
     static long aLong = -50992225L;
     static String aString;
+    static String anSqlString = "this > 5 AND this < 100";
+    static UUID aUUID = new UUID(aLong, anInt);
+    static String aSmallString = "😊 Hello Приве́т नमस्ते שָׁלוֹם";
 
     static {
         CharBuffer cb = CharBuffer.allocate(Character.MAX_VALUE);
@@ -100,15 +134,18 @@ class ReferenceObjects {
     static CustomByteArraySerializable aCustomByteArraySerializable = new CustomByteArraySerializable(anInt, aFloat);
     static Portable[] portables = {anInnerPortable, anInnerPortable, anInnerPortable};
 
+    static AbstractMap.SimpleEntry aSimpleMapEntry = new AbstractMap.SimpleEntry(aSmallString, anInnerPortable);
+    static AbstractMap.SimpleImmutableEntry aSimpleImmutableMapEntry = new AbstractMap.SimpleImmutableEntry(aSmallString,
+            anInnerPortable);
+
     static AnIdentifiedDataSerializable anIdentifiedDataSerializable = new AnIdentifiedDataSerializable(
-            aBoolean, aByte, aChar, aDouble, aShort, aFloat, anInt, aLong, aString,
+            aBoolean, aByte, aChar, aDouble, aShort, aFloat, anInt, aLong, aSmallString,
             booleans, bytes, chars, doubles, shorts, floats, ints, longs, strings,
-            anInnerPortable,
-            (AnIdentifiedDataSerializable) null,
+            anInnerPortable, null,
             aCustomStreamSerializable,
             aCustomByteArraySerializable, aData);
     static APortable aPortable = new APortable(
-            aBoolean, aByte, aChar, aDouble, aShort, aFloat, anInt, aLong, aString, anInnerPortable,
+            aBoolean, aByte, aChar, aDouble, aShort, aFloat, anInt, aLong, aSmallString, anInnerPortable,
             booleans, bytes, chars, doubles, shorts, floats, ints, longs, strings, portables,
             anIdentifiedDataSerializable,
             aCustomStreamSerializable,
@@ -116,39 +153,148 @@ class ReferenceObjects {
 
     static Date aDate;
 
+    static LocalDate aLocalDate;
+    static LocalTime aLocalTime;
+    static LocalDateTime aLocalDateTime;
+    static OffsetDateTime aOffsetDateTime;
+
     static {
         Calendar calendar = Calendar.getInstance();
         calendar.set(1990, Calendar.FEBRUARY, 1, 0, 0, 0);
         calendar.set(Calendar.MILLISECOND, 0);
         calendar.set(Calendar.ZONE_OFFSET, 0);
         aDate = calendar.getTime();
+        aLocalDate = LocalDate.of(2021, 6, 28);
+        aLocalTime = LocalTime.of(11, 22, 41, 123456789);
+        aLocalDateTime = LocalDateTime.of(aLocalDate, aLocalTime);
+        aOffsetDateTime = OffsetDateTime.of(aLocalDateTime, ZoneOffset.ofHours(18));
     }
 
     static BigInteger aBigInteger = new BigInteger("1314432323232411");
     static BigDecimal aBigDecimal = new BigDecimal(31231);
     static Class aClass = BigDecimal.class;
+    static Optional<String> aFullOptional = Optional.of("SERIALIZEDSTRING");
+    static Optional<String> anEmptyOptional = Optional.empty();
     static Enum anEnum = EntryEventType.ADDED;
 
     static Serializable serializable = new AJavaSerialiazable(anInt, aFloat);
     static Externalizable externalizable = new AJavaExternalizable(anInt, aFloat);
 
-    static ArrayList arrayList = new ArrayList(asList(
-            aNullObject, aBoolean, aByte, aChar, aDouble, aShort, aFloat, anInt, aLong, aString, anInnerPortable,
+    static Comparable<SampleTestObjects.ValueType> aComparable = new SampleTestObjects.ValueType(aSmallString);
+
+    static ArrayList nonNullList = new ArrayList(asList(
+            aBoolean, aByte, aChar, aDouble, aShort, aFloat, anInt, aLong, aSmallString, anInnerPortable,
             booleans, bytes, chars, doubles, shorts, floats, ints, longs, strings,
             aCustomStreamSerializable, aCustomByteArraySerializable,
             anIdentifiedDataSerializable, aPortable,
-            aDate, aBigInteger, aBigDecimal, aClass, anEnum,
+            aDate, aLocalDate, aLocalTime, aLocalDateTime, aOffsetDateTime, aBigInteger, aBigDecimal, aClass,
+            anEmptyOptional, aFullOptional, anEnum, aSimpleMapEntry, aSimpleImmutableMapEntry,
             serializable, externalizable));
 
+    static ArrayList arrayList = new ArrayList(asList(aNullObject, nonNullList));
+
+    static HashMap hashMap = new HashMap();
+
+    static {
+        nonNullList.forEach(e -> {
+            if (e != null) {
+                if (e instanceof String[] || e instanceof long[] || e instanceof int[] || e instanceof float[]
+                        || e instanceof short[] || e instanceof double[] || e instanceof char[] || e instanceof byte[]
+                        || e instanceof boolean[]) {
+                    // skip these arrays since their equals methods don't work as expected inside the map equals method
+                } else {
+                    hashMap.put(e.getClass(), e);
+                }
+            }
+        });
+    }
+
     static LinkedList linkedList = new LinkedList(arrayList);
+    static CopyOnWriteArrayList copyOnWriteArrayList = new CopyOnWriteArrayList(arrayList);
+
+    static ConcurrentSkipListMap concurrentSkipListMap = new ConcurrentSkipListMap();
+    static ConcurrentHashMap concurrentHashMap = new ConcurrentHashMap(hashMap);
+    static LinkedHashMap linkedHashMap = new LinkedHashMap(hashMap);
+    static TreeMap treeMap = new TreeMap();
+
+    static HashSet hashSet = new HashSet(arrayList);
+    static TreeSet treeSet = new TreeSet();
+    static LinkedHashSet linkedHashSet = new LinkedHashSet(arrayList);
+    static CopyOnWriteArraySet copyOnWriteArraySet = new CopyOnWriteArraySet(arrayList);
+    static ConcurrentSkipListSet concurrentSkipListSet = new ConcurrentSkipListSet();
+    static ArrayDeque arrayDeque = new ArrayDeque(nonNullList);
+    static LinkedBlockingQueue linkedBlockingQueue = new LinkedBlockingQueue(nonNullList);
+    static ArrayBlockingQueue arrayBlockingQueue = new ArrayBlockingQueue(5);
+    static PriorityBlockingQueue priorityBlockingQueue = new PriorityBlockingQueue();
+    static PriorityQueue priorityQueue = new PriorityQueue();
+    static {
+        arrayBlockingQueue.offer(aPortable);
+        priorityBlockingQueue.offer(anInt);
+        priorityQueue.offer(aSmallString);
+    }
+    static DelayQueue delayQueue = new DelayQueue();
+    static SynchronousQueue synchronousQueue = new SynchronousQueue();
+    static LinkedTransferQueue linkedTransferQueue = new LinkedTransferQueue(nonNullList);
 
     static Object[] allTestObjects = {
-            aNullObject, aBoolean, aByte, aChar, aDouble, aShort, aFloat, anInt, aLong, aString, anInnerPortable,
-            booleans, bytes, chars, doubles, shorts, floats, ints, longs, strings,
+            aNullObject, aBoolean, aByte, aChar, aDouble, aShort, aFloat, anInt, aLong, aString, aUUID, anInnerPortable,
+            aSimpleMapEntry, aSimpleImmutableMapEntry, booleans, bytes, chars, doubles, shorts, floats, ints, longs, strings,
             aCustomStreamSerializable, aCustomByteArraySerializable,
             anIdentifiedDataSerializable, aPortable,
-            aDate, aBigInteger, aBigDecimal, aClass, anEnum,
-            serializable, externalizable,
-            arrayList, linkedList,
+            aDate, aLocalDate, aLocalTime, aLocalDateTime, aOffsetDateTime, aBigInteger, aBigDecimal, aClass,
+            aFullOptional, anEnum, serializable, externalizable,
+            arrayList, linkedList, copyOnWriteArrayList, concurrentSkipListMap, concurrentHashMap, linkedHashMap, treeMap,
+            hashSet, treeSet, linkedHashSet, copyOnWriteArraySet, concurrentSkipListSet, arrayDeque, linkedBlockingQueue,
+            arrayBlockingQueue, priorityQueue, priorityBlockingQueue, delayQueue, synchronousQueue, linkedTransferQueue,
+
+            // predicates
+            Predicates.alwaysTrue(),
+            Predicates.alwaysFalse(),
+            Predicates.sql(anSqlString),
+            Predicates.equal(aSmallString, aComparable),
+            Predicates.notEqual(aSmallString, aComparable),
+            Predicates.greaterThan(aSmallString, aComparable),
+            Predicates.between(aSmallString, aComparable, aComparable),
+            Predicates.like(aSmallString, aSmallString),
+            Predicates.ilike(aSmallString, aSmallString),
+            Predicates.in(aSmallString, aComparable, aComparable),
+            Predicates.regex(aSmallString, aSmallString),
+            Predicates.partitionPredicate(aComparable, Predicates.greaterThan(aSmallString, aComparable)),
+            Predicates.and(Predicates.sql(anSqlString),
+                    Predicates.equal(aSmallString, aComparable),
+                    Predicates.notEqual(aSmallString, aComparable),
+                    Predicates.greaterThan(aSmallString, aComparable),
+                    Predicates.greaterEqual(aSmallString, aComparable)),
+            Predicates.or(Predicates.sql(anSqlString),
+                    Predicates.equal(aSmallString, aComparable),
+                    Predicates.notEqual(aSmallString, aComparable),
+                    Predicates.greaterThan(aSmallString, aComparable),
+                    Predicates.greaterEqual(aSmallString, aComparable)),
+            Predicates.instanceOf(aCustomStreamSerializable.getClass()),
+
+            // Aggregators
+            Aggregators.distinct(aSmallString),
+            Aggregators.integerMax(aSmallString),
+            Aggregators.maxBy(aSmallString),
+            Aggregators.comparableMin(aSmallString),
+            Aggregators.minBy(aSmallString),
+            Aggregators.count(aSmallString),
+            Aggregators.numberAvg(aSmallString),
+            Aggregators.integerAvg(aSmallString),
+            Aggregators.longAvg(aSmallString),
+            Aggregators.doubleAvg(aSmallString),
+            Aggregators.bigIntegerAvg(aSmallString),
+            Aggregators.bigDecimalAvg(aSmallString),
+            Aggregators.integerSum(aSmallString),
+            Aggregators.longSum(aSmallString),
+            Aggregators.doubleSum(aSmallString),
+            Aggregators.fixedPointSum(aSmallString),
+            Aggregators.floatingPointSum(aSmallString),
+            Aggregators.bigDecimalSum(aSmallString),
+
+            // projections
+            Projections.singleAttribute(aSmallString),
+            Projections.multiAttribute(aSmallString, aSmallString, anSqlString),
+            Projections.identity()
     };
 }

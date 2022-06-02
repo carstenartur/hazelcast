@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@
 
 package com.hazelcast.internal.cluster.impl.operations;
 
-import com.hazelcast.cluster.Joiner;
-import com.hazelcast.cluster.impl.TcpIpJoiner;
-import com.hazelcast.instance.Node;
+import com.hazelcast.internal.cluster.Joiner;
+import com.hazelcast.internal.cluster.impl.TcpIpJoiner;
+import com.hazelcast.instance.impl.Node;
 import com.hazelcast.internal.cluster.impl.ClusterDataSerializerHook;
 import com.hazelcast.internal.cluster.impl.ClusterServiceImpl;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.nio.Address;
+import com.hazelcast.cluster.Address;
 import com.hazelcast.spi.impl.NodeEngineImpl;
 
 public class JoinMastershipClaimOp extends AbstractJoinOperation {
@@ -57,7 +57,7 @@ public class JoinMastershipClaimOp extends AbstractJoinOperation {
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return ClusterDataSerializerHook.MASTER_CLAIM;
     }
 }

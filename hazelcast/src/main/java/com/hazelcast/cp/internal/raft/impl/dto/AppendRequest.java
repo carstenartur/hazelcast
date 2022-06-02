@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 
 package com.hazelcast.cp.internal.raft.impl.dto;
 
-import com.hazelcast.core.Endpoint;
+import com.hazelcast.cp.internal.raft.impl.RaftEndpoint;
 import com.hazelcast.cp.internal.raft.impl.RaftDataSerializerHook;
 import com.hazelcast.cp.internal.raft.impl.log.LogEntry;
 import com.hazelcast.nio.ObjectDataInput;
@@ -39,28 +39,30 @@ import java.util.Arrays;
  */
 public class AppendRequest implements IdentifiedDataSerializable {
 
-    private Endpoint leader;
+    private RaftEndpoint leader;
     private int term;
     private int prevLogTerm;
     private long prevLogIndex;
     private long leaderCommitIndex;
     private LogEntry[] entries;
+    private long queryRound;
 
     public AppendRequest() {
     }
 
     @SuppressFBWarnings("EI_EXPOSE_REP2")
-    public AppendRequest(Endpoint leader, int term, int prevLogTerm, long prevLogIndex, long leaderCommitIndex,
-            LogEntry[] entries) {
-        this.term = term;
+    public AppendRequest(RaftEndpoint leader, int term, int prevLogTerm, long prevLogIndex, long leaderCommitIndex,
+            LogEntry[] entries, long queryRound) {
         this.leader = leader;
+        this.term = term;
         this.prevLogTerm = prevLogTerm;
         this.prevLogIndex = prevLogIndex;
         this.leaderCommitIndex = leaderCommitIndex;
         this.entries = entries;
+        this.queryRound = queryRound;
     }
 
-    public Endpoint leader() {
+    public RaftEndpoint leader() {
         return leader;
     }
 
@@ -89,13 +91,17 @@ public class AppendRequest implements IdentifiedDataSerializable {
         return entries.length;
     }
 
+    public long queryRound() {
+        return queryRound;
+    }
+
     @Override
     public int getFactoryId() {
         return RaftDataSerializerHook.F_ID;
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftDataSerializerHook.APPEND_REQUEST;
     }
 
@@ -111,6 +117,8 @@ public class AppendRequest implements IdentifiedDataSerializable {
         for (LogEntry entry : entries) {
             out.writeObject(entry);
         }
+
+        out.writeLong(queryRound);
     }
 
     @Override
@@ -126,13 +134,15 @@ public class AppendRequest implements IdentifiedDataSerializable {
         for (int i = 0; i < len; i++) {
             entries[i] = in.readObject();
         }
+
+        queryRound = in.readLong();
     }
 
     @Override
     public String toString() {
         return "AppendRequest{" + "leader=" + leader + ", term=" + term + ", prevLogTerm=" + prevLogTerm
-                + ", prevLogIndex=" + prevLogIndex + ", leaderCommitIndex=" + leaderCommitIndex + ", entries=" + Arrays
-                .toString(entries) + '}';
+                + ", prevLogIndex=" + prevLogIndex + ", leaderCommitIndex=" + leaderCommitIndex + ", queryRound=" + queryRound
+                + ", entries=" + Arrays.toString(entries) + '}';
     }
 
 }

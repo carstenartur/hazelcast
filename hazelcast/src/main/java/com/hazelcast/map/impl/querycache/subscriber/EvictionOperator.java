@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,9 +23,8 @@ import com.hazelcast.internal.eviction.EvictionListener;
 import com.hazelcast.internal.eviction.impl.evaluator.EvictionPolicyEvaluator;
 import com.hazelcast.internal.eviction.impl.strategy.sampling.SamplingEvictionStrategy;
 import com.hazelcast.map.impl.querycache.subscriber.record.QueryCacheRecord;
-import com.hazelcast.nio.serialization.Data;
 
-import static com.hazelcast.internal.config.ConfigValidator.checkEvictionConfig;
+import static com.hazelcast.internal.config.ConfigValidator.checkCacheEvictionConfig;
 import static com.hazelcast.internal.eviction.EvictionChecker.EVICT_ALWAYS;
 import static com.hazelcast.internal.eviction.EvictionPolicyEvaluatorProvider.getEvictionPolicyEvaluator;
 
@@ -43,15 +42,15 @@ class EvictionOperator {
     private final QueryCacheRecordHashMap cache;
     private final EvictionConfig evictionConfig;
     private final EvictionChecker evictionChecker;
-    private final EvictionPolicyEvaluator<Data, QueryCacheRecord> evictionPolicyEvaluator;
-    private final SamplingEvictionStrategy<Data, QueryCacheRecord, QueryCacheRecordHashMap> evictionStrategy;
-    private final EvictionListener<Data, QueryCacheRecord> listener;
+    private final EvictionPolicyEvaluator<Object, QueryCacheRecord> evictionPolicyEvaluator;
+    private final SamplingEvictionStrategy<Object, QueryCacheRecord, QueryCacheRecordHashMap> evictionStrategy;
+    private final EvictionListener<Object, QueryCacheRecord> listener;
     private final ClassLoader classLoader;
 
     EvictionOperator(QueryCacheRecordHashMap cache,
-                            QueryCacheConfig config,
-                            EvictionListener<Data, QueryCacheRecord> listener,
-                            ClassLoader classLoader) {
+                     QueryCacheConfig config,
+                     EvictionListener<Object, QueryCacheRecord> listener,
+                     ClassLoader classLoader) {
         this.cache = cache;
         this.evictionConfig = config.getEvictionConfig();
         this.evictionChecker = createCacheEvictionChecker();
@@ -77,16 +76,11 @@ class EvictionOperator {
     }
 
     private EvictionChecker createCacheEvictionChecker() {
-        return new EvictionChecker() {
-            @Override
-            public boolean isEvictionRequired() {
-                return cache.size() >= evictionConfig.getSize();
-            }
-        };
+        return () -> cache.size() >= evictionConfig.getSize();
     }
 
-    private EvictionPolicyEvaluator<Data, QueryCacheRecord> createEvictionPolicyEvaluator() {
-        checkEvictionConfig(evictionConfig, false);
+    private EvictionPolicyEvaluator<Object, QueryCacheRecord> createEvictionPolicyEvaluator() {
+        checkCacheEvictionConfig(evictionConfig);
         return getEvictionPolicyEvaluator(evictionConfig, classLoader);
     }
 }

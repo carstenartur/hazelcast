@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package com.hazelcast.executor.impl;
 
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.HazelcastInstanceAware;
-import com.hazelcast.core.PartitionAware;
+import com.hazelcast.partition.PartitionAware;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
@@ -52,7 +52,7 @@ public final class RunnableAdapter<V> implements IdentifiedDataSerializable, Cal
     }
 
     @Override
-    public V call() throws Exception {
+    public V call() {
         task.run();
         return null;
     }
@@ -89,7 +89,7 @@ public final class RunnableAdapter<V> implements IdentifiedDataSerializable, Cal
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return ExecutorDataSerializerHook.RUNNABLE_ADAPTER;
     }
 

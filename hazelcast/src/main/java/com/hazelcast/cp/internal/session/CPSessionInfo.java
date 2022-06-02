@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,16 @@
 
 package com.hazelcast.cp.internal.session;
 
-import com.hazelcast.nio.Address;
+import com.hazelcast.cluster.Address;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
 import com.hazelcast.nio.serialization.IdentifiedDataSerializable;
 import com.hazelcast.cp.session.CPSession;
-import com.hazelcast.util.Clock;
+import com.hazelcast.internal.util.Clock;
 
 import java.io.IOException;
 
-import static com.hazelcast.util.Preconditions.checkTrue;
+import static com.hazelcast.internal.util.Preconditions.checkTrue;
 import static java.lang.Math.max;
 
 /**
@@ -122,7 +122,6 @@ public class CPSessionInfo implements CPSession, IdentifiedDataSerializable {
     }
 
     @Override
-    @SuppressWarnings("checkstyle:npathcomplexity")
     public boolean equals(Object o) {
         if (this == o) {
             return true;
@@ -132,33 +131,13 @@ public class CPSessionInfo implements CPSession, IdentifiedDataSerializable {
         }
 
         CPSessionInfo that = (CPSessionInfo) o;
-
-        if (id != that.id) {
-            return false;
-        }
-        if (version != that.version) {
-            return false;
-        }
-        if (creationTime != that.creationTime) {
-            return false;
-        }
-        if (!endpoint.equals(that.endpoint)) {
-            return false;
-        }
-        if (!endpointName.equals(that.endpointName)) {
-            return false;
-        }
-        return endpointType == that.endpointType;
+        return id == that.id && version == that.version;
     }
 
     @Override
     public int hashCode() {
         int result = (int) (id ^ (id >>> 32));
         result = 31 * result + (int) (version ^ (version >>> 32));
-        result = 31 * result + endpoint.hashCode();
-        result = 31 * result + endpointName.hashCode();
-        result = 31 * result + endpointType.hashCode();
-        result = 31 * result + (int) (creationTime ^ (creationTime >>> 32));
         return result;
     }
 
@@ -175,7 +154,7 @@ public class CPSessionInfo implements CPSession, IdentifiedDataSerializable {
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return RaftSessionServiceDataSerializerHook.RAFT_SESSION;
     }
 
@@ -189,9 +168,9 @@ public class CPSessionInfo implements CPSession, IdentifiedDataSerializable {
         boolean containsEndpointName = (endpointName != null);
         out.writeBoolean(containsEndpointName);
         if (containsEndpointName) {
-            out.writeUTF(endpointName);
+            out.writeString(endpointName);
         }
-        out.writeUTF(endpointType.name());
+        out.writeString(endpointType.name());
     }
 
     @Override
@@ -203,8 +182,8 @@ public class CPSessionInfo implements CPSession, IdentifiedDataSerializable {
         endpoint = in.readObject();
         boolean containsEndpointName = in.readBoolean();
         if (containsEndpointName) {
-            endpointName = in.readUTF();
+            endpointName = in.readString();
         }
-        endpointType = CPSessionOwnerType.valueOf(in.readUTF());
+        endpointType = CPSessionOwnerType.valueOf(in.readString());
     }
 }

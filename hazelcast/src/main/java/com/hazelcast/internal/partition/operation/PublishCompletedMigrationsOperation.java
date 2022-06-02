@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,12 +24,14 @@ import com.hazelcast.internal.partition.impl.InternalPartitionServiceImpl;
 import com.hazelcast.internal.partition.impl.PartitionDataSerializerHook;
 import com.hazelcast.nio.ObjectDataInput;
 import com.hazelcast.nio.ObjectDataOutput;
-import com.hazelcast.spi.ExceptionAction;
 import com.hazelcast.spi.exception.TargetNotMemberException;
+import com.hazelcast.spi.impl.operationservice.ExceptionAction;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Collection;
+
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.readCollection;
+import static com.hazelcast.internal.serialization.impl.SerializationUtil.writeCollection;
 
 /**
  * Sent by master member to other cluster members to publish completed migrations
@@ -78,26 +80,17 @@ public class PublishCompletedMigrationsOperation extends AbstractPartitionOperat
     @Override
     protected void readInternal(ObjectDataInput in) throws IOException {
         super.readInternal(in);
-        int len = in.readInt();
-        completedMigrations = new ArrayList<MigrationInfo>(len);
-        for (int i = 0; i < len; i++) {
-            MigrationInfo migrationInfo = in.readObject();
-            completedMigrations.add(migrationInfo);
-        }
+        completedMigrations = readCollection(in);
     }
 
     @Override
     protected void writeInternal(ObjectDataOutput out) throws IOException {
         super.writeInternal(out);
-        int len = completedMigrations.size();
-        out.writeInt(len);
-        for (MigrationInfo migrationInfo : completedMigrations) {
-            out.writeObject(migrationInfo);
-        }
+        writeCollection(completedMigrations, out);
     }
 
     @Override
-    public int getId() {
+    public int getClassId() {
         return PartitionDataSerializerHook.PUBLISH_COMPLETED_MIGRATIONS;
     }
 }

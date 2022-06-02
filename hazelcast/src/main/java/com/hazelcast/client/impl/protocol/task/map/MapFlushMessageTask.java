@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008-2019, Hazelcast, Inc. All Rights Reserved.
+ * Copyright (c) 2008-2022, Hazelcast, Inc. All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,22 +21,23 @@ import com.hazelcast.client.impl.protocol.codec.MapFlushCodec;
 import com.hazelcast.client.impl.protocol.task.AbstractCallableMessageTask;
 import com.hazelcast.client.impl.protocol.task.BlockingMessageTask;
 import com.hazelcast.core.DistributedObject;
-import com.hazelcast.instance.Node;
+import com.hazelcast.instance.impl.Node;
 import com.hazelcast.map.impl.MapService;
 import com.hazelcast.map.impl.MapServiceContext;
 import com.hazelcast.map.impl.proxy.MapProxyImpl;
-import com.hazelcast.nio.Connection;
+import com.hazelcast.internal.nio.Connection;
 import com.hazelcast.security.permission.ActionConstants;
 import com.hazelcast.security.permission.MapPermission;
-import com.hazelcast.spi.NodeEngine;
-import com.hazelcast.spi.ProxyService;
+import com.hazelcast.spi.impl.NodeEngine;
+import com.hazelcast.spi.impl.proxyservice.ProxyService;
 
 import java.security.Permission;
+import java.util.UUID;
 
 import static com.hazelcast.map.impl.MapService.SERVICE_NAME;
 
 public class MapFlushMessageTask
-        extends AbstractCallableMessageTask<MapFlushCodec.RequestParameters> implements BlockingMessageTask {
+        extends AbstractCallableMessageTask<String> implements BlockingMessageTask {
 
     public MapFlushMessageTask(ClientMessage clientMessage, Node node, Connection connection) {
         super(clientMessage, node, connection);
@@ -48,7 +49,8 @@ public class MapFlushMessageTask
         MapServiceContext mapServiceContext = mapService.getMapServiceContext();
         NodeEngine nodeEngine = mapServiceContext.getNodeEngine();
         ProxyService proxyService = nodeEngine.getProxyService();
-        DistributedObject distributedObject = proxyService.getDistributedObject(SERVICE_NAME, parameters.name);
+        UUID source = endpoint.getUuid();
+        DistributedObject distributedObject = proxyService.getDistributedObject(SERVICE_NAME, parameters, source);
 
         MapProxyImpl mapProxy = (MapProxyImpl) distributedObject;
         mapProxy.flush();
@@ -58,7 +60,7 @@ public class MapFlushMessageTask
 
 
     @Override
-    protected MapFlushCodec.RequestParameters decodeClientMessage(ClientMessage clientMessage) {
+    protected String decodeClientMessage(ClientMessage clientMessage) {
         return MapFlushCodec.decodeRequest(clientMessage);
     }
 
@@ -75,12 +77,12 @@ public class MapFlushMessageTask
 
     @Override
     public Permission getRequiredPermission() {
-        return new MapPermission(parameters.name, ActionConstants.ACTION_PUT);
+        return new MapPermission(parameters, ActionConstants.ACTION_PUT);
     }
 
     @Override
     public String getDistributedObjectName() {
-        return parameters.name;
+        return parameters;
     }
 
     @Override
