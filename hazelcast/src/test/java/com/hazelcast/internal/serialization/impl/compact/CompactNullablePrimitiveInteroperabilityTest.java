@@ -15,13 +15,10 @@
  */
 package com.hazelcast.internal.serialization.impl.compact;
 
-import com.hazelcast.config.CompactSerializationConfig;
-import com.hazelcast.config.SerializationConfig;
 import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.internal.serialization.SerializationService;
-import com.hazelcast.internal.serialization.impl.DefaultSerializationServiceBuilder;
-import com.hazelcast.nio.serialization.GenericRecord;
-import com.hazelcast.nio.serialization.GenericRecordBuilder;
+import com.hazelcast.nio.serialization.genericrecord.GenericRecord;
+import com.hazelcast.nio.serialization.genericrecord.GenericRecordBuilder;
 import com.hazelcast.nio.serialization.HazelcastSerializationException;
 import com.hazelcast.nio.serialization.compact.CompactReader;
 import com.hazelcast.nio.serialization.compact.CompactSerializer;
@@ -34,7 +31,10 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 
-import static com.hazelcast.nio.serialization.GenericRecordBuilder.compact;
+import static com.hazelcast.internal.serialization.impl.compact.CompactTestUtil.createArrayOfFixedSizeFieldsDTO;
+import static com.hazelcast.internal.serialization.impl.compact.CompactTestUtil.createFixedSizeFieldsDTO;
+import static com.hazelcast.internal.serialization.impl.compact.CompactTestUtil.createSerializationService;
+import static com.hazelcast.nio.serialization.genericrecord.GenericRecordBuilder.compact;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
@@ -45,7 +45,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Category({QuickTest.class, ParallelJVMTest.class})
 public class CompactNullablePrimitiveInteroperabilityTest {
 
-    class A {
+    private static class A {
         public Integer[] ids;
         public Integer age;
 
@@ -55,12 +55,12 @@ public class CompactNullablePrimitiveInteroperabilityTest {
         }
     }
 
-    class ASerializer implements CompactSerializer<A> {
+    private static class ASerializer implements CompactSerializer<A> {
         @Nonnull
         @Override
-        public A read(@Nonnull CompactReader in) {
-            int age = in.readInt32("age");
-            int[] ids = in.readArrayOfInt32("ids");
+        public A read(@Nonnull CompactReader reader) {
+            int age = reader.readInt32("age");
+            int[] ids = reader.readArrayOfInt32("ids");
             Integer[] boxedIds = new Integer[ids.length];
             for (int i = 0; i < ids.length; i++) {
                 boxedIds[i] = ids[i];
@@ -69,31 +69,22 @@ public class CompactNullablePrimitiveInteroperabilityTest {
         }
 
         @Override
-        public void write(@Nonnull CompactWriter out, @Nonnull A object) {
-            out.writeNullableInt32("age", object.age);
-            out.writeArrayOfNullableInt32("ids", object.ids);
+        public void write(@Nonnull CompactWriter writer, @Nonnull A object) {
+            writer.writeNullableInt32("age", object.age);
+            writer.writeArrayOfNullableInt32("ids", object.ids);
         }
-    }
 
-    SchemaService schemaService = CompactTestUtil.createInMemorySchemaService();
+        @Nonnull
+        @Override
+        public String getTypeName() {
+            return "A";
+        }
 
-    private SerializationService createSerializationServiceWithASerializer() {
-        CompactSerializationConfig compactSerializationConfig = new CompactSerializationConfig();
-        compactSerializationConfig.register(A.class, "A", new ASerializer());
-        compactSerializationConfig.setEnabled(true);
-        return new DefaultSerializationServiceBuilder()
-                .setSchemaService(schemaService)
-                .setConfig(new SerializationConfig().setCompactSerializationConfig(compactSerializationConfig))
-                .build();
-    }
-
-    private SerializationService createSerializationService() {
-        CompactSerializationConfig compactSerializationConfig = new CompactSerializationConfig();
-        compactSerializationConfig.setEnabled(true);
-        return new DefaultSerializationServiceBuilder()
-                .setSchemaService(schemaService)
-                .setConfig(new SerializationConfig().setCompactSerializationConfig(compactSerializationConfig))
-                .build();
+        @Nonnull
+        @Override
+        public Class<A> getCompactClass() {
+            return A.class;
+        }
     }
 
     @Test
@@ -124,6 +115,51 @@ public class CompactNullablePrimitiveInteroperabilityTest {
 
         assertTrue(serializedRecord instanceof DeserializedGenericRecord);
         assertReadAsNullable(serializedRecord);
+    }
+
+    @Test
+    public void testWritePrimitiveReadNullableCustomSerializer() {
+        FixedSizeFieldsDTO fixedSizeFieldsDTO = createFixedSizeFieldsDTO();
+        SerializationService serializationService = createSerializationService(FixedSizeFieldsDTOSerializerReadingNullable::new);
+
+        Data data = serializationService.toData(fixedSizeFieldsDTO);
+        FixedSizeFieldsDTO obj = serializationService.toObject(data);
+
+        assertEquals(obj, fixedSizeFieldsDTO);
+    }
+
+    @Test
+    public void testWriteArraysOfPrimitiveReadNullableCustomSerializer() {
+        ArrayOfFixedSizeFieldsDTO arrayOfFixedSizeFieldsDTO = createArrayOfFixedSizeFieldsDTO();
+        SerializationService serializationService = createSerializationService(ArrayOfFixedSizeFieldsDTOSerializerReadingNullable::new);
+
+        Data data = serializationService.toData(arrayOfFixedSizeFieldsDTO);
+        ArrayOfFixedSizeFieldsDTO obj = serializationService.toObject(data);
+
+        assertEquals(obj, arrayOfFixedSizeFieldsDTO);
+    }
+
+    @Test
+    public void testWriteNullableReadPrimitiveCustomSerializer() {
+        FixedSizeFieldsDTO fixedSizeFieldsDTO = createFixedSizeFieldsDTO();
+        SerializationService serializationService = createSerializationService(FixedSizeFieldsDTOSerializerWritingNullable::new);
+
+        Data data = serializationService.toData(fixedSizeFieldsDTO);
+        FixedSizeFieldsDTO obj = serializationService.toObject(data);
+
+        assertEquals(obj, fixedSizeFieldsDTO);
+    }
+
+    @Test
+    public void testWriteNullableReadArraysOfPrimitiveCustomSerializer() {
+        ArrayOfFixedSizeFieldsDTO arrayOfFixedSizeFieldsDTO = createArrayOfFixedSizeFieldsDTO();
+        SerializationService serializationService =
+                createSerializationService(ArrayOfFixedSizeFieldsDTOSerializerWritingNullable::new);
+
+        Data data = serializationService.toData(arrayOfFixedSizeFieldsDTO);
+        ArrayOfFixedSizeFieldsDTO obj = serializationService.toObject(data);
+
+        assertEquals(obj, arrayOfFixedSizeFieldsDTO);
     }
 
     void assertReadAsNullable(GenericRecord record) {
@@ -175,7 +211,7 @@ public class CompactNullablePrimitiveInteroperabilityTest {
     }
 
     void assertReadAsPrimitive(GenericRecord record) {
-        assertEquals(true, record.getBoolean("boolean"));
+        assertTrue(record.getBoolean("boolean"));
         assertEquals((byte) 4, record.getInt8("byte"));
         assertEquals((short) 6, record.getInt16("short"));
         assertEquals(8, record.getInt32("int"));
@@ -222,7 +258,7 @@ public class CompactNullablePrimitiveInteroperabilityTest {
 
     @Test
     public void testWriteNullReadPrimitiveThrowsExceptionWithCorrectMethodPrefixCompactReader() {
-        SerializationService serializationService = createSerializationServiceWithASerializer();
+        SerializationService serializationService = createSerializationService(ASerializer::new);
         // Reading null value with non-nullable reader method
         A a1 = new A(null, new Integer[]{1, 2, 3});
         Data data = serializationService.toData(a1);
@@ -326,7 +362,7 @@ public class CompactNullablePrimitiveInteroperabilityTest {
         Data data = serializationService.toData(record);
         PrimitiveObject primitiveObject = serializationService.toObject(data);
 
-        assertEquals(true, primitiveObject.boolean_);
+        assertTrue(primitiveObject.boolean_);
         assertEquals((byte) 2, primitiveObject.byte_);
         assertEquals('\u4242', primitiveObject.char_);
         assertEquals((short) 4, primitiveObject.short_);

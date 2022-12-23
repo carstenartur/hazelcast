@@ -40,7 +40,7 @@ import java.util.Set;
 import static com.hazelcast.internal.serialization.impl.FactoryIdHelper.PREDICATE_DS_FACTORY_ID;
 
 /**
- * Implementaiton of {@link PagingPredicate}.
+ * Implementation of {@link PagingPredicate}.
  *
  * @param <K> the entry key type
  * @param <V> the entry value type
@@ -134,6 +134,10 @@ public class PagingPredicateImpl<K, V>
         this.pageSize = pageSize;
         this.page = page;
         this.iterationType = iterationType;
+    }
+
+    public PagingPredicateImpl(PagingPredicateImpl original) {
+        this(original, original.predicate);
     }
 
     /**

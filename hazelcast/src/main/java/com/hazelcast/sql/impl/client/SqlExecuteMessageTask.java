@@ -33,6 +33,8 @@ import com.hazelcast.sql.impl.security.SqlSecurityContext;
 import java.security.AccessControlException;
 import java.security.Permission;
 
+import static com.hazelcast.jet.impl.util.LoggingUtil.logFine;
+
 /**
  * SQL query execute task.
  */
@@ -72,7 +74,7 @@ public class SqlExecuteMessageTask extends SqlAbstractMessageTask<SqlExecuteCode
         AbstractSqlResult result = (AbstractSqlResult) response;
 
         if (result.updateCount() >= 0) {
-            return SqlExecuteCodec.encodeResponse(null, null, result.updateCount(), null);
+            return SqlExecuteCodec.encodeResponse(null, null, result.updateCount(), null, false);
         } else {
             SqlServiceImpl sqlService = nodeEngine.getSqlService();
 
@@ -87,7 +89,8 @@ public class SqlExecuteMessageTask extends SqlAbstractMessageTask<SqlExecuteCode
                     result.getRowMetadata().getColumns(),
                     page,
                     -1,
-                    null
+                    null,
+                    result.isInfiniteRows()
             );
         }
     }
@@ -106,13 +109,15 @@ public class SqlExecuteMessageTask extends SqlAbstractMessageTask<SqlExecuteCode
         if (!(throwable instanceof Exception)) {
             return super.encodeException(throwable);
         }
+        logFine(logger, "Client SQL error: %s", throwable);
         SqlError error = SqlClientUtils.exceptionToClientError((Exception) throwable, nodeEngine.getLocalMember().getUuid());
 
         return SqlExecuteCodec.encodeResponse(
                 null,
                 null,
                 -1,
-                error
+                error,
+                false
         );
     }
 

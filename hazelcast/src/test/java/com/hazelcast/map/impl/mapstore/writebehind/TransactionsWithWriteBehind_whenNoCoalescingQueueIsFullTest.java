@@ -20,6 +20,7 @@ import com.hazelcast.config.Config;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.internal.util.RandomPicker;
 import com.hazelcast.internal.util.RuntimeAvailableProcessors;
+import com.hazelcast.map.IMap;
 import com.hazelcast.map.MapStoreAdapter;
 import com.hazelcast.map.ReachedMaxSizeException;
 import com.hazelcast.map.impl.MapService;
@@ -66,6 +67,55 @@ public class TransactionsWithWriteBehind_whenNoCoalescingQueueIsFullTest extends
 
     @Rule
     public ExpectedException expectedException = ExpectedException.none();
+
+    @Test
+    public void get_for_update_does_not_increment_node_wide_used_capacity() {
+        String mapName = "map";
+        long maxWbqCapacity = 100;
+
+        Config config = getConfig(mapName, maxWbqCapacity);
+        HazelcastInstance node = createHazelcastInstance(config);
+
+        TransactionContext context = newTransactionContext(node, TWO_PHASE);
+        context.beginTransaction();
+
+        TransactionalMap map = context.getMap(mapName);
+
+        map.getForUpdate("key1");
+        map.getForUpdate("key2");
+
+        context.commitTransaction();
+
+        assertEquals(0, getNodeWideUsedCapacity(node));
+    }
+
+    @Test
+    public void values_does_not_increment_node_wide_used_capacity() {
+        String mapName = "map";
+        long maxWbqCapacity = 100;
+
+        Config config = getConfig(mapName, maxWbqCapacity);
+        HazelcastInstance node = createHazelcastInstance(config);
+
+        IMap entries = node.getMap(mapName);
+        for (int i = 0; i < 100; i++) {
+            entries.set(i, i);
+        }
+
+        // what map-store insert of entries at prev step
+        assertTrueEventually(() -> assertEquals(0, getNodeWideUsedCapacity(node)));
+
+        TransactionContext context = newTransactionContext(node, TWO_PHASE);
+        context.beginTransaction();
+
+        TransactionalMap map = context.getMap(mapName);
+
+        map.values();
+
+        context.commitTransaction();
+
+        assertEquals(0, getNodeWideUsedCapacity(node));
+    }
 
     @Test
     public void prepare_step_throws_reached_max_size_exception_when_two_phase() {
@@ -206,7 +256,7 @@ public class TransactionsWithWriteBehind_whenNoCoalescingQueueIsFullTest extends
     }
 
     private Config getConfig(String mapName, long maxWbqCapacity) {
-        Config config = smallInstanceConfig();
+        Config config = smallInstanceConfigWithoutJetAndMetrics();
         config.setProperty(ClusterProperty.MAP_WRITE_BEHIND_QUEUE_CAPACITY.toString(),
                 String.valueOf(maxWbqCapacity));
         config.getMapConfig(mapName)
@@ -240,7 +290,7 @@ public class TransactionsWithWriteBehind_whenNoCoalescingQueueIsFullTest extends
 
     }
 
-    @Test
+    @Test(timeout = 5 * 60 * 1000)
     public void stress() throws InterruptedException {
         final String mapName = "map-name";
         final long maxWbqCapacity = 50;
@@ -277,8 +327,8 @@ public class TransactionsWithWriteBehind_whenNoCoalescingQueueIsFullTest extends
         sleepSeconds(30);
         stop.set(true);
         executorService.shutdown();
-        if (!executorService.awaitTermination(30, SECONDS)) {
-            throw new IllegalStateException("Not terminated yet...");
+        if (!executorService.awaitTermination(60, SECONDS)) {
+            executorService.shutdownNow();
         }
 
         node1.getMap(mapName).flush();
@@ -294,7 +344,7 @@ public class TransactionsWithWriteBehind_whenNoCoalescingQueueIsFullTest extends
                         0, getTotalNumOfTxnReservedCapacity(mapName, node));
                 assertEquals(msg + ", capacity not zero", 0, nodeWideUsedCapacity);
             }
-        }, 30);
+        });
 
     }
 
@@ -412,6 +462,8 @@ public class TransactionsWithWriteBehind_whenNoCoalescingQueueIsFullTest extends
                 context.commitTransaction();
             } catch (TransactionException e) {
                 context.rollbackTransaction();
+            } catch (Throwable t) {
+                // ignore other commit time exceptions.
             }
         }
 

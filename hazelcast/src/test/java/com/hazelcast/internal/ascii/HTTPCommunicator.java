@@ -27,6 +27,7 @@ import org.apache.http.Consts;
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.NameValuePair;
+import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpDelete;
 import org.apache.http.client.methods.HttpGet;
@@ -117,6 +118,7 @@ public class HTTPCommunicator {
     // Config
     public static final String URI_CONFIG_RELOAD = "config/reload";
     public static final String URI_CONFIG_UPDATE = "config/update";
+    public static final String URI_TCP_IP_MEMBER_LIST = "config/tcp-ip/member-list";
 
     private final String address;
     private final boolean sslEnabled;
@@ -439,6 +441,18 @@ public class HTTPCommunicator {
         return doPost(url, clusterName, clusterPassword);
     }
 
+
+    public ConnectionResponse getTcpIpMemberList() throws IOException {
+        String url = getUrl(URI_TCP_IP_MEMBER_LIST);
+        return doGet(url);
+    }
+
+    public ConnectionResponse updateTcpIpMemberList(String clusterName, String clusterPassword, String memberListText)
+            throws IOException {
+        String url = getUrl(URI_TCP_IP_MEMBER_LIST);
+        return doPost(url, clusterName, clusterPassword, memberListText);
+    }
+
     public static class ConnectionResponse {
         public final String response;
         public final int responseCode;
@@ -451,11 +465,7 @@ public class HTTPCommunicator {
             Header[] headers = httpResponse.getAllHeaders();
             Map<String, List<String>> responseHeaders = new HashMap<>();
             for (Header header : headers) {
-                List<String> values = responseHeaders.get(header.getName());
-                if (values == null) {
-                    values = new ArrayList<>();
-                    responseHeaders.put(header.getName(), values);
-                }
+                List<String> values = responseHeaders.computeIfAbsent(header.getName(), k -> new ArrayList<>());
                 values.add(header.getValue());
             }
             this.responseCode = responseCode;
@@ -578,6 +588,15 @@ public class HTTPCommunicator {
             builder.setSSLSocketFactory(new SSLConnectionSocketFactory(sslContext,
                     SSLConnectionSocketFactory.ALLOW_ALL_HOSTNAME_VERIFIER));
         }
+
+        // configure timeout on the entire client
+        int timeout = 20;
+        RequestConfig config = RequestConfig.custom()
+                .setConnectTimeout(timeout * 1_000)
+                .setConnectionRequestTimeout(timeout * 1_000)
+                .setSocketTimeout(timeout * 1_000).build();
+
+        builder.setDefaultRequestConfig(config);
 
         return builder.build();
     }

@@ -201,12 +201,19 @@ public final class HazelcastTypeCoercion extends TypeCoercionImpl {
             return true;
         }
 
+        if (targetHzType.isCustomType() && (sourceHzType.getTypeFamily().equals(QueryDataTypeFamily.ROW) ||
+                sourceHzType.isCustomType())) {
+            return customTypesCoercion(sourceType, targetType, rowElement, scope);
+        }
+
         boolean valid = sourceAndTargetAreNumeric(targetHzType, sourceHzType)
                 || sourceAndTargetAreTemporalAndSourceCanBeConvertedToTarget(targetHzType, sourceHzType)
                 || targetIsTemporalAndSourceIsVarcharLiteral(targetHzType, sourceHzType, rowElement)
                 || sourceHzType.getTypeFamily() == QueryDataTypeFamily.NULL
-                || sourceHzType.getTypeFamily() == QueryDataTypeFamily.VARCHAR
-                        && targetHzType.getTypeFamily() == QueryDataTypeFamily.JSON;
+                || (sourceHzType.getTypeFamily() == QueryDataTypeFamily.VARCHAR
+                        && targetHzType.getTypeFamily() == QueryDataTypeFamily.JSON)
+                || (sourceHzType.getTypeFamily() == QueryDataTypeFamily.JSON
+                        && targetHzType.getTypeFamily() == QueryDataTypeFamily.VARCHAR);
 
         if (!valid) {
             // Types cannot be converted to each other, fail to coerce
@@ -215,6 +222,45 @@ public final class HazelcastTypeCoercion extends TypeCoercionImpl {
 
         // Types are in the same group, cast source to target.
         coerceNode(scope, rowElement, targetType, replaceFn);
+        return true;
+    }
+
+    private boolean customTypesCoercion(
+            final RelDataType source,
+            final RelDataType target,
+            final SqlNode rowElement,
+            final SqlValidatorScope scope
+    ) {
+        if (source.getFieldCount() != target.getFieldCount()) {
+            // Partial field lists are not supported for now.
+            return false;
+        }
+
+        if (rowElement.getKind() == SqlKind.AS) {
+            // unwrap an alias
+            return customTypesCoercion(source, target, ((SqlCall) rowElement).operand(0), scope);
+        }
+
+        if (HazelcastTypeUtils.isHzObjectType(source)) {
+            return HazelcastTypeUtils.extractHzObjectType(source).getTypeName()
+                    .equals(HazelcastTypeUtils.extractHzObjectType(target).getTypeName());
+        }
+
+        assert rowElement instanceof SqlCall : "Row Element must be an SqlCall";
+        assert rowElement.getKind().equals(SqlKind.ROW);
+        final SqlCall sourceCall = (SqlCall) rowElement;
+
+        for (int i = 0; i < source.getFieldList().size(); i++) {
+            final int currentIndex = i;
+            final RelDataTypeField targetField = target.getFieldList().get(i);
+            final SqlNode elementNode = sourceCall.getOperandList().get(i);
+
+            if (!rowTypeElementCoercion(scope, elementNode, targetField.getType(),
+                    (node) -> sourceCall.setOperand(currentIndex, node))) {
+                return false;
+            }
+        }
+
         return true;
     }
 

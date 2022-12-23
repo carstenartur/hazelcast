@@ -32,6 +32,7 @@ import com.hazelcast.internal.serialization.Data;
 import com.hazelcast.internal.util.Clock;
 import com.hazelcast.internal.util.counters.Counter;
 import com.hazelcast.internal.util.counters.MwCounter;
+import com.hazelcast.internal.util.executor.ManagedExecutorService;
 import com.hazelcast.jet.JetException;
 import com.hazelcast.jet.JobAlreadyExistsException;
 import com.hazelcast.jet.config.JetConfig;
@@ -336,20 +337,21 @@ public class JobCoordinationService {
 
         checkPermissions(subject, dag);
 
-        // Initialize and start the job (happens in the constructor). We do this before adding the actual
+        // Initialize and start the job. We do this before adding the actual
         // LightMasterContext to the map to avoid possible races of the job initialization and cancellation.
-        LightMasterContext mc = new LightMasterContext(nodeEngine, this, dag, jobId, jobConfig, subject);
-        oldContext = lightMasterContexts.put(jobId, mc);
-        assert oldContext == UNINITIALIZED_LIGHT_JOB_MARKER;
+        return LightMasterContext.createContext(nodeEngine, this, dag, jobId, jobConfig, subject)
+                .thenComposeAsync(mc -> {
+                    Object oldCtx = lightMasterContexts.put(jobId, mc);
+                    assert oldCtx == UNINITIALIZED_LIGHT_JOB_MARKER;
+                    scheduleJobTimeout(jobId, jobConfig.getTimeoutMillis());
 
-        scheduleJobTimeout(jobId, jobConfig.getTimeoutMillis());
-
-        return mc.getCompletionFuture()
-                .whenComplete((r, t) -> {
-                    Object removed = lightMasterContexts.remove(jobId);
-                    assert removed instanceof LightMasterContext : "LMC not found: " + removed;
-                    unscheduleJobTimeout(jobId);
-                });
+                    return mc.getCompletionFuture()
+                      .whenComplete((r, t) -> {
+                          Object removed = lightMasterContexts.remove(jobId);
+                          assert removed instanceof LightMasterContext : "LMC not found: " + removed;
+                          unscheduleJobTimeout(jobId);
+                      });
+                }, coordinationExecutor());
     }
 
     public long getJobSubmittedCount() {
@@ -696,17 +698,39 @@ public class JobCoordinationService {
      * Return a summary of all jobs
      */
     public CompletableFuture<List<JobSummary>> getJobSummaryList() {
+        return getJobAndSqlSummaryList().thenApply(jobAndSqlSummaries -> jobAndSqlSummaries.stream()
+                .map(this::toJobSummary)
+                .collect(toList()));
+    }
+
+    private JobSummary toJobSummary(JobAndSqlSummary jobAndSqlSummary) {
+        return new JobSummary(jobAndSqlSummary.isLightJob(), jobAndSqlSummary.getJobId(), jobAndSqlSummary.getExecutionId(),
+                jobAndSqlSummary.getNameOrId(), jobAndSqlSummary.getStatus(), jobAndSqlSummary.getSubmissionTime(),
+                jobAndSqlSummary.getCompletionTime(), jobAndSqlSummary.getFailureText());
+    }
+
+    /**
+     * Return a summary of all jobs with sql data
+     */
+    public CompletableFuture<List<JobAndSqlSummary>> getJobAndSqlSummaryList() {
         return submitToCoordinatorThread(() -> {
-            Map<Long, JobSummary> jobs = new HashMap<>();
+            Map<Long, JobAndSqlSummary> jobs = new HashMap<>();
             if (isMaster()) {
                 // running jobs
-                jobRepository.getJobRecords().stream().map(this::getJobSummary).forEach(s -> jobs.put(s.getJobId(), s));
+                jobRepository.getJobRecords().stream().map(this::getJobAndSqlSummary).forEach(s -> jobs.put(s.getJobId(), s));
 
                 // completed jobs
                 jobRepository.getJobResults().stream()
-                        .map(r -> new JobSummary(
-                                false, r.getJobId(), 0, r.getJobNameOrId(), r.getJobStatus(), r.getCreationTime(),
-                                r.getCompletionTime(), r.getFailureText(), null))
+                        .map(r -> {
+                            // Pre-review note : volatile read at supplier, should not read under lock path.
+                            // Q: Any other better way to get executionRecord?
+                            JobExecutionRecord executionRecord = jobRepository.getJobExecutionRecord(r.getJobId());
+                            return new JobAndSqlSummary(
+                                    false, r.getJobId(), 0, r.getJobNameOrId(), r.getJobStatus(), r.getCreationTime(),
+                                    r.getCompletionTime(), r.getFailureText(), null,
+                                    executionRecord == null || executionRecord.getSuspensionCause() == null ? null :
+                                            executionRecord.getSuspensionCause().description());
+                        })
                         .forEach(s -> jobs.put(s.getJobId(), s));
             }
 
@@ -714,22 +738,22 @@ public class JobCoordinationService {
             lightMasterContexts.values().stream()
                     .filter(lmc -> lmc != UNINITIALIZED_LIGHT_JOB_MARKER)
                     .map(LightMasterContext.class::cast)
-                    .map(this::getJobSummary)
+                    .map(this::getJobAndSqlSummary)
                     .forEach(s -> jobs.put(s.getJobId(), s));
 
-            return jobs.values().stream().sorted(comparing(JobSummary::getSubmissionTime).reversed()).collect(toList());
+            return jobs.values().stream().sorted(comparing(JobAndSqlSummary::getSubmissionTime).reversed()).collect(toList());
         });
     }
 
-    private JobSummary getJobSummary(LightMasterContext lmc) {
+    private JobAndSqlSummary getJobAndSqlSummary(LightMasterContext lmc) {
         String query = lmc.getJobConfig().getArgument(JobConfigArguments.KEY_SQL_QUERY_TEXT);
         Object unbounded = lmc.getJobConfig().getArgument(JobConfigArguments.KEY_SQL_UNBOUNDED);
         SqlSummary sqlSummary = query != null && unbounded != null ?
                 new SqlSummary(query, Boolean.TRUE.equals(unbounded)) : null;
-
-        return new JobSummary(
+        // Note: suspensionCause is not supported for light jobs.
+        return new JobAndSqlSummary(
                 true, lmc.getJobId(), lmc.getJobId(), idToString(lmc.getJobId()),
-                RUNNING, lmc.getStartTime(), 0, null, sqlSummary);
+                RUNNING, lmc.getStartTime(), 0, null, sqlSummary, null);
     }
 
     /**
@@ -815,6 +839,15 @@ public class JobCoordinationService {
         }
         if (!getInternalPartitionService().getPartitionStateManager().isInitialized()) {
             logger.fine("Not starting jobs because partitions are not yet initialized.");
+            return false;
+        }
+        if (nodeEngine.getNode().isClusterStateManagementAutomatic()
+            && !nodeEngine.getNode().isManagedClusterStable()) {
+            LoggingUtil.logFine(logger, "Not starting jobs because cluster is running in managed context "
+                            + "and is not yet stable. Current cluster topology intentL %s, "
+                            + "expected cluster size: %d, current: %d.",
+                    nodeEngine.getNode().getClusterTopologyIntent(),
+                    nodeEngine.getNode().currentSpecifiedReplicaCount(), nodeEngine.getClusterService().getSize());
             return false;
         }
         return true;
@@ -1187,19 +1220,21 @@ public class JobCoordinationService {
         return clusterService.getMembers(DATA_MEMBER_SELECTOR).size();
     }
 
-    private JobSummary getJobSummary(JobRecord record) {
+    private JobAndSqlSummary getJobAndSqlSummary(JobRecord record) {
         MasterContext ctx = masterContexts.get(record.getJobId());
         long execId = ctx == null ? 0 : ctx.executionId();
+        JobExecutionRecord executionRecord = jobRepository.getJobExecutionRecord(record.getJobId());
+        String suspensionCause = executionRecord != null && executionRecord.getSuspensionCause() != null
+                ? executionRecord.getSuspensionCause().description() : null;
         JobStatus status;
         if (ctx == null) {
-            JobExecutionRecord executionRecord = jobRepository.getJobExecutionRecord(record.getJobId());
             status = executionRecord != null && executionRecord.isSuspended()
                     ? JobStatus.SUSPENDED : JobStatus.NOT_RUNNING;
         } else {
             status = ctx.jobStatus();
         }
-        return new JobSummary(false, record.getJobId(), execId, record.getJobNameOrId(), status,
-                record.getCreationTime(), 0, null, null);
+        return new JobAndSqlSummary(false, record.getJobId(), execId, record.getJobNameOrId(), status,
+                record.getCreationTime(), 0, null, null, suspensionCause);
     }
 
     private InternalPartitionServiceImpl getInternalPartitionService() {
@@ -1270,6 +1305,10 @@ public class JobCoordinationService {
     @SuppressWarnings("unused") // used in jet-enterprise
     NodeEngineImpl nodeEngine() {
         return nodeEngine;
+    }
+
+    ManagedExecutorService coordinationExecutor() {
+        return nodeEngine.getExecutionService().getExecutor(COORDINATOR_EXECUTOR_NAME);
     }
 
     CompletableFuture<Void> submitToCoordinatorThread(Runnable action) {
@@ -1370,4 +1409,5 @@ public class JobCoordinationService {
     boolean isMemberShuttingDown(UUID uuid) {
         return membersShuttingDown.containsKey(uuid);
     }
+
 }

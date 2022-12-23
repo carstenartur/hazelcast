@@ -24,9 +24,12 @@ import com.hazelcast.sql.SqlResult;
 import com.hazelcast.sql.SqlRow;
 import com.hazelcast.sql.impl.ResultIterator;
 import com.hazelcast.sql.impl.ResultIterator.HasNextResult;
+import com.hazelcast.test.annotation.ParallelJVMTest;
+import com.hazelcast.test.annotation.QuickTest;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.experimental.categories.Category;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,6 +41,7 @@ import static java.util.Arrays.asList;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+@Category({QuickTest.class, ParallelJVMTest.class})
 public class SqlUnionTest extends SqlTestSupport {
     private IMap<Integer, Person> map1;
     private IMap<Integer, Person> map2;
@@ -217,20 +221,20 @@ public class SqlUnionTest extends SqlTestSupport {
     @Test
     public void watermarkedStreamUnionAllTest() {
         String name = createTable(
-                row(timestampTz(10L), 1),
-                row(timestampTz(12L), 2),
-                row(timestampTz(14L), 3),
+                row(timestampTz(100L), 1),
+                row(timestampTz(120L), 2),
+                row(timestampTz(140L), 3),
                 row(timestampTz(0L), 4)
         );
 
         String sql = "SELECT * FROM TABLE(IMPOSE_ORDER(TABLE " + name + ", DESCRIPTOR(ts), INTERVAL '0.001' SECOND))";
 
-        expected.add(new Row(timestampTz(10L), 1));
-        expected.add(new Row(timestampTz(10L), 1));
-        expected.add(new Row(timestampTz(12L), 2));
-        expected.add(new Row(timestampTz(12L), 2));
-        expected.add(new Row(timestampTz(14L), 3));
-        expected.add(new Row(timestampTz(14L), 3));
+        expected.add(new Row(timestampTz(100L), 1));
+        expected.add(new Row(timestampTz(100L), 1));
+        expected.add(new Row(timestampTz(120L), 2));
+        expected.add(new Row(timestampTz(120L), 2));
+        expected.add(new Row(timestampTz(140L), 3));
+        expected.add(new Row(timestampTz(140L), 3));
 
         SqlResult result = instance().getSql().execute(sql + " UNION ALL " + sql);
         ResultIterator<SqlRow> iterator = (ResultIterator<SqlRow>) result.iterator();

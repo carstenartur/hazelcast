@@ -74,6 +74,7 @@ import static com.hazelcast.jet.config.ProcessingGuarantee.EXACTLY_ONCE;
 import static com.hazelcast.jet.core.EventTimePolicy.eventTimePolicy;
 import static com.hazelcast.jet.core.JobStatus.RUNNING;
 import static com.hazelcast.jet.core.WatermarkPolicy.limitingLag;
+import static com.hazelcast.jet.impl.execution.WatermarkCoalescer.IDLE_MESSAGE;
 import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
@@ -224,8 +225,8 @@ public class StreamKafkaPTest extends SimpleTestInClusterSupport {
                 for (int i = 0; i < 2 * messageCount; i++) {
                     Entry<Integer, String> entry1 = createEntry(i);
                     Entry<Integer, String> entry2 = createEntry(i - messageCount);
-                    assertTrue("missing entry: " + entry1.toString(), list.contains(entry1));
-                    assertTrue("missing entry: " + entry2.toString(), list.contains(entry2));
+                    assertTrue("missing entry: " + entry1, list.contains(entry1));
+                    assertTrue("missing entry: " + entry2, list.contains(entry2));
                 }
             }, 10);
         }
@@ -246,7 +247,8 @@ public class StreamKafkaPTest extends SimpleTestInClusterSupport {
         for (int i = 0; i < INITIAL_PARTITION_COUNT; i++) {
             Entry<Integer, String> event = entry(i + 100, Integer.toString(i));
             System.out.println("produced event " + event);
-            kafkaTestSupport.produce(topic1Name, i, null, event.getKey(), event.getValue());
+            //Wait for the event to be published to Kafka, the processor can access Kafka metadata
+            kafkaTestSupport.produce(topic1Name, i, null, event.getKey(), event.getValue()).get();
             if (i == INITIAL_PARTITION_COUNT - 1) {
                 assertEquals(new Watermark(100 - LAG), consumeEventually(processor, outbox));
             }
