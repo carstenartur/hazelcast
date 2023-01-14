@@ -133,7 +133,7 @@
         <spring.version>4.3.0.RELEASE</spring.version>
         <snakeyaml.version>1.33</snakeyaml.version>
         <snakeyaml.engine.version>2.5</snakeyaml.engine.version>
-        <mongodb.version>4.8.1</mongodb.version>
+        <mongodb.version>4.8.2</mongodb.version>
 
         <!-- test dependencies -->
         <activemq-artemis.version>2.27.1</activemq-artemis.version>
