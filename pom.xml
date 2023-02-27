@@ -95,7 +95,7 @@
         <classgraph.version>4.8.154</classgraph.version>
         <grpc.version>1.53.0</grpc.version>
         <aws.sdk.version>1.12.414</aws.sdk.version>
-        <debezium.version>1.9.7.Final</debezium.version>
+        <debezium.version>2.1.2.Final</debezium.version>
         <guava.version>31.1-jre</guava.version>
         <hadoop.version>3.3.4</hadoop.version>
         <h2.version>2.1.214</h2.version>
