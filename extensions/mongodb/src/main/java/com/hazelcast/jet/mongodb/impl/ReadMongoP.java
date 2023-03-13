@@ -17,12 +17,16 @@
 package com.hazelcast.jet.mongodb.impl;
 
 import com.hazelcast.function.FunctionEx;
+import com.hazelcast.jet.JetException;
 import com.hazelcast.jet.Traverser;
-import com.hazelcast.jet.Traversers;
 import com.hazelcast.jet.core.AbstractProcessor;
 import com.hazelcast.jet.core.BroadcastKey;
 import com.hazelcast.jet.core.EventTimeMapper;
+import com.hazelcast.jet.impl.util.Util;
+import com.hazelcast.jet.mongodb.impl.CursorTraverser.EmptyItem;
 import com.hazelcast.logging.ILogger;
+import com.hazelcast.spi.impl.NodeEngineImpl;
+import com.mongodb.MongoException;
 import com.mongodb.MongoServerException;
 import com.mongodb.MongoSocketException;
 import com.mongodb.client.ChangeStreamIterable;
@@ -32,6 +36,7 @@ import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.MongoIterable;
 import com.mongodb.client.model.changestream.ChangeStreamDocument;
+import org.bson.BsonDateTime;
 import org.bson.BsonDocument;
 import org.bson.BsonTimestamp;
 import org.bson.Document;
@@ -39,10 +44,12 @@ import org.bson.conversions.Bson;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map.Entry;
 
+import static com.hazelcast.internal.nio.IOUtil.closeResource;
 import static com.hazelcast.internal.util.Preconditions.checkNotNull;
 import static com.hazelcast.internal.util.Preconditions.checkState;
 import static com.hazelcast.jet.Traversers.singleton;
@@ -83,22 +90,22 @@ public class ReadMongoP<I> extends AbstractProcessor {
 
     private boolean snapshotInProgress;
     private final MongoChunkedReader reader;
-    private final MongoDbConnection connection;
+    private final MongoConnection connection;
 
     private Traverser<?> traverser;
-    private Traverser<? extends Entry<BroadcastKey<Integer>, ?>> snapshotTraverser;
+    private Traverser<Entry<BroadcastKey<Integer>, Object>> snapshotTraverser;
 
     public ReadMongoP(ReadMongoParams<I> params) {
         if (params.isStream()) {
             EventTimeMapper<I> eventTimeMapper = new EventTimeMapper<>(params.eventTimePolicy);
             eventTimeMapper.addPartitions(1);
             this.reader = new StreamMongoReader(params.databaseName, params.collectionName, params.mapStreamFn,
-                    params.startAtTimestamp, params.aggregates, eventTimeMapper);
+                    params.getStartAtTimestamp(), params.aggregates, eventTimeMapper);
         } else {
             this.reader = new BatchMongoReader(params.databaseName, params.collectionName, params.mapItemFn,
                     params.aggregates);
         }
-        this.connection = new MongoDbConnection(params.clientSupplier, client -> reader.connect(client,
+        this.connection = new MongoConnection(params.clientSupplier, params.dataLinkRef, client -> reader.connect(client,
                 snapshotsEnabled));
     }
 
@@ -108,6 +115,9 @@ public class ReadMongoP<I> extends AbstractProcessor {
         totalParallelism = context.totalParallelism();
         processorIndex = context.globalProcessorIndex();
         this.snapshotsEnabled = context.snapshottingEnabled();
+
+        NodeEngineImpl nodeEngine = Util.getNodeEngine(context.hazelcastInstance());
+        connection.assembleSupplier(nodeEngine);
 
         connection.reconnectIfNecessary();
     }
@@ -140,9 +150,8 @@ public class ReadMongoP<I> extends AbstractProcessor {
 
     @Override
     public void close() {
-        if (reader != null) {
-            reader.close();
-        }
+        closeResource(reader);
+        closeResource(connection);
     }
 
     @Override
@@ -165,6 +174,11 @@ public class ReadMongoP<I> extends AbstractProcessor {
                         snapshotTraverser = null;
                         getLogger().finest("Finished saving snapshot.");
                     });
+
+            if (reader.supportsWatermarks()) {
+                Object watermark = reader.watermark();
+                snapshotTraverser = snapshotTraverser.append(entry(broadcastKey(-partition), watermark));
+            }
         }
         return emitFromTraverserToSnapshot(snapshotTraverser);
     }
@@ -182,14 +196,21 @@ public class ReadMongoP<I> extends AbstractProcessor {
     @SuppressWarnings("unchecked")
     protected void restoreFromSnapshot(@Nonnull Object key, @Nonnull Object value) {
         int keyInteger = ((BroadcastKey<Integer>) key).key();
-        if (keyInteger % totalParallelism == processorIndex) {
-            reader.restore(value);
+        boolean wm = keyInteger < 0;
+        int keyAb = Math.abs(keyInteger);
+        boolean forThisProcessor = keyAb % totalParallelism == processorIndex;
+        if (forThisProcessor) {
+            if (!wm) {
+                reader.restore(value);
+                reader.connect(connection.client(), true);
+            } else if (reader.supportsWatermarks()) {
+                reader.restoreWatermark((Long) value);
+            }
         }
     }
 
-    private abstract class MongoChunkedReader {
+    private abstract class MongoChunkedReader implements Closeable {
 
-        protected MongoClient mongoClient;
         protected MongoDatabase database;
         protected MongoCollection<Document> collection;
         private final String databaseName;
@@ -234,13 +255,15 @@ public class ReadMongoP<I> extends AbstractProcessor {
 
         abstract void restore(Object value);
 
-        void close() {
-            if (mongoClient != null) {
-                mongoClient.close();
-            }
+        abstract boolean everCompletes();
+
+        boolean supportsWatermarks() {
+            return !everCompletes();
         }
 
-        abstract boolean everCompletes();
+        public abstract void restoreWatermark(Long value);
+
+        public abstract Object watermark();
     }
 
     private final class BatchMongoReader extends MongoChunkedReader {
@@ -317,6 +340,16 @@ public class ReadMongoP<I> extends AbstractProcessor {
             return true;
         }
 
+        @Override
+        public void restoreWatermark(Long value) {
+            throw new UnsupportedOperationException("watermarks are only in streaming case");
+        }
+
+        @Override
+        public Object watermark() {
+            throw new UnsupportedOperationException("watermarks are only in streaming case");
+        }
+
         @Nonnull
         @Override
         public Object snapshot() {
@@ -327,11 +360,15 @@ public class ReadMongoP<I> extends AbstractProcessor {
         public void restore(Object value) {
             lastKey = value;
         }
+
+        @Override
+        public void close() {
+        }
     }
 
     private final class StreamMongoReader extends MongoChunkedReader {
         private final FunctionEx<ChangeStreamDocument<Document>, I> mapFn;
-        private final Long startTimestamp;
+        private final BsonTimestamp startTimestamp;
         private final List<Bson> aggregates;
         private final EventTimeMapper<I> eventTimeMapper;
         private MongoCursor<ChangeStreamDocument<Document>> cursor;
@@ -341,7 +378,7 @@ public class ReadMongoP<I> extends AbstractProcessor {
                 String databaseName,
                 String collectionName,
                 FunctionEx<ChangeStreamDocument<Document>, I> mapFn,
-                Long startTimestamp,
+                BsonTimestamp startTimestamp,
                 List<Bson> aggregates,
                 EventTimeMapper<I> eventTimeMapper
         ) {
@@ -370,7 +407,7 @@ public class ReadMongoP<I> extends AbstractProcessor {
             if (resumeToken != null) {
                 changeStream.resumeAfter(resumeToken);
             } else if (startTimestamp != null) {
-                changeStream.startAtOperationTime(new BsonTimestamp(startTimestamp));
+                changeStream.startAtOperationTime(startTimestamp);
             }
             cursor = changeStream.batchSize(BATCH_SIZE).fullDocument(UPDATE_LOOKUP).iterator();
         }
@@ -380,29 +417,42 @@ public class ReadMongoP<I> extends AbstractProcessor {
             return false;
         }
 
+        @SuppressWarnings("unchecked")
         @Nonnull
         @Override
         public Traverser<?> nextChunkTraverser() {
-            Traverser<ChangeStreamDocument<Document>> traverser = cursor::tryNext;
-            return traverser.flatMap(doc -> {
-                resumeToken = doc.getResumeToken();
-                long eventTime = clusterTime(doc);
-                I item = mapFn.apply(doc);
-                return item == null
-                        ? Traversers.empty()
-                        : eventTimeMapper.flatMapEvent(item, 0, eventTime);
-            });
+            try {
+                return new CursorTraverser(cursor)
+                        .flatMap(input -> {
+                            if (input instanceof EmptyItem) {
+                                return eventTimeMapper.flatMapIdle();
+                            }
+                            ChangeStreamDocument<Document> doc = (ChangeStreamDocument<Document>) input;
+                            resumeToken = doc.getResumeToken();
+                            long eventTime = clusterTime(doc);
+                            I item = mapFn.apply(doc);
+                            return eventTimeMapper.flatMapEvent(item, 0, eventTime);
+                        });
+            } catch (MongoException e) {
+                throw new JetException("error while reading from mongodb", e);
+            }
         }
 
         private long clusterTime(ChangeStreamDocument<Document> changeStreamDocument) {
-            BsonTimestamp clusterTime = changeStreamDocument.getClusterTime();
-            return clusterTime == null ? System.currentTimeMillis() : clusterTime.getValue();
+            BsonDateTime time = changeStreamDocument.getWallTime();
+            return time == null ? System.currentTimeMillis() : time.getValue();
         }
 
         @Nullable
         @Override
         public Object snapshot() {
             return resumeToken;
+        }
+
+        @Nonnull
+        @Override
+        public Object watermark() {
+            return eventTimeMapper.getWatermark(0);
         }
 
         @Override
@@ -415,12 +465,16 @@ public class ReadMongoP<I> extends AbstractProcessor {
         }
 
         @Override
+        public void restoreWatermark(Long value) {
+            eventTimeMapper.restoreWatermark(0, value);
+        }
+
+        @Override
         public void close() {
             if (cursor != null) {
                 cursor.close();
                 cursor = null;
             }
-            super.close();
         }
     }
 }
