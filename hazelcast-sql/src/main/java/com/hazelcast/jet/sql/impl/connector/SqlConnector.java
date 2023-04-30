@@ -29,14 +29,21 @@ import com.hazelcast.sql.impl.expression.ExpressionEvalContext;
 import com.hazelcast.sql.impl.row.JetSqlRow;
 import com.hazelcast.sql.impl.schema.MappingField;
 import com.hazelcast.sql.impl.schema.Table;
+import org.apache.calcite.rex.RexDynamicParam;
 import org.apache.calcite.rex.RexInputRef;
+import org.apache.calcite.rex.RexLiteral;
+import org.apache.calcite.rex.RexNode;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+
+import static java.util.Collections.emptyMap;
+import static java.util.Objects.requireNonNull;
 
 /**
  * An API to bridge Jet connectors and SQL. Allows the use of a Jet
@@ -188,9 +195,13 @@ public interface SqlConnector {
     String typeName();
 
     /**
-     * Returns {@code true}, if {@link #fullScanReader} is an unbounded source.
+     * Returns default value for the Object Type mapping property, so if user won't provide any type,
+     * this will be assumed.
+     *
+     * @since 5.3
      */
-    boolean isStream();
+    @Nonnull
+    String defaultObjectType();
 
     /**
      * Resolves the final field list given an initial field list and options
@@ -206,10 +217,14 @@ public interface SqlConnector {
      * the user can see it by listing the catalog. Jet will later pass it to
      * {@link #createTable}.
      *
-     * @param nodeEngine an instance of {@link NodeEngine}
-     * @param options    user-provided options
-     * @param userFields user-provided list of fields, possibly empty
-     * @param externalName external name of the table
+     * @param nodeEngine         an instance of {@link NodeEngine}
+     * @param options            user-provided options
+     * @param userFields         user-provided list of fields, possibly empty
+     * @param externalName       external name of the table
+     * @param dataConnectionName name of the data connection to use, may be null if the connector supports specifying
+     *                           connection details in options
+     * @param objectType         the type of object for which fields will be resolved. Default value is the value
+     *                           returned by {@link #defaultObjectType()}.
      * @return final field list, must not be empty
      */
     @Nonnull
@@ -217,7 +232,9 @@ public interface SqlConnector {
             @Nonnull NodeEngine nodeEngine,
             @Nonnull Map<String, String> options,
             @Nonnull List<MappingField> userFields,
-            @Nonnull String externalName
+            @Nonnull String[] externalName,
+            @Nullable String dataConnectionName,
+            @Nullable String objectType
     );
 
     /**
@@ -227,20 +244,17 @@ public interface SqlConnector {
      * <p>
      * Jet calls this method for each statement execution and for each mapping.
      *
-     * @param nodeEngine     an instance of {@link NodeEngine}
-     * @param options        connector specific options
-     * @param resolvedFields list of fields as returned from {@link
-     *                       #resolveAndValidateFields}
+     * @param nodeEngine         an instance of {@link NodeEngine}
+     * @param mappingContext     an object with the metadata of mapping from which this table is created
+     * @param resolvedFields     list of fields as returned from {@link
+     *                           #resolveAndValidateFields}
      */
     @Nonnull
     Table createTable(
             @Nonnull NodeEngine nodeEngine,
             @Nonnull String schemaName,
-            @Nonnull String mappingName,
-            @Nonnull String externalName,
-            @Nonnull Map<String, String> options,
-            @Nonnull List<MappingField> resolvedFields
-    );
+            @Nonnull SqlMappingContext mappingContext,
+            @Nonnull List<MappingField> resolvedFields);
 
     /**
      * Returns a supplier for a source vertex reading the input according to
@@ -329,7 +343,8 @@ public interface SqlConnector {
     default boolean isNestedLoopReaderSupported() {
         try {
             // nestedLoopReader() is supported, if the class overrides the default method in this class
-            Method m = getClass().getMethod("nestedLoopReader", DagBuildContext.class, HazelcastRexNode.class, List.class,
+            Method m = getClass().getMethod("nestedLoopReader", DagBuildContext.class, HazelcastRexNode.class,
+                    List.class,
                     JetJoinInfo.class);
             return m.getDeclaringClass() != SqlConnector.class;
         } catch (NoSuchMethodException e) {
@@ -354,27 +369,107 @@ public interface SqlConnector {
     }
 
     /**
-     * Returns the supplier for the update processor that will update given
-     * {@code table}. The input to the processor will be the fields
-     * returned by {@link #getPrimaryKey(Table)}.
+     * Returns the supplier for the update processor that will update the given
+     * {@code table}.
+     * <p>
+     * The processor is expected to work in a different mode, depending on the
+     * `hasInput` argument:<ol>
+     *
+     *     <li><b>hasInput == false:</b> There will be no input to the
+     *     processor. The processor is supposed to update all rows matching the
+     *     given `predicate`. If the `predicate` is null, it's supposed to
+     *     update all rows. The `expressions` have no input references.
+     *
+     *     <li><b>hasInput == true:</b> The processor is supposed to update all
+     *     rows with primary keys it receives on the input. In this mode the
+     *     `predicate` is always null. The primary key fields are specified by
+     *     the {@link #getPrimaryKey(Table)} method. If {@link
+     *     #dmlSupportsPredicates()} returned false, or if {@link
+     *     #supportsExpression} always returns false, `hasInput` is always true.
+     *     The `expressions` might contain input references. The input's first
+     *     columns are the primary key values, the rest are values that might be
+     *     referenced by expressions.
+     *
+     * </ol>
+     *
+     * @param fieldNames The names of fields to update
+     * @param expressions The expressions to assign to each field. Has the same
+     *     length as {@code fieldNames}.
      */
     @Nonnull
     default Vertex updateProcessor(
             @Nonnull DagBuildContext context,
             @Nonnull List<String> fieldNames,
-            @Nonnull List<HazelcastRexNode> expressions
+            @Nonnull List<HazelcastRexNode> expressions,
+            @Nullable HazelcastRexNode predicate,
+            boolean hasInput
     ) {
         throw new UnsupportedOperationException("UPDATE not supported for " + typeName());
     }
 
     /**
      * Returns the supplier for the delete processor that will delete from the
-     * given {@code table}. The input to the processor will be the fields
-     * returned by {@link #getPrimaryKey(Table)}.
+     * given {@code table}.
+     * <p>
+     * The processor is expected to work in a different mode, depending on the
+     * `hasInput` argument:<ol>
+     *
+     *     <li><b>hasInput == false:</b> There will be no input to the
+     *     processor. The processor is supposed to update all rows matching the
+     *     given `predicate`. If the `predicate` is null, it's supposed to
+     *     update all rows.
+     *
+     *     <li><b>hasInput == true:</b> The processor is supposed to delete all
+     *     rows with primary keys it receives on the input. In this mode the
+     *     `predicate` is always null. The primary key fields are specified by
+     *     the {@link #getPrimaryKey(Table)} method. If {@link
+     *     #dmlSupportsPredicates()} returned false, or if {@link
+     *     #supportsExpression} always returns false, `hasInput` is always true.
+     *
+     * </ol>
      */
     @Nonnull
-    default Vertex deleteProcessor(@Nonnull DagBuildContext context) {
+    default Vertex deleteProcessor(
+            @Nonnull DagBuildContext context,
+            @Nullable HazelcastRexNode predicate,
+            boolean hasInput
+    ) {
         throw new UnsupportedOperationException("DELETE not supported for " + typeName());
+    }
+
+    /**
+     * Returns whether this processor's {@link #deleteProcessor} and {@link
+     * #updateProcessor} methods can use a predicate.
+     */
+    default boolean dmlSupportsPredicates() {
+        return true;
+    }
+
+    /**
+     * Returns whether the given `expression` is supported by the processors
+     * this connector returns. If it returns true, then this expression will be
+     * passed as a projection or predicate to the other vertex-generating
+     * methods.
+     * <p>
+     * The connector must be able to handle {@link RexInputRef} expressions,
+     * such expressions will never be passed to this method. It is also
+     * recommended to support {@link RexDynamicParam} and {@link RexLiteral} for
+     * simpler execution plans.
+     * <p>
+     * If an expression is unsupported, for scans a projection will be added
+     * after the scan vertex. For DML, it will disable the use no-input mode.
+     * Instead, a scan and filtering will be generated.
+     * <p>
+     * The default implementation returns true for {@link RexDynamicParam}.
+     *
+     * @param expression expression to be analysed. Entire expression must be
+     *     checked, not only the root node.
+     * @return true, iff the given expression can be evaluated remotely
+     */
+    default boolean supportsExpression(@Nonnull HazelcastRexNode expression) {
+        // support only simple RexDynamicParam ref. If RexDynamicParam is inside larger expression,
+        // entire expression will have to be analysed.
+        return expression.unwrap(RexNode.class) instanceof RexDynamicParam;
     }
 
     /**
@@ -393,6 +488,10 @@ public interface SqlConnector {
     }
 
     interface DagBuildContext {
+
+        @Nonnull
+        NodeEngine getNodeEngine();
+
         /**
          * Returns the {@link DAG} that's being created.
          */
@@ -401,9 +500,9 @@ public interface SqlConnector {
 
         /**
          * Returns the context table. It is:<ul>
-         *     <li>for scans, it's the scanned table
-         *     <li>for DML, it's the target table
-         *     <li>for nested loop reader, it's the table read in the inner loop (the right join input)
+         * <li>for scans, it's the scanned table
+         * <li>for DML, it's the target table
+         * <li>for nested loop reader, it's the table read in the inner loop (the right join input)
          * </ul>
          *
          * @throws IllegalStateException if the table doesn't apply in the current context
@@ -414,9 +513,9 @@ public interface SqlConnector {
         /**
          * Converts a boolean {@link HazelcastRexNode}. When evaluating a {@link RexInputRef},
          * this context is assumed:<ul>
-         *     <li>If a table is set (see {@link #getTable()}), then it's assumed that it's that table's fields
-         *     <li>If it's a single-input rel, then it's then input
-         *     <li>Otherwise the conversion of an input ref will fail.
+         * <li>If a table is set (see {@link #getTable()}), then it's assumed that it's that table's fields
+         * <li>If it's a single-input rel, then it's then input
+         * <li>Otherwise the conversion of an input ref will fail.
          * </ul>
          */
         @Nullable
@@ -457,6 +556,78 @@ public interface SqlConnector {
 
         public Consumer<Edge> configureEdgeFn() {
             return configureEdgeFn;
+        }
+    }
+
+    /**
+     * Mapping specific metadata.
+     *
+     * @since 5.3
+     */
+    class SqlMappingContext implements Serializable {
+        private final String name;
+        private final String[] externalName;
+        private final String dataConnection;
+        private final String connectorType;
+        private final String objectType;
+        private final Map<String, String> options;
+
+        public SqlMappingContext(String name, String[] externalName, String dataConnection, String connectorType,
+                                 String objectType, Map<String, String> options) {
+            this.name = requireNonNull(name, "name cannot be null");
+            this.externalName = requireNonNull(externalName, "externalName cannot be null");
+            this.dataConnection = dataConnection;
+            this.connectorType = requireNonNull(connectorType, "connectorType cannot be null");
+            this.objectType = objectType;
+            this.options = options;
+        }
+
+        /**
+         * Name of this mapping.
+         */
+        @Nonnull
+        public String name() {
+            return name;
+        }
+
+        /**
+         * Name of external object.
+         */
+        @Nonnull
+        public String[] externalName() {
+            return externalName;
+        }
+
+        /**
+         * Name of the data connection to use, may be null if the connector supports specifying connection details in options
+         */
+        @Nullable
+        public String dataConnection() {
+            return dataConnection;
+        }
+
+        /**
+         * Connector Type, must match one of {@link SqlConnector#typeName()}.
+         */
+        @Nonnull
+        public String connectorType() {
+            return connectorType;
+        }
+
+        /**
+         * Object type, must match the name of supported types for given connector.
+         */
+        @Nullable
+        public String objectType() {
+            return objectType;
+        }
+
+        /**
+         * Options used to create the mapping.
+         */
+        @Nonnull
+        public Map<String, String> options() {
+            return options == null ? emptyMap() : options;
         }
     }
 }

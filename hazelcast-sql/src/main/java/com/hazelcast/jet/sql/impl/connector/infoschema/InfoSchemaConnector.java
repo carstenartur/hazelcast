@@ -58,9 +58,10 @@ final class InfoSchemaConnector implements SqlConnector {
         return TYPE_NAME;
     }
 
+    @Nonnull
     @Override
-    public boolean isStream() {
-        return false;
+    public String defaultObjectType() {
+        return "InfoSchema";
     }
 
     @Nonnull @Override
@@ -68,8 +69,9 @@ final class InfoSchemaConnector implements SqlConnector {
             @Nonnull NodeEngine nodeEngine,
             @Nonnull Map<String, String> options,
             @Nonnull List<MappingField> userFields,
-            @Nonnull String externalName
-    ) {
+            @Nonnull String[] externalName,
+            @Nullable String dataConnectionName,
+            @Nullable String objectType) {
         throw new UnsupportedOperationException();
     }
 
@@ -77,11 +79,8 @@ final class InfoSchemaConnector implements SqlConnector {
     public Table createTable(
             @Nonnull NodeEngine nodeEngine,
             @Nonnull String schemaName,
-            @Nonnull String mappingName,
-            @Nonnull String externalName,
-            @Nonnull Map<String, String> options,
-            @Nonnull List<MappingField> resolvedFields
-    ) {
+            @Nonnull SqlMappingContext ctx,
+            @Nonnull List<MappingField> resolvedFields) {
         throw new UnsupportedOperationException();
     }
 
@@ -96,7 +95,7 @@ final class InfoSchemaConnector implements SqlConnector {
             throw QueryException.error("Ordering functions are not supported on top of " + TYPE_NAME + " mappings");
         }
 
-        InfoSchemaTable table = (InfoSchemaTable) context.getTable();
+        InfoSchemaTable table = context.getTable();
         List<Object[]> rows = table.rows();
         Expression<Boolean> convertedPredicate = context.convertFilter(predicate);
         List<Expression<?>> convertedProjection = context.convertProjection(projection);
@@ -105,6 +104,11 @@ final class InfoSchemaConnector implements SqlConnector {
                 forceTotalParallelismOne(ProcessorSupplier.of(() ->
                         new StaticSourceP(convertedPredicate, convertedProjection, rows)))
         );
+    }
+
+    @Override
+    public boolean supportsExpression(@Nonnull HazelcastRexNode expression) {
+        return true;
     }
 
     private static final class StaticSourceP extends AbstractProcessor {

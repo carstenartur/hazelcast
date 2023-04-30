@@ -148,8 +148,8 @@
         "integrity-checker": {
           "$ref": "#/definitions/IntegrityChecker"
         },
-        "data-link": {
-          "$ref": "#/definitions/DataLinkConfig"
+        "data-connection": {
+          "$ref": "#/definitions/DataConnectionConfig"
         },
         "tpc": {
           "$ref": "#/definitions/TpcConfig"
@@ -4048,17 +4048,17 @@
         "keep-idle-seconds": {
           "type": "integer",
           "default": 7200,
-          "description": "Specifies the TCP Keep-Alive idle time: the number of seconds of idle time before keep-alive initiates a probe."
+          "description": "Specifies the TCP Keep-Alive idle time: the number of seconds of idle time before keep-alive initiates a probe. Valid values are 1 to 32767."
         },
         "keep-interval-seconds": {
           "type": "integer",
           "default": 75,
-          "description": "Specifies the TCP keep-alive interval: the number of seconds between keep-alive probes."
+          "description": "Specifies the TCP keep-alive interval: the number of seconds between keep-alive probes. Valid values are 1 to 32767."
         },
         "keep-count": {
           "type": "integer",
           "default": 8,
-          "description": "Specifies the TCP Keep-Alive count: the maximum number of TCP keep-alive probes to send before giving up and closing the connection if no response is obtained from the other side."
+          "description": "Specifies the TCP Keep-Alive count: the maximum number of TCP keep-alive probes to send before giving up and closing the connection if no response is obtained from the other side. Valid values are 1 to 127."
         }
       }
     },
@@ -4279,6 +4279,11 @@
           "type": "integer",
           "default": 0,
           "description": "Defines the timeout in milliseconds that is applied to queries without an explicit timeout."
+        },
+        "catalog-persistence-enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Sets whether SQL Catalog persistence is enabled for the node. With SQL Catalog persistence enabled you can restart the whole cluster without losing schema definition objects (such as MAPPINGs, TYPEs, VIEWs and DATA CONNECTIONs). The feature is implemented on top of the Hot Restart feature of Hazelcast which persists the data to disk. If enabled, you have to also configure Hot Restart. Feature is disabled by default. If you enable this option in open-source, the member will fail to start, you need Enterprise to run it and obtain a license from Hazelcast."
         }
       }
     },
@@ -5013,7 +5018,7 @@
       ],
       "description": "Enables/disables Integrity Checker. Integrity Checker can be disabled to improve startup time."
     },
-    "DataLinkConfig": {
+    "DataConnectionConfig": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -5021,18 +5026,18 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "Name of the data link configuration."
+            "description": "Name of the data connection configuration."
           },
           "type": {
             "type": "string",
-            "description": "The type of the DataLink."
+            "description": "The type of the DataConnection."
           },
           "shared": {
             "type": "boolean",
-            "description": "true if an instance of the data link will be shared. Depending on the implementation of the DataLink the shared instance may be single a thread-safe instance, or not thread-safe, but a pooled instance; false when on each usage a new instance of the underlying resource should be created.The default is true."
+            "description": "true if an instance of the data connection will be shared. Depending on the implementation of the data connection, the shared instance may be single a thread-safe instance, or not thread-safe, but a pooled instance; false when on each usage a new instance of the underlying resource should be created.The default is true."
           },
           "properties": {
-            "description": "The \"properties\" used for configuring data link",
+            "description": "The \"properties\" used for configuring data connection",
             "type": "object"
           }
         }

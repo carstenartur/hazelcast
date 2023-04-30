@@ -98,7 +98,9 @@ public class TableResolverImplTest {
         Mapping mapping = mapping();
 
         given(connectorCache.forType(mapping.connectorType())).willReturn(connector);
-        given(connector.resolveAndValidateFields(nodeEngine, mapping.options(), mapping.fields(), mapping.externalName()))
+        given(connector.defaultObjectType()).willReturn("Dummy");
+        given(connector.resolveAndValidateFields(nodeEngine, mapping.options(), mapping.fields(),
+                mapping.externalName(), mapping.dataConnection(), "Dummy"))
                 .willThrow(new RuntimeException("expected test exception"));
 
         // when
@@ -116,8 +118,10 @@ public class TableResolverImplTest {
         Mapping mapping = mapping();
 
         given(connectorCache.forType(mapping.connectorType())).willReturn(connector);
-        given(connector.resolveAndValidateFields(nodeEngine, mapping.options(), mapping.fields(), mapping.externalName()))
+        given(connector.resolveAndValidateFields(nodeEngine, mapping.options(), mapping.fields(),
+                mapping.externalName(), mapping.dataConnection(), null))
                 .willReturn(singletonList(new MappingField("field_name", INT)));
+        given(connector.defaultObjectType()).willReturn("Dummy");
         given(relationsStorage.putIfAbsent(eq(mapping.name()), isA(Mapping.class))).willReturn(false);
 
         // when
@@ -134,7 +138,9 @@ public class TableResolverImplTest {
         Mapping mapping = mapping();
 
         given(connectorCache.forType(mapping.connectorType())).willReturn(connector);
-        given(connector.resolveAndValidateFields(nodeEngine, mapping.options(), mapping.fields(), mapping.externalName()))
+        given(connector.defaultObjectType()).willReturn("Dummy");
+        given(connector.resolveAndValidateFields(nodeEngine, mapping.options(), mapping.fields(),
+                mapping.externalName(), mapping.dataConnection(), null))
                 .willReturn(singletonList(new MappingField("field_name", INT)));
         given(relationsStorage.putIfAbsent(eq(mapping.name()), isA(Mapping.class))).willReturn(false);
 
@@ -151,8 +157,33 @@ public class TableResolverImplTest {
         Mapping mapping = mapping();
 
         given(connectorCache.forType(mapping.connectorType())).willReturn(connector);
-        given(connector.resolveAndValidateFields(nodeEngine, mapping.options(), mapping.fields(), mapping.externalName()))
+        given(connector.defaultObjectType()).willReturn("Dummy");
+        given(connector.resolveAndValidateFields(nodeEngine, mapping.options(), mapping.fields(),
+                mapping.externalName(), mapping.dataConnection(), null))
                 .willReturn(singletonList(new MappingField("field_name", INT)));
+
+        // when
+        catalog.createMapping(mapping, true, false);
+
+        // then
+        verify(relationsStorage).put(eq(mapping.name()), isA(Mapping.class));
+        verify(listener).onTableChanged();
+    }
+
+    @Test
+    public void when_mappingWithNoObjectType_then_usesDefault() {
+        // given
+        Mapping mapping = mapping();
+
+        given(connectorCache.forType(mapping.connectorType())).willReturn(connector);
+        given(connector.resolveAndValidateFields(nodeEngine, mapping.options(), mapping.fields(),
+                mapping.externalName(), mapping.dataConnection(), "MyDummyType"))
+                .willReturn(singletonList(new MappingField("field_name", INT)));
+        // in case of mistake, throw error:
+        given(connector.resolveAndValidateFields(nodeEngine, mapping.options(), mapping.fields(),
+                mapping.externalName(), mapping.dataConnection(), null))
+                .willThrow(new AssertionError("Object type must not be null"));
+        given(connector.defaultObjectType()).willReturn("MyDummyType");
 
         // when
         catalog.createMapping(mapping, true, false);

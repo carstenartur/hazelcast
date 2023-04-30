@@ -74,7 +74,7 @@
         <maven.git.commit.id.plugin.version>4.9.10</maven.git.commit.id.plugin.version>
 
         <maven.surefire.plugin.version>3.0.0</maven.surefire.plugin.version>
-        <maven.checkstyle.plugin.version>3.2.1</maven.checkstyle.plugin.version>
+        <maven.checkstyle.plugin.version>3.2.2</maven.checkstyle.plugin.version>
         <maven.jacoco.plugin.version>0.8.8</maven.jacoco.plugin.version>
         <maven.failsafe.plugin.version>3.0.0</maven.failsafe.plugin.version>
         <maven.cobertura.plugin.version>2.7</maven.cobertura.plugin.version>
@@ -93,7 +93,8 @@
         <!--<affinity.version>3.2.3</affinity.version>-->
         <antlr4.version>4.11.1</antlr4.version>
         <avro.version>1.11.1</avro.version>
-        <aws.sdk.version>1.12.430</aws.sdk.version>
+        <aws.sdk.version>1.12.458</aws.sdk.version>
+        <calcite.version>1.32.0</calcite.version>
         <classgraph.version>4.8.157</classgraph.version>
         <debezium.version>1.9.7.Final</debezium.version>
         <guava.version>31.1-jre</guava.version>
@@ -108,17 +109,17 @@
         <json-surfer.version>0.11</json-surfer.version>
         <jsr107.api.version>1.1.1</jsr107.api.version> <!-- JCache -->
         <jsr250.api.version>1.2</jsr250.api.version> <!-- javax.annotations -->
-        <kafka.version>3.4.0</kafka.version>
-        <kotlin.version>1.8.10</kotlin.version>
+        <kafka.version>2.8.2</kafka.version>
+        <kotlin.version>1.8.21</kotlin.version>
         <reload4j.version>1.2.24</reload4j.version>
         <log4j2.version>2.20.0</log4j2.version>
         <log4j.version>1.2.17.redhat-00008</log4j.version>
         <mysql.connector.version>8.0.30</mysql.connector.version>
-        <netty.version>4.1.90.Final</netty.version>
+        <netty.version>4.1.91.Final</netty.version>
         <objenesis.version>3.3</objenesis.version>
         <osgi.version>4.2.0</osgi.version>
-        <parquet.version>1.12.3</parquet.version>
-        <picocli.version>4.7.1</picocli.version>
+        <parquet.version>1.13.0</parquet.version>
+        <picocli.version>4.7.3</picocli.version>
         <postgresql.version>42.5.4</postgresql.version>
         <prometheus.version>0.18.0</prometheus.version>
 
@@ -135,14 +136,14 @@
         <spring.version>4.3.0.RELEASE</spring.version>
         <snakeyaml.version>2.0</snakeyaml.version>
         <snakeyaml.engine.version>2.6</snakeyaml.engine.version>
-        <mongodb.version>4.9.0</mongodb.version>
+        <mongodb.version>4.9.1</mongodb.version>
 
         <!-- test dependencies -->
         <activemq-artemis.version>2.28.0</activemq-artemis.version>
         <activemq.version>5.15.11</activemq.version>
         <assertj.version>3.24.2</assertj.version>
         <atomikos.version>3.9.3</atomikos.version>
-        <bytebuddy.version>1.14.2</bytebuddy.version>
+        <bytebuddy.version>1.14.4</bytebuddy.version>
         <commons-codec.version>1.15</commons-codec.version>
         <commons-io.version>2.11.0</commons-io.version>
         <commons-lang3.version>3.12.0</commons-lang3.version>
@@ -153,10 +154,10 @@
         <http.client.version>4.5.14</http.client.version>
         <jsr107.tck.version>1.1.1</jsr107.tck.version>
         <junit.version>4.13.2</junit.version>
-        <mockito.version>5.1.1</mockito.version>
+        <mockito.version>3.6.0</mockito.version>
         <powermock.version>2.0.9</powermock.version>
         <reflections.version>0.9.10</reflections.version>
-        <testcontainers.version>1.17.6</testcontainers.version>
+        <testcontainers.version>1.18.0</testcontainers.version>
         <jna.version>5.13.0</jna.version>
         <!--  When updating archunit.version, check/remove Java version assumptions in ArchUnitRulesTest.java -->
         <archunit.version>1.0.1</archunit.version>
@@ -1610,7 +1611,7 @@
             <dependency>
                 <groupId>com.google.auth</groupId>
                 <artifactId>google-auth-library-bom</artifactId>
-                <version>1.16.0</version>
+                <version>1.16.1</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -1772,7 +1773,7 @@
             <dependency>
                 <groupId>joda-time</groupId>
                 <artifactId>joda-time</artifactId>
-                <version>2.12.2</version>
+                <version>2.12.5</version>
             </dependency>
             <dependency>
                 <groupId>org.xerial.snappy</groupId>
@@ -1818,7 +1819,7 @@
             <dependency>
                 <groupId>com.fasterxml.woodstox</groupId>
                 <artifactId>woodstox-core</artifactId>
-                <version>6.5.0</version>
+                <version>6.5.1</version>
             </dependency>
             <dependency>
                 <groupId>org.codehaus.woodstox</groupId>
@@ -1848,7 +1849,7 @@
             <dependency>
                 <groupId>com.github.luben</groupId>
                 <artifactId>zstd-jni</artifactId>
-                <version>1.5.4-2</version>
+                <version>1.5.5-2</version>
             </dependency>
             <dependency>
                 <groupId>org.slf4j</groupId>
@@ -1868,7 +1869,7 @@
             <dependency>
                 <groupId>org.checkerframework</groupId>
                 <artifactId>checker-qual</artifactId>
-                <version>3.32.0</version>
+                <version>3.33.0</version>
             </dependency>
             <dependency>
                 <groupId>org.antlr</groupId>
@@ -1906,9 +1907,9 @@
               <version>2.2.5.Final</version>
             </dependency>
             <dependency>
-              <groupId>io.netty</groupId>
-              <artifactId>netty-tcnative-classes</artifactId>
-              <version>2.0.59.Final</version>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-tcnative-classes</artifactId>
+                <version>2.0.60.Final</version>
             </dependency>
             <dependency>
                 <groupId>com.google.api-client</groupId>

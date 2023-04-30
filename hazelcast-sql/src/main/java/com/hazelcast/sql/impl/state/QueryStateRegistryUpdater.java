@@ -16,9 +16,10 @@
 
 package com.hazelcast.sql.impl.state;
 
+import com.hazelcast.jet.function.RunnableEx;
 import com.hazelcast.jet.impl.JetServiceBackend;
 import com.hazelcast.logging.ILogger;
-import com.hazelcast.sql.impl.DataLinkConsistencyChecker;
+import com.hazelcast.sql.impl.DataConnectionConsistencyChecker;
 import com.hazelcast.sql.impl.NodeServiceProvider;
 import com.hazelcast.sql.impl.QueryUtils;
 import com.hazelcast.sql.impl.plan.cache.PlanCacheChecker;
@@ -36,7 +37,7 @@ public class QueryStateRegistryUpdater {
     private final NodeServiceProvider nodeServiceProvider;
     private final QueryClientStateRegistry clientStateRegistry;
     private final PlanCacheChecker planCacheChecker;
-    private final DataLinkConsistencyChecker dataLinkConsistencyChecker;
+    private final DataConnectionConsistencyChecker dataConnectionConsistencyChecker;
 
     private final ILogger logger;
 
@@ -55,7 +56,7 @@ public class QueryStateRegistryUpdater {
             NodeServiceProvider nodeServiceProvider,
             QueryClientStateRegistry clientStateRegistry,
             PlanCacheChecker planCacheChecker,
-            DataLinkConsistencyChecker dataLinkConsistencyChecker,
+            DataConnectionConsistencyChecker dataConnectionConsistencyChecker,
             long stateCheckFrequency
     ) {
         if (stateCheckFrequency <= 0) {
@@ -65,7 +66,7 @@ public class QueryStateRegistryUpdater {
         this.nodeServiceProvider = nodeServiceProvider;
         this.clientStateRegistry = clientStateRegistry;
         this.planCacheChecker = planCacheChecker;
-        this.dataLinkConsistencyChecker = dataLinkConsistencyChecker;
+        this.dataConnectionConsistencyChecker = dataConnectionConsistencyChecker;
         this.stateCheckFrequency = stateCheckFrequency;
         this.logger = nodeServiceProvider.getLogger(getClass());
 
@@ -126,9 +127,9 @@ public class QueryStateRegistryUpdater {
                 try {
                     Thread.sleep(currentStateCheckFrequency);
 
-                    checkClientState();
-                    checkPlans();
-                    checkDataLinksConsistency();
+                    executeInterruptibly(this::checkClientState);
+                    executeInterruptibly(this::checkPlans);
+                    executeInterruptibly(this::checkDataConnectionsConsistency);
                 } catch (InterruptedException e) {
                     if (currentStateCheckFrequency != stateCheckFrequency) {
                         // Interrupted due to frequency change.
@@ -139,6 +140,17 @@ public class QueryStateRegistryUpdater {
 
                     break;
                 }
+            }
+        }
+
+        private void executeInterruptibly(RunnableEx callback) throws InterruptedException {
+            try {
+                callback.runEx();
+            } catch (InterruptedException i) {
+                // propagate, will be handled higher up
+                throw i;
+            } catch (Throwable t) {
+                logger.warning("Unexpected error when invoking query state registry updater action", t);
             }
         }
 
@@ -154,10 +166,10 @@ public class QueryStateRegistryUpdater {
             }
         }
 
-        private void checkDataLinksConsistency() {
-            if (dataLinkConsistencyChecker.isInitialized()) {
+        private void checkDataConnectionsConsistency() {
+            if (dataConnectionConsistencyChecker.isInitialized()) {
                 try {
-                    dataLinkConsistencyChecker.check();
+                    dataConnectionConsistencyChecker.check();
                 } catch (Throwable t) {
                     logger.warning(t);
                 }
@@ -165,8 +177,8 @@ public class QueryStateRegistryUpdater {
                 if (nodeServiceProvider.getMap(JetServiceBackend.SQL_CATALOG_MAP_NAME) == null) {
                     return;
                 }
-                if (!dataLinkConsistencyChecker.isInitialized()) {
-                    dataLinkConsistencyChecker.init();
+                if (!dataConnectionConsistencyChecker.isInitialized()) {
+                    dataConnectionConsistencyChecker.init();
                 }
             }
         }

@@ -24,15 +24,21 @@ import com.hazelcast.sql.SqlColumnMetadata;
 import com.hazelcast.sql.impl.schema.TableResolver;
 import com.hazelcast.sql.impl.type.QueryDataType;
 import com.hazelcast.version.MemberVersion;
+import org.apache.calcite.sql.SqlDialect;
+import org.apache.calcite.sql.dialect.CalciteSqlDialect;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+
+import static java.util.stream.Collectors.toList;
 
 /**
  * Common SQL engine utility methods used by both "core" and "sql" modules.
@@ -45,8 +51,8 @@ public final class QueryUtils {
 
     public static final String WORKER_TYPE_STATE_CHECKER = "query-state-checker";
 
-    // This is an arbitrarily-chosen prefix so that datalink names don't clash with other object names
-    private static final String DATA_LINK_KEY_PREFIX = "57ae1d3a-d379-44cb-bb60-86b1d2dcd744-";
+    // This is an arbitrarily-chosen prefix so that data connection names don't clash with other object names
+    private static final String DATA_CONNECTION_KEY_PREFIX = "57ae1d3a-d379-44cb-bb60-86b1d2dcd744-";
 
     private QueryUtils() {
         // No-op.
@@ -56,8 +62,8 @@ public final class QueryUtils {
         return instanceName + "-" + workerType;
     }
 
-    public static String wrapDataLinkKey(String dataLinkKey) {
-        return DATA_LINK_KEY_PREFIX + dataLinkKey;
+    public static String wrapDataConnectionKey(String dataConnectionKey) {
+        return DATA_CONNECTION_KEY_PREFIX + dataConnectionKey;
     }
 
     /**
@@ -66,7 +72,8 @@ public final class QueryUtils {
      * @param columnType Internal type.
      * @return Public type.
      */
-    public static SqlColumnMetadata getColumnMetadata(String columnName, QueryDataType columnType, boolean columnIsNullable) {
+    public static SqlColumnMetadata getColumnMetadata(String columnName, QueryDataType columnType,
+                                                      boolean columnIsNullable) {
         return new SqlColumnMetadata(columnName, columnType.getTypeFamily().getPublicType(), columnIsNullable);
     }
 
@@ -74,8 +81,9 @@ public final class QueryUtils {
      * Create map from member ID to owned partitions.
      *
      * @param nodeEngine                node engine
-     * @param localMemberVersion        version of the local member. If any of partition owners have a different version,
-     *                                  an exception is thrown. The check is ignored if passed version is {@code null}
+     * @param localMemberVersion        version of the local member. If any of partition owners have a different
+     *                                  version, an exception is thrown.
+     *                                  The check is ignored if passed version is {@code null}
      * @param failOnUnassignedPartition whether the call should fail in case an unassigned partition is found;
      *                                  when set to {@code false} the missing partitions will not be included
      *                                  in the result
@@ -148,5 +156,17 @@ public final class QueryUtils {
         res.add(Collections.emptyList());
 
         return res;
+    }
+
+    /**
+     * Quote the given compound identifier using Calcite dialect (= Hazelcast dialect).
+     * You can use this when giving information to the user, e.g. in exception message.
+     * When building a query you should use {@link SqlDialect#quoteIdentifier(StringBuilder, List)} directly.
+     */
+    public static String quoteCompoundIdentifier(String... compoundIdentifier) {
+        List<String> parts = Arrays.stream(compoundIdentifier).filter(Objects::nonNull).collect(toList());
+        return CalciteSqlDialect.DEFAULT
+                .quoteIdentifier(new StringBuilder(), parts)
+                .toString();
     }
 }

@@ -26,7 +26,6 @@ import com.hazelcast.security.impl.function.SecuredFunction;
 import com.hazelcast.security.permission.ConnectorPermission;
 import com.hazelcast.sql.impl.expression.ExpressionEvalContext;
 import com.hazelcast.sql.impl.row.JetSqlRow;
-import org.checkerframework.checker.nullness.qual.NonNull;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -55,12 +54,18 @@ public class UpdateProcessorSupplier
     public UpdateProcessorSupplier() {
     }
 
-    public UpdateProcessorSupplier(@Nonnull String dataLinkName,
-                                   @NonNull String query,
-                                   @Nonnull int[] parameterPositions,
-                                   int batchLimit
+    /**
+     * @param parameterPositions An array specifying what to bind as i-th
+     *     parameter value. Positive value is input reference, negative value
+     *     ({@code -i - 1}) is dynamic argument reference.
+     */
+    public UpdateProcessorSupplier(
+            @Nonnull String dataConnectionName,
+            @Nonnull String query,
+            @Nonnull int[] parameterPositions,
+            int batchLimit
     ) {
-        super(dataLinkName);
+        super(dataConnectionName);
         this.query = requireNonNull(query, "query must not be null");
         this.parameterPositions = requireNonNull(parameterPositions, "parameterPositions must not be null");
         this.batchLimit = batchLimit;
@@ -84,12 +89,12 @@ public class UpdateProcessorSupplier
                         List<Object> arguments = evalContext.getArguments();
 
                         for (int j = 0; j < parameterPositions.length; j++) {
-                            ps.setObject(j + 1, arguments.get(parameterPositions[j]));
+                            int pos = parameterPositions[j];
+                            Object v = pos < 0
+                                    ? arguments.get(-pos - 1)
+                                    : row.get(pos);
+                            ps.setObject(j + 1, v);
                         }
-                        for (int j = 0; j < row.getFieldCount(); j++) {
-                            ps.setObject(parameterPositions.length + j + 1, row.get(j));
-                        }
-
                     },
                     false,
                     batchLimit
@@ -99,16 +104,15 @@ public class UpdateProcessorSupplier
         return processors;
     }
 
-
     @Nullable
     @Override
     public List<Permission> permissions() {
-        return singletonList(ConnectorPermission.jdbc(dataLinkName, ACTION_WRITE));
+        return singletonList(ConnectorPermission.jdbc(dataConnectionName, ACTION_WRITE));
     }
 
     @Override
     public void writeData(ObjectDataOutput out) throws IOException {
-        out.writeString(dataLinkName);
+        out.writeString(dataConnectionName);
         out.writeString(query);
         out.writeIntArray(parameterPositions);
         out.writeInt(batchLimit);
@@ -116,7 +120,7 @@ public class UpdateProcessorSupplier
 
     @Override
     public void readData(ObjectDataInput in) throws IOException {
-        dataLinkName = in.readString();
+        dataConnectionName = in.readString();
         query = in.readString();
         parameterPositions = in.readIntArray();
         batchLimit = in.readInt();
