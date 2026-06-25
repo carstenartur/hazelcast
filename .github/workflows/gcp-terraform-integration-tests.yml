@@ -51,7 +51,7 @@ jobs:
           ref: ${{steps.decide-ref.outputs.ref}}
 
       - name: Setup Local Maven Cache
-        uses: actions/cache@v3
+        uses: actions/cache@v6
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
